@@ -132,7 +132,7 @@ static void copyidx( std::vector<T> & vec , c_Subset & nms ,
 SMSpp_insert_in_factory_cpp_1( CapacitatedFacilityLocationBlock );
 
 /*--------------------------------------------------------------------------*/
-/*--------------------------- METHODS OF CapacitatedFacilityLocationBlock --------------------------*/
+/*--------------- METHODS OF CapacitatedFacilityLocationBlock --------------*/
 /*--------------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
 /*--------------------------------------------------------------------------*/
