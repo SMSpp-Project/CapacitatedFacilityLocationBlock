@@ -1,0 +1,61 @@
+##############################################################################
+################################ makefile-c ##################################
+##############################################################################
+#									     #
+#   complete makefile of MCFBlock / MCFSolver                                #
+#									     #
+#   The makefile defines internally all external libraries (comprised the    #
+#   SMS++ one) required by MCFBlock / MCFSolver. Accordingly, all necessary  #
+#   OBJ, H, -I directives, external libraries + -L<libdirs> are added to the #
+#   corresponding MCFBk* macros.                                             #
+#                                                                            #
+#   Input:  $(CC)       = compiler command                                   #
+#           $(SW)       = compiler options                                   #
+#           $(MCFBkSDR) = the directory where MCFBlock / MCFSolver source is #
+#           $(MCFBkODR) = the directory where the objects have to be put     #
+#                                                                            #
+#   Output: $(MCFBkOBJ) = the final object(s) / library                      #
+#           $(MCFBkLIB) = external libraries + -L<libdirs>                   #
+#           $(MCFBkH)   = the .h files to include for MCFBlock / MCFSolver   #
+#           $(MCFBkINC) = the -I$( MCFBlock / MCFSolver directory )          #
+#                                                                            #
+#                                VERSION 1.00                                #
+#                               19 - 09 - 2018                               #
+#                                                                            #
+#                              Antonio Frangioni                             #
+#                          Operations Research Group                         #
+#                         Dipartimento di Informatica                        #
+#                             Universita' di Pisa                            #
+#									     #
+##############################################################################
+
+# define & include the necessary modules- - - - - - - - - - - - - - - - - - -
+# if a module is not used in the current configuration, just comment out the
+# corresponding include line
+# each module outputs some macros to be used here:
+# *OBJ is the final object/library
+# *H   is the list of all include files
+# *INC is the -I<include directories>
+
+# define input macros for SMS++ complete makefile, then include it
+SMS++SDR = $(MCFBkSDR)../SMS++/
+include $(SMS++SDR)lib/makefile-inc
+
+# define input macros for libMCFCl complete makefile, then include it
+libMCFClDIR = $(MCFBkSDR)../MCFClass/
+include $(libMCFClDIR)lib/makefile-inc
+
+# include the makefile requiring all external modules in input
+include $(MCFBkSDR)/makefile
+
+# macroes to be exported- - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# append external -I directives to MCFBkINC, MCFBkOBJ and MCFBkH as defined
+# by the makefile, thus the := assignment has to be used (use GNU make)
+MCFBkOBJ := $(MCFBkOBJ) $(libMCFClOBJ) $(SMS++OBJ)
+MCFBkINC := $(MCFBkINC) $(SMS++INC) $(libMCFClINC)
+
+# external libreries for MCFBlock
+MCFBkLIB = $(SMS++LIB) $(libMCFClLIB)
+
+############################ End of makefile #################################
