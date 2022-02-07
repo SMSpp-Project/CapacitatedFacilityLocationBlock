@@ -30,9 +30,6 @@ These instructions will let you build MCFBlock and MCFSolver on your system.
 - The [SMS++ core library](https://gitlab.com/smspp/smspp) and its
   requirements.
 
-- [MCFClass](https://github.com/frangio68/Min-Cost-Flow-Class) and its
-  requirements (depending on the actual :MCFClass solvers built).
-
 
 ### Build and install with CMake
 

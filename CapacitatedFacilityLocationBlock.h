@@ -71,34 +71,34 @@ namespace SMSpp_di_unipi_it
  * The data of the problem consist of a set of m Locations where to install
  * Facilities / Warehouses whose role is to serve a set of n customers,
  * usually (but not necessarily) with n >> m. For ease of notation we define
- * the set J = { 1 , ... m } of Facilities / Warehouses and the set I =
- * { 1 , ... , n } of customers. Each Facility [ / Warehouse ] j \in J has a
- * capacity Q[ j ] corresponding to the maximum amount that it can deliver of
+ * the set I = { 1 , ... m } of Facilities / Warehouses and the set J =
+ * { 1 , ... , n } of customers. Each Facility [ / Warehouse ] i \in I has a
+ * capacity Q[ i ] corresponding to the maximum amount that it can deliver of
  * the unique commodity that the customers require; however, this can be done
- * only if the Facility [ ... ] is open, which has a fixed cost F[ j ].
- * Underlying the problem there is a complete bipartite graph G = ( J x I ,
+ * only if the Facility [ ... ] is open, which has a fixed cost F[ i ].
+ * Underlying the problem there is a complete bipartite graph G = ( I x J ,
  * A ) with m + n nodes and m * n = (directed) arcs corresponding to
- * (directed) routes from each facility j \in J to each customer i \in I.
+ * (directed) routes from each facility i \in I to each customer j \in J.
  * Each arc ( j , i ) has a linear cost coefficient C[ j , i ] corresponding
- * to the cost of trasporting one unit of the commodity from j to i. Finally,
- * each customer i \in I has a demand D[ i ] of the commodity.
+ * to the cost of trasporting one unit of the commodity from i to j. Finally,
+ * each customer j \in J has a demand D[ j ] of the commodity.
  *
  * Introducing flow variables X[ j , i ] that represent the percentage of the
- * total demand of customer i served by facility j and binary variables
+ * total demand of customer j served by facility i and binary variables
  * Y[ i ] that represent (in the obvious way) if the facility is opened, a
- * natural formulation of the problem is:
+ * "natural formulation" of the problem is:
  * \f[
- *  \min \sum_{ (j , i) \in A } C[ j , i ] D[ i ] X[ j , i ] +
- *       \sum_{ j \in J } F[ j ] Y[ j ]
+ *  \min \sum_{ j \in J } \sum_{ i \in I } C[ j , i ] D[ j ] X[ j , i ] +
+ *       \sum_{ i \in I } F[ i ] Y[ i ]
  * \f]
  * \f[
- *  \sum_{ j \in J } X[ j , i ] = 1                       \quad i \in I   (1)
+ *  \sum_{ i \in I } X[ j , i ] = 1                       \quad j \in J   (1)
  * \f]
  * \f[
- *  \sum_{ i \in I } D[ i ] X[ j , i ] \leq Q[ j ] Y[ j ]  \quad j \in J  (2)
+ *  \sum_{ j \in J } D[ j ] X[ j , i ] \leq Q[ i ] Y[ i ]  \quad i \in I  (2)
  * \f]
  * \f[
- *  Y[ j ] \in \{ 0 , 1 \}                                 \quad j \in J  (3)
+ *  Y[ i ] \in \{ 0 , 1 \}                                 \quad i \in I  (3)
  * \f]
  * \f[
  *  0 \leq X[ j , i ] \leq 1                     \quad j \in J , i \in I  (4)
@@ -202,12 +202,18 @@ public:
  using UnSplittable1Solution = std::vector< UnSplittableValue >;
  ///< how a single customer is served, unsplittable
 
-/**@} ----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*------------------------------- FRIENDS ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
  friend CapacitatedFacilityLocationSolution;
  ///< make CapacitatedFacilityLocationSolution friend
+
+/*--------------------------------------------------------------------------*/
+/*------------------------------ CONSTANTS ---------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ static constexpr double dNaN = std::numeric_limits< double >::quiet_NaN();
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
@@ -224,8 +230,8 @@ public:
 
  explicit CapacitatedFacilityLocationBlock( Block *father = nullptr )
   : Block( father ) , f_n_facilities( 0 ) , f_n_customers( 0 ) ,
-    f_unsplittable( false ) , AR( 0 ) , f_cond_lower( - Inf<double>() ) ,
-    f_cond_upper( Inf<double>() ) { }
+    f_unsplittable( false ) , AR( 0 ) , f_cond_lower( dNaN ) ,
+    f_cond_upper( dNaN ) { }
 
 /*--------------------------------------------------------------------------*/
  /// destructor; deletes the abstract representation, if any
@@ -314,42 +320,42 @@ public:
  void deserialize( const netCDF::NcGroup & group ) override;
 
 /*--------------------------------------------------------------------------*/
- /// generate the abstract variables of the CFL
- /** Method that generates the abstract Variable of the CFL, actually
-  * deciding which of the different formulations of the problem is produced
-  * as the "abstract representation" of the CapacitatedFacilityLocationBlock.
-  * The different possible formulations are represented by a single int
-  * value "f_formulation" that is obtained as follows:
+ /// generate the abstract variables of the Capacitated Facility Location
+ /** Method that generates the abstract Variable of the Capacitated Facility
+  * Location problem, meanwhile deciding which of the different formulations
+  * of the problem is produced as the "abstract representation" of the
+  * CapacitatedFacilityLocationBlock. The different possible formulations are
+  * represented by a single int value "wf" that is obtained as follows:
   *
   * - if either stvv is not nullptr and it is a SimpleConfiguration< int >,
   *   or f_BlockConfig is not nullptr,
   *   f_BlockConfig->f_static_variables_Configuration is not nullptr,
-  *   and it is a SimpleConfiguration< int >, then f_formulation is the
-  *   the f_value of the SimpleConfiguration< int >
+  *   and it is a SimpleConfiguration< int >, then wf is the f_value of the
+  *   SimpleConfiguration< int >
   *
-  * - otherwise, f_formulation is 0
+  * - otherwise, wf is 0
   *
   * The list of supported formulations is:
   *
-  * - 0 <= f_formulation <= 1 is the "natural formulation" always comprising
+  * - wf & 3 == 0 is the "natural formulation" (NF) always comprising
   *   \f[
-  *    \min \sum_{ (j , i) \in A } C[ j , i ] D[ i ] X[ j , i ] +
-  *         \sum_{ j \in J } F[ j ] Y[ j ]
+  *    \min \sum_{ j \in J } \sum_{ i \in I } C[ j , i ] D[ j ] X[ j , i ] +
+  *         \sum_{ i \in I } F[ i ] Y[ i ]
   *   \f]
   *   \f[
-  *    \sum_{ j \in J } X[ j , i ] = 1                           i \in I   (1)
+  *    \sum_{ i \in I } X[ j , i ] = 1                           j \in J  (1)
   *   \f]
   *   \f[
-  *    \sum_{ i \in I } D[ i ] X[ j , i ] \leq Q[ j ] Y[ j ]     j \in J  (2)
+  *    \sum_{ j \in J } D[ j ] X[ j , i ] \leq Q[ i ] Y[ i ]     i \in I  (2)
   *   \f]
   *   \f[
-  *     Y[ j ] \in \{ 0 , 1 \}                                   j \in J  (3)
+  *     Y[ i ] \in \{ 0 , 1 \}                                   i \in I  (3)
   *   \f]
-  *   and then, if f_formulation == 0 the "splittable constraints"
   *   \f[
   *    0 \leq X[ j , i ] \leq 1                        j \in J , i \in I  (4)
   *   \f]
-  *   and if f_formulation == 1 the "unsplittable constraints"
+  *   If wf & 4 (wf == 4) the "splittable constraints" (4) are replaced with
+  *   the "unsplittable constraints"
   *   \f[
   *    X[ j , i ] \in \{ 0 , 1 \}                      j \in J , i \in I  (4')
   *   \f]
@@ -358,9 +364,8 @@ public:
   *
   *   = "x", a boost::multi_array< ColVariable , 2 > with sizes
   *     f_n_customers and f_n_facilities, which are of type kPosUnitary
-  *     (is_positive() == is_unitary() == true) if f_formulation == 0, and
-  *     of type kBinary (is_integer() == is_positive() == is_unitary() ==
-  *     true) otherwise
+  *     (is_positive() == is_unitary() == true) if wf == 0, and of type
+  *     kBinary (in addition, is_unitary() == true) if wf == 4
   *
   *   = "y", a std::vector< ColVariable > of size f_n_facilities, which are
   *     all of type kBinary (is_integer() == is_positive() == is_unitary()
@@ -368,8 +373,53 @@ public:
   *
   *   and no dynamic variables
   *
-  * - f_formulation == 2: to be continued ...
-  */
+  * - wf & 3 == 1: the Lagrange-friendly "knapsack formulation" (KF). In
+  *   this case, CapacitatedFacilityLocationBlock "grows" f_n_facilities
+  *   sub-Block, each of type BinaryKnapsackBlock and with f_n_customers + 1
+  *   variables. sub-Block i corresponds to facility i: the first
+  *   f_n_customers variables correspond to the transportation variables
+  *   X[ j , i ] between i and all the customers (in the natural order),
+  *   while the last variable correspond to the design variable Y[ i ].
+  *   That is, the i-th knapsack problem is
+  *   \f[
+  *    \min \sum_{ j \in J } C[ j , i ] D[ j ] X[ j , i ] + F[ i ] Y[ i ]
+  *   \f]
+   *   \f[
+  *    \sum_{ j \in J } D[ j ] X[ j , i ] - Q[ i ] Y[ i ] \leq 0
+  *   \f]
+  *   \f[
+  *     Y[ i ] \in \{ 0 , 1 \}
+  *   \f]
+  *   \f[
+  *    0 \leq X[ j , i ] \leq 1                        j \in J
+  *   \f]
+  *   Then, wf & 4 (wf == 5) the previous "splittable constraints" are
+  *   replaced by the "unsplittable constraints"
+  *   \f[
+  *    X[ j , i ] \in \{ 0 , 1 \}                      j \in J
+  *   \f]
+  *   That is, Y[ i ] is always kBinary (is_integer() == is_positive() ==
+  *   is_unitary() == true), whereas X[ j ] are kBinary for wf == 5 and
+  *   kPosUnitary (is_positive() == is_unitary() == true) if wf == 1.
+  *   The linking constraints (1) are the only static group of Constraint
+  *   in the CapacitatedFacilityLocationBlock.
+  *
+  * - wf & 3 == 2: the Benders-friendly "flow formulation" (FF). In this case,
+  *   CapacitatedFacilityLocationBlock "grows" two sub-Block. The first one
+  *   only has f_n_facilities kBinary variables corresponding with the
+  *   design ones Y[ i ]. The second is instead a MCFBlock representing the
+  *   continuous relaxation of the problem as produced by get_R3_Block()
+  *   with wr3b == 2 (see), except the costs of the "facility arcs" are set
+  *   to 0. Then, the CapacitatedFacilityLocationBlock contains the linking
+  *   constraints
+  *   \f[
+  *     arc_flow[ i ] \leq Q[ i ] Y[ i ]                       i \in I
+  *   \f]
+  *   where arc_flow[ i ] is the flow on the "facility arc" corresponding to
+  *   facility i in the MCFBlock. In this case, setting wf & 4 true
+  *   (wf == 6) is not supported in that the flows in the MCFBlock are scaled
+  *   and there is no (simple) way to include the required integrality
+  *   constraints. */
 
  void generate_abstract_variables( Configuration *stvv = nullptr ) override;
 
@@ -377,11 +427,28 @@ public:
  /// generate the static constraint of the CFL
  /** Method that generates the abstract constraint of the CFL. The actual
   * form of these constraints depend on the formulation, which is decided
-  * during the call to generate_abstract_variables(), as follows:
+  * during the call to generate_abstract_variables(); see the comments to
+  * that method for details. Yet, generate_abstract_constraints() allows to
+  * only partly generate the abstract constraints according to the single
+  * int value "wc" that is obtained as follows:
   *
-  * - if 0 <= f_formulation <= 1 these are the two groups of "linear
-  *   constraints" (FRowConstraint with a LinearFunction) of the "natural
-  *   formulation", i.e.,
+  * - if either stcc is not nullptr and it is a SimpleConfiguration< int >,
+  *   or f_BlockConfig is not nullptr,
+  *   f_BlockConfig->f_static_constraints_Configuration is not nullptr,
+  *   and it is a SimpleConfiguration< int >, then wc is the f_value of the
+  *   SimpleConfiguration< int >
+  *
+  * - otherwise, wc is 0
+  *
+  * The meaning of wc is bit-wise: the first bit being 1 means that the
+  * customers satisfation constraints are *not* constructed, while the
+  * second bit being 1 means that the capacity constraints are *not*
+  * constructed this has different meanings according to which formulation
+  * is used, as decided by generate_abstract_variables():
+  *
+  * - If the "natural formulation" (SF) is used, there are the two explicit
+  *   groups of "linear constraints" (FRowConstraint with a LinearFunction)
+  *   of the "natural formulation", i.e.,
   *
   *   = "sat", a std::vector< FRowConstraint > of size f_n_customers
   *     imposing the satisfation of customers' demands (1)
@@ -391,12 +458,29 @@ public:
   *     constraints that a facility can only be used to serve any customer
   *     if it is open (2)
   *
-  *   and no dynamic constraints
+  *   and no dynamic constraints. "sat" is constructed unless ( wc & 1 ) ==
+  *   true, and "cap" is constructed unless ( wc & 2 ) == true.
   *
-  * - if f_formulation == 2: to be continued ...
-  */
+  * - If the "knapsack formulation" (KF) is used, then there is only one
+  *   explicit groups of "linear constraints", the "sat" one with a
+  *   std::vector< FRowConstraint > of size f_n_facilities imposing the
+  *   satisfation of customers' demands (1), which is constructed unless
+  *   ( wc & 1 ) == true; the capacity constraints are inside the
+  *   BinaryKnapsackBlock sub-Block, and the corresponding constraints are
+  *   constructed unless ( wc & 2 ) == true.
+  *
+  * - If the "flow formulation" (FF) is used, then there is only one
+  *   explicit groups of "linear constraints", the "cap" one with a
+  *   std::vector< FRowConstraint > of size f_n_customers imposing the
+  *   linking between the Y[] variables in the first sub-Block and the
+  *   (appropriate) arc flow variables in the MCFBlock sub-Block; this
+  *   is constructed unless ( wc & 2 ) == true, while the constraints in
+  *   the MCFBlock sub-Block (which impose the satisfation of customers'
+  *   demands, although they also are a part of the capacity ones) are
+  *   constructed unless ( wc & 1 ) == true. */
  
- void generate_abstract_constraints( Configuration *stcc = nullptr ) override;
+ void generate_abstract_constraints( Configuration * stcc = nullptr )
+  override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// generate the objective of the CFL
@@ -694,86 +778,6 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
- /// gets a contiguous interval of the potential solution
- /** Method to get the potential solution; upon return, PSol[ i ] contains the
-  * current value of the potential solution for the i-th node in \p rng. Note
-  * that if the right extreme of the range is >= get_NNodes() it is ignored.
-  * Note that "node names" here go from 0 to get_NNodes() - 1, despite the
-  * fact that get_SN() and get_EN() report node "names" between 1 and
-  * get_NNodes(). */
-
- void get_pi( Vec_CNumber & PSol , Range rng = Range( 0 , Inf<Index>() ) );
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// gets the flow potential for an arbitrary subset of nodes
- /** Method to get the potential solution; upon return, PSol[ i ] contains the
-  * current value of the potential solution for node nms[ i ] for all 0 <= i
-  * < nms.size(). Note that "node names" here go from 0 to get_NNodes() - 1,
-  * despite the fact that get_SN() and get_EN() report node "names" between
-  * 1 and get_NNodes(). Also, note that
-  *
-  *     nms IS ASSUMED TO BE ORDERED BY INCREASING Index */
-
-
- void get_pi( Vec_CNumber & PSol , c_Subset & nms );
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// gets the potential solution of the given node
- /** Method to get the potential solution of the given node; note that "node
-  * names" here go from 0 to get_NNodes() - 1, despite the fact that get_SN()
-  * and get_EN() report node "names" between 1 and get_NNodes(). */
-
- CNumber get_pi( c_Index nde ) {
-  if( nde >= get_NNodes() )
-   throw( std::invalid_argument( "invalid node name" ) );
-
-  if( ! ( AR & HasFlw ) )
-   throw( std::logic_error( "potentials unavailable if Constraint aren't" ) );
-
-  if( nde < get_NStaticNodes() )
-   return( E[ nde ].get_dual() );
-  else
-   return( std::next( dE.begin() , nde - get_NStaticNodes() )->get_dual() );
-  }
-
-/*--------------------------------------------------------------------------*/
- /// gets a contiguous interval of the reduced costs
- /** Method to get the reduced costs; upon return, RC[ i ] contains the
-  * current value of the reduced cost for the i-th arc in \p rng. Note that
-  * if the right extreme of the range is >= get_NArcs() it is ignored. */
-
- void get_rc( Vec_CNumber & RC , Range rng = Range( 0 , Inf<Index>() ) );
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// gets the reduced costs for an arbitrary subset of arcs
- /** Method to get the reduced costs; upon return, RC[ i ] contains the
-  * current value of the reduced costs for arc nms[ i ] for all 0 <= i < 
-  * nms.size(). Note that
-  *
-  *     nms IS ASSUMED TO BE ORDERED BY INCREASING Index */
-
- void get_rc( Vec_CNumber & RC , c_Subset & nms );
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// gets the reduced costs of the given arc
-
- CNumber get_rc( c_Index arc ) {
-  if( E.empty() && dE.empty() )
-   throw( std::logic_error( "reduced costs unavailable if Constraint aren't"
-			   ) );
-  if( arc >= get_NArcs() )
-   throw( std::invalid_argument( "invalid arc name" ) );
-
-  if( UB.empty() && dUB.empty() )
-   return( get_C( arc ) + get_pi( SN[ arc ] - 1 ) - get_pi( EN[ arc ] - 1 ) );
-  else
-   if( arc < get_NStaticArcs() )
-    return( UB[ arc ].get_dual() );
-   else
-    return( std::next( dUB.begin() , arc - get_NStaticArcs() )->get_dual() );
-  }
-
-/*--------------------------------------------------------------------------*/
  /// sets a contiguous interval of the flow solution
  /** Method to set the flow solution; the values found in the c_Vec_FNumber
   * between fstrt (included) and fstop (excluded) are copied into the value of
@@ -795,60 +799,7 @@ public:
    std::next( dx.begin() , arc - get_NStaticArcs() )->set_value( FSol );
   }
 
-/*--------------------------------------------------------------------------*/
- /// sets a contiguous interval of the potential solution
- /** Method to set the potential solution; the values found in the
-  * c_Vec_CNumber between pstrt (included) and pstop (excluded) are copied
-  * into the potential of node (dual multiplier of the flow balance
-  * constraint) strt + i. This is typically used by a Solver. */
-
- void set_pi( c_Vec_CNumber_it pstrt , c_Vec_CNumber_it pstop ,
-	      c_Index strt = 0 );
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// sets the potential solution of the given node
-
- void set_pi( CNumber PSol , c_Index nde ) {
-  if( ! ( AR & HasFlw ) )  // nowhere to put the value
-   return;                 // cowardly (and silently) return
-
-  if( nde >= get_NNodes() )
-   throw( std::invalid_argument( "invalid node name" ) );
-
-  if( nde < get_NStaticNodes() )
-   E[ nde ].set_dual( PSol );
-  else
-   std::next( dE.begin() , nde - get_NStaticNodes() )->set_dual( PSol );
-  }
-
-/*--------------------------------------------------------------------------*/
- /// sets a contiguous interval of the reduced costs
- /** Method to set the reduced costs solution; the values found in the
-  * c_Vec_CNumber between rcstrt (included) and rcstop (excluded) are copied
-  * into the reduced cost of arc (dual value of the bound constraint) strt +
-  * i. This is typically used by a Solver. */
-
- void set_rc( c_Vec_CNumber_it rcstrt , c_Vec_CNumber_it rcstop ,
-	      c_Index strt = 0 );
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// sets the reduced cost of the given arc
-
- void set_rc( c_CNumber RC , c_Index arc ) {
- if( ! ( AR & HasBnd ) )  // nowhere to put the value in
-  return;                 // cowardly (and silently) return
-
- if( arc >= get_NArcs() )
-  throw( std::invalid_argument( "invalid arc name" ) );
-
- if( arc < get_NStaticArcs() )
-  UB[ arc ].set_dual( RC );
- else
-  std::next( dUB.begin() , arc - get_NStaticArcs() )->set_dual( RC );
-
- }  // end( CapacitatedFacilityLocationBlock::set_rc( one ) )
-
-/**@} ----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*-------------------- Methods for handling Modification -------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Methods for handling Modification
@@ -862,28 +813,31 @@ public:
   * in sync. */
 
  bool anyone_there( void ) const override {
-  return( AR ? true : Block::anyone_there() );
+  return( ( AR & 7 ) ? true : Block::anyone_there() );
   }
 
-/*--------------------------------------------------------------------------*/ /// adding a new Modification to the CapacitatedFacilityLocationBlock
+/*--------------------------------------------------------------------------*/
+ /// adding a new Modification to the CapacitatedFacilityLocationBlock
  /** Method for handling Modification.
   *
-  * The version of CapacitatedFacilityLocationBlock has to intercept any "abstract Modification" that
-  * modifies the "abstract representation" of the CapacitatedFacilityLocationBlock, and "translate"
-  * them into both changes of the actual data structures and corresponding
-  * "physical Modification". These Modification are those for which
+  * The version of CapacitatedFacilityLocationBlock has to intercept any
+  * "abstract Modification" that modifies the "abstract representation" of
+  * the CapacitatedFacilityLocationBlock, and "translate" them into both
+  * changes of the actual data structures and corresponding "physical
+  * Modification". These Modification are those for which
   * Modification::concerns_Block() is true. Note, however, that before sending
   * the Modification to the Solver and/or the father Block, the
   * concerns_Block() value is set to false. This is because once it is passed
   * through this method, the "abstract Modification" has "already done its
-  * duty" of providing the information to the CapacitatedFacilityLocationBlock, and this must not be
-  * repeated. In particular, this would be an issue if the Modification would
-  * be [map_forward or map_back]-ed, because inside of this method a "physical
+  * duty" of providing the information to the
+  * CapacitatedFacilityLocationBlock, and this must not be repeated. In
+  * particular, this would be an issue if the Modification would be
+  * [map_forward or map_back]-ed, because inside of this method a "physical
   * Modification" doing the same job is surely issued. That Modification would
   * also be [map_forward or map_back]-ed, together with the original "abstract
   * Modification" that would pass again through this method (in the other
-  * CapacitatedFacilityLocationBlock), which would mean that the "physical Modification" would be
-  * issued twice.
+  * CapacitatedFacilityLocationBlock), which would mean that the "physical
+  * Modification" would be issued twice.
   *
   * The following "abstract Modification" are handled:
   *
@@ -905,15 +859,15 @@ public:
   *   zero*, because that corresponds to closing the arc, exception being
   *   thrown otherwise.
   *
-  * Any other Modification reaching the CapacitatedFacilityLocationBlock will lead to exception
-  * being thrown.
+  * Any other Modification reaching the CapacitatedFacilityLocationBlock
+  * will lead to exception being thrown.
   *
   * Note: any "physical" Modification resulting from processing an "abstract"
   *       one will be sent to the same channel (chnl). */
 
  void add_Modification( sp_Mod mod , ChnlName chnl = 0 ) override;
 
-/**@} ----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*---- LOADING, PRINTING & SAVING THE CapacitatedFacilityLocationBlock -----*/
 /*--------------------------------------------------------------------------*/
 /** @name Methods for loading, printing & saving the
@@ -928,7 +882,7 @@ public:
 
  void serialize( netCDF::NcGroup & group ) const override;
 
-/**@} ----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Changing the data of the MCF instabnce
@@ -940,9 +894,9 @@ public:
  * Observer::make_par(), except that the value eModBlck is ignored and
  * treated it as if it were eNoBlck [see Observer::issue_pmod()]. This is
  * because it makes no sense to issue an "abstract" Modification with
- * concerns_Block() == true, since the changes in the CapacitatedFacilityLocationBlock have surely
- * been done already, and this is just not possible for a "physical"
- * Modification.
+ * concerns_Block() == true, since the changes in the
+ * CapacitatedFacilityLocationBlock have surely been done already, and this
+ * is just not possible for a "physical" Modification.
  *
  * IMPORTANT NOTE: the current implementation of all these methods issues (at
  * most) *two separate* Modification, a "physical" and an "abstract" one. The
@@ -955,12 +909,13 @@ public:
  * the cost of a more intricate code that is best avoided for now.
  *
  * Note: the methods accept the eDryRun value for the issueAMod parameter for
- * the "abstract" representation. This allows to re-use them within CapacitatedFacilityLocationBlock
- * itself when reacting to abstract Modification, where the  "abstract"
- * representation has been changed already. However, the eDryRun value is not
- * allowed (it is ignored) for the issuePMod parameter for the "physical"
- * representation, as there is no reasonable use for this. Basically, this
- * makes eDryRun equivalent to eNoMod.
+ * the "abstract" representation. This allows to re-use them within
+ * CapacitatedFacilityLocationBlock itself when reacting to abstract
+ * Modification, where the  "abstract" representation has been changed
+ * already. However, the eDryRun value is not allowed (it is ignored) for
+ * the issuePMod parameter for the "physical" representation, as there is no
+ * reasonable use for this. Basically, this makes eDryRun equivalent to
+ * eNoMod.
  *  @{ */
 
  /// change the costs of a contiguous interval of arcs
@@ -1173,24 +1128,24 @@ public:
 /*--------------------------------------------------------------------------*/
  /// loads the CFL instance from file in standard format
  /** Protected method for loading a CapacitatedFacilityLocationBlock out of
-  * a std::istream (which is what operator>> is dispatched to.
-  * The std::istream is assumed to contain the description of a CFL instance
-  * in the standard format, which is the following:
+  * a std::istream (which is what operator>> is dispatched to). The
+  * std::istream is assumed to contain the description of a CFL instance in
+  * the "ORLib standard format", which is the following:
   *
   * number of potential facility locations (m)
   * number of customers (n)
   *
-  * for each potential facility location j (j = 1, ..., m): 
-  *     capacity of facility j, if opened
-  *     fixed cost to open facility j
+  * for each potential facility location i (i = 1, ..., m): 
+  *     capacity of facility i, if opened
+  *     fixed cost to open facility i
   *
-  * for each customer i (i = 1, ..., n):
-  *     demand of customer i
-  *     for each potential facility location j (j = 1, ..., m): 
-  *         cost of allocating all of the demand of i to facility j
+  * for each customer j (j = 1, ..., n):
+  *     demand of customer j
+  *     for each potential facility location i (i = 1, ..., m): 
+  *         cost of allocating all of the demand of j to facility i
   *
-  * Unlike the standard format, comments (starting with '#' and taking up
-  * to the following newline) can be added anywhere in the file.
+  * Unlike the standard format, however, comments (starting with '#' and
+  * taking up to the following newline) can be added anywhere in the file.
   *
   * Like load( memory ), if there is any Solver attached to this
   * CapacitatedFacilityLocationBlock then a NBModification (the "nuclear
@@ -1198,7 +1153,7 @@ public:
 
  void load( std::istream &input ) override;
 
-/**@} ----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*--------------------------- PROTECTED FIELDS  ----------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -1209,50 +1164,55 @@ public:
  DVector v_capacity;          ///< vector of facility capacities
  FCVector v_fixed_cost;       ///< vector of facility fixed costs
  DVector v_demand;            ///< vector of customers demands
- TCMatrix v_transp_cost:      ///< matrix of transportation costs
+ TCMatrix v_transp_cost;      ///< matrix of transportation costs
                               /**< The matrix of transportation costs is
 			       * arranged customer-wise, i.e.,
- * v_transp_cost[ i ][ j ] is the *unitary* transportation cost between
+ * v_transp_cost[ j ][ i ] is the *unitary* transportation cost between
  * customer i and facility j. */
 
  unsigned char AR;               ///< bit-wise coded: what abstract is there
                                  /**< The char field AR keeps track of which
 				  * part of the abstract representation has
   * been constructed already, as well as *which formulation* is used.
+  * The second part is coded in the first three bits of AR, as follows.
   * The first part is coded in the first three bits of AR, as follows:
+  * The first two bits encode the "large-scale shape" of the formulatio:
   *
-  * - AR & HasVar: if the Variable have been constructed
-  * - AR & HasObj: if the Objective has been constructed
-  * - AR & HasCns: if the Constraints have been constructed
+  * - ( AR & FormMsk ) == StdForm: the "standard" formulation is used
+  * - ( AR & FormMsk ) == KskForm: the "knapsack" formulation is used
+  * - ( AR & FormMsk ) == FlwForm: the "flow" formulation is used
   *
-  * The following bits (obtained by masking the first three as in AR & 7)
-  * encode which of the different formulations has been constructed, as
-  * follows:
+  * Then, the third bit ( AR & UnSpltF ) is 1 if the formulation is
+  * unsplittable (the X[] are integer).
   *
-  * - ( AR & 7 ) == StdForm: the "standard" formulation is used
-  * - ( AR & 7 ) == ...: ...
+  * The following bits encode which parts of the abstract formulation have
+  * been constructed:
+  *
+  * - AR & HasVar:    if the Variable have been constructed
+  * - AR & HasObj:    if the Objective has been constructed
+  * - AR & HasSatCns: if the customer satisfaction Constraints have been
+  *                   constructed
+  * - AR & HasCapCns: if the capacity Constraints have been constructed
   */
-
- static constexpr unsigned char HasVar = 1;
- ///< first bit of AR == 1 if the Variable have been constructed
- static constexpr unsigned char HasObj = 2;
- ///< second bit of AR == 1 if the Objective has been constructed
- static constexpr unsigned char HasCns = 4;
- ///< third bit of AR == 1 if the Constraints have been constructed
-
- static constexpr unsigned char StdForm = 0;
- ///< the "standard" formulation is used
 
  double f_cond_lower;            ///< conditional lower bound, can be infinite
  double f_cond_upper;            ///< conditional upper bound, can be infinite
- 
- std::vector<ColVariable> x;     ///< the static flow variables
- std::vector<FRowConstraint> E;  ///< the static flow conservation constrs.
- std::vector<LB0Constraint> UB;  ///< the static bound constraints
- 
- std::list<ColVariable> dx;      ///< the dynamic flow variables
- std::list<FRowConstraint> dE;   ///< the dynamic flow conservation constrs.
- std::list<LB0Constraint> dUB;   ///< the dynamic bound constraints
+
+ boost::multi_array< ColVariable , 2 > v_x;  ///< the flow variables
+                                             /**< x is a bi-dimensional array
+				              * of ColVariable representing
+  * transportation; thay is, x[ j ][ i ] is the fraction of demand of
+  * customer j served by facility i. */
+
+ std::vector< ColVariable > v_y;  ///< the design variables
+                                  /**< y is the vector of ColVariable
+				   * representing facility opening. */
+
+ std::vector< FRowConstraint> v_sat;  ///< the customer satisfaction constrs.
+
+ std::vector< FRowConstraint> v_cap;  ///< the facility capacity constraints
+
+ std::list< FRowConstraint > v_sfc;  ///< the strong forcing constraints
 
  FRealObjective c;               ///< the (linear) objective function
 
@@ -1265,9 +1225,10 @@ public:
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
-/// register CapacitatedFacilityLocationBlock methods into the method factories
+/// register CapacitatedFacilityLocationBlock methods in the method factories
 /** Although in general private methods should not be commented, this one is
- * because it does the registration of the following CapacitatedFacilityLocationBlock methods:
+ * because it does the registration of the following
+ * CapacitatedFacilityLocationBlock methods:
  *
  * - chg_costs() (both range and subset version)
  *
@@ -1295,12 +1256,13 @@ public:
   //                            MS_dbl_rngd::args() );
   //
 
+  /*!!
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
    "CapacitatedFacilityLocationBlock::chg_costs",
    &CapacitatedFacilityLocationBlock::chg_costs );
 
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
-   const bool >(
+   bool >(
    "CapacitatedFacilityLocationBlock::chg_costs" ,
    &CapacitatedFacilityLocationBlock::chg_costs );
 
@@ -1309,7 +1271,7 @@ public:
    &CapacitatedFacilityLocationBlock::chg_ucaps );
 
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
-   const bool >(
+   bool >(
    "CapacitatedFacilityLocationBlock::chg_ucaps",
    &CapacitatedFacilityLocationBlock::chg_ucaps );
 
@@ -1324,6 +1286,7 @@ public:
   register_method< CapacitatedFacilityLocationBlock , Subset && , bool >(
    "CapacitatedFacilityLocationBlock::open_arcs" ,
    &CapacitatedFacilityLocationBlock::open_arcs );
+   !!*/
   }
 
 /*--------------------------------------------------------------------------*/

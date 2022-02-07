@@ -41,6 +41,7 @@ using namespace SMSpp_di_unipi_it;
 /*-------------------------------- TYPES -----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+/*
 using Index = Block::Index;
 using c_Index = Block::c_Index;
 
@@ -49,12 +50,40 @@ using c_Range = Block::c_Range;
 
 using Subset = Block::Subset;
 using c_Subset = Block::c_Subset;
-
-using FNumber = CapacitatedFacilityLocationBlock::FNumber;
+*/
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- CONSTANTS -------------------------------*/
 /*--------------------------------------------------------------------------*/
+
+static constexpr unsigned char FormMsk = ~3;
+// mask for removing the first four bits and only leaving the formulation
+// (irrespective of if it is splittable or not)
+
+static constexpr unsigned char StdForm = 0;
+// the "standard" formulation is used
+
+static constexpr unsigned char KskForm = 1;
+// the "knapsack" formulation is used
+
+static constexpr unsigned char FlwForm = 2;
+// the "flow" formulation is used
+
+static constexpr unsigned char UnSpltF = 4;
+// fourth bit of AR == 1 if the problem is unsplittable (the X[] are integer)
+
+static constexpr unsigned char HasVar = 8;
+// 4th bit of AR == 1 if the Variable have been constructed
+
+static constexpr unsigned char HasObj = 16;
+// 5th bit of AR == 1 if the Objective has been constructed
+
+static constexpr unsigned char HasSatCns = 32;
+// 6th bit of AR == 1 if the customer satisfaction Constraints are constructed
+
+static constexpr unsigned char HasCapCns = 64;
+// 7th bit of AR == 1 if the capacity Constraints are constructed
+
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- FUNCTIONS -------------------------------*/
@@ -137,231 +166,117 @@ SMSpp_insert_in_factory_cpp_1( CapacitatedFacilityLocationBlock );
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::load( Index n , Index m , c_Subset & pEn , c_Subset & pSn ,
-		     c_Vec_FNumber & pU , c_Vec_CNumber & pC ,
-		     c_Vec_FNumber & pB , Index dn , Index dm ,
-		     Index mdn , Index mdm )
+void CapacitatedFacilityLocationBlock::load( Index n , Index m ,
+					     DVector && Q , FCVector && F ,
+					     DVector && D , TCMatrix && C )
 {
+ static const std::string _prfx = "CapacitatedFacilityLocationBlock::load: ";
+
  // sanity checks - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( pSn.size() < m )
-  throw( std::invalid_argument( "pSn too small" ) );
+ if( m == 0 )
+  throw( std::invalid_argument( _prfx + "number of facilities too small" ) );
 
- if( pEn.size() < m )
-  throw( std::invalid_argument( "pEn too small" ) );
+ if( n == 0 )
+  throw( std::invalid_argument( _prfx + "number of customers too small" ) );
 
- if( ( pC.size() > 0 ) && ( pC.size() < m ) )
-  throw( std::invalid_argument( "pC nonempty but too small" ) );
+ if( Q.size() != m )
+  throw( std::invalid_argument( _prfx + "capacity vector has wrong size" ) );
 
- if( ( pU.size() > 0 ) && ( pU.size() < m ) )
-  throw( std::invalid_argument( "pU nonempty but too small" ) );
+ if( F.size() != m )
+  throw( std::invalid_argument( _prfx + "opening cost vector has wrong size"
+				) );
+ if( D.size() != n )
+  throw( std::invalid_argument( _prfx + "demands vector has wrong size" ) );
 
- if( ( pB.size() > 0 ) && ( pB.size() < n ) )
-  throw( std::invalid_argument( "pB nonempty but too small" ) );
+ auto shp = C.shape();
+ if( ( shp[ 0 ] != n ) || ( shp[ 1 ] != m ) )
+  throw( std::invalid_argument( _prfx +
+			   "transportation cost matrix has wrong shape"	) );
 
- // erase previous instance, if any- - - - - - - - - - - - - - - - - - - - - -
+ // erase existing abstract representation, if any - - - - - - - - - - - - - -
 
- if( MaxNNodes || get_MaxNArcs() )
+ if( AR & 7 )
   guts_of_destructor();
 		   
- // copy over problem data - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // move over problem data - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- NNodes = n;
- NArcs = m;
- MaxNNodes = NNodes + ( mdn > dn ? mdn - dn : 0 );
- c_Index MaxNArcs = NArcs + ( mdm > dm ? mdm - dm : 0 );
- NStaticNodes = dn > n ? 0 : n - dn;
- NStaticArcs = dm > NArcs ? 0 : NArcs - dm;
+ f_n_facilities = m;
+ f_n_customers = n;
 
- SN.resize( MaxNArcs );
- if( std::any_of( pSn.begin() , pSn.begin() + m ,
-		  [ n ]( c_Index sn ) { return( ( sn < 1 ) || ( sn > n ) ); }
-		  ) )
-  throw( std::invalid_argument( "wrong starting node" ) );
- std::copy( pSn.begin() , pSn.begin() + m , SN.begin() );
+ v_capacity = std::move( Q );
+ v_fixed_cost = std::move( F );
+ v_demand = std::move( D );
+ v_transp_cost = std::move( C );
 
- EN.resize( MaxNArcs );
- if( std::any_of( pEn.begin() , pEn.begin() + m ,
-		  [ n ]( c_Index en ) { return( ( en < 1 ) || ( en > n ) ); }
-		  ) )
-  throw( std::invalid_argument( "wrong ending node" ) );
- std::copy( pEn.begin() , pEn.begin() + m , EN.begin() );
-
- if( std::any_of( pC.begin() , pC.begin() + m ,
-		  []( c_CNumber ci ) { return( ci != 0 ); } ) ) {
-  C.resize( MaxNArcs );
-  std::copy( pC.begin() , pC.begin() + m , C.begin() );
-  }
- else
-  C.clear();
-
- if( std::any_of( pU.begin() , pU.begin() + m ,
-		  []( c_FNumber ui ) { return( ui < Inf<FNumber>() ); } ) ) {
-  U.resize( MaxNArcs );
-  std::copy( pU.begin() , pU.begin() + m , U.begin() );
-  }
- else
-  U.clear();
-
- if( std::any_of( pB.begin() , pB.begin() + n ,
-		  []( c_FNumber bi ) { return( bi != 0 ); } ) ) {
-  B.resize( MaxNNodes );
-  std::copy( pB.begin() , pB.begin() + n , B.begin() );
-  }
- else
-  B.clear();
-
- // allocate flow variables - - - - - - - - - - - - - - - - - - - - - - - - -
-
- generate_abstract_variables();
+ f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
 
  // throw Modification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // note: this is a NBModification, the "nuclear option"
 
  if( anyone_there() )
-  add_Modification( std::make_shared<NBModification>( this ) );
-
- // the arc whose cost is infinite has to be closed,
- // in addition the cost has to be set to 0 - - - - - - - - - - - - - - - - -
-
- for( Index j = 0; j < C.size() ; j++ )
-  if( C[j] >= Inf<double>() ) {
-   close_arc(j,eNoMod);
-   C[j] = 0;
-   }
+  add_Modification( std::make_shared< NBModification >( this ) );
 
  }  // end( CapacitatedFacilityLocationBlock::load( memory ) )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::load( std::istream &input )
+void CapacitatedFacilityLocationBlock::load( std::istream & input )
 {
- // erase previous instance, if any- - - - - - - - - - - - - - - - - - - - - -
+ static const std::string _prfx = "CapacitatedFacilityLocationBlock::load: ";
 
- if( MaxNNodes || get_MaxNArcs() )
+ // erase existing abstract representation, if any - - - - - - - - - - - - - -
+
+ if( AR & 7 )
   guts_of_destructor();
 
  // read first non-comment line - - - - - - - - - - - - - - - - - - - - - - -
 
- char c;
- if( ! ( input >> eatDMXcomments >> c ) )
-  throw( std::invalid_argument( "error reading the input stream" ) );
+ input >> eatcomments >> f_n_facilities;
+ if( input.fail() )
+  goto( input_failure );
 
- if( c != 'p' )
-  throw( std::invalid_argument( "format error in the input stream" ) );
+ if( f_n_facilities == 0 )
+  throw( std::invalid_argument( _prfx + "number of facilities too small" ) );
 
- input >> eatDMXcomments;
- input.ignore( 3 , ' ' );  // skip "min"
+ input >> eatcomments >> f_n_customers;
+ if( input.fail() )
+  goto( input_failure );
 
- if( ! ( input >> eatDMXcomments >> NNodes ) )
-  throw( std::invalid_argument( "LoadDMX: error reading number of nodes" ) );
+ if( f_n_customers == 0 )
+  throw( std::invalid_argument( _prfx + "number of customers too small" ) );
 
- Index tm;
- if( ! ( input >> eatDMXcomments >> NArcs ) )
-  throw( std::invalid_argument( "LoadDMX: error reading number of arcs" ) );
+ v_capacity.resize( f_n_facilities );
+ v_fixed_cost.resize( f_n_facilities );
 
- // allocate memory - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // for( each facility )
+  input >> eatcomments >> Q[ i ];
+  if( input.fail() )
+   goto( input_failure );
 
- SN.resize( NArcs );
- EN.resize( NArcs );
- C.assign( NArcs , 0 );
- U.assign( NArcs , Inf<FNumber>() );
- B.assign( NNodes , 0 );
+  input >> eatcomments >> F[ i ];
+  if( input.fail() )
+   goto( input_failure );
 
- NStaticNodes = MaxNNodes = NNodes;
- NStaticArcs = NArcs;
+  }  // end( for( each facility ) )
 
- // read problem data - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ v_demand.resize( f_n_customers );
+ v_transp_cost.resize( boost::extents[ f_n_customers ][ f_n_facilities ] );
 
- Index i = 0;  // arc counter
- for(;;) {
-  if( ! ( input >> eatDMXcomments >> c ) )  // read next descriptor
-   break;                                   // if none, end
+ for( Index j = 0 ; j < f_n_customers ; ++j ) {  // for( each customer )
+  input >> eatcomments >> v_demand[ j ];
+  if( input.fail() )
+   goto( input_failure );
 
-  switch( c ) {
-   case( 'n' ):  // description of a node
-    Index j;
-    if( ! ( input >> j ) )
-     throw( std::invalid_argument( "error reading node name" ) );
+  for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // for( each facility )
+   input >> eatcomments >> v_transp_cost[ j ][ i ];
+   if( input.fail() )
+    goto( input_failure );
+  
+   }  // end( for( each facility ) )
+  }  // end( for( each customer ) )
 
-    if( ( j < 1 ) || ( j > NNodes ) )
-     throw( std::invalid_argument( "invalid node name" ) );
-
-    FNumber Dfctj;
-    if( ! ( input >> Dfctj ) )
-     throw( std::invalid_argument( "error reading deficit" ) );
-
-    B[ j - 1 ] -= Dfctj;
-    break;
-
-   case( 'a' ):  // description of an arc
-    if( i == NArcs )
-     throw( std::invalid_argument( "too many arc descriptors" ) );
-
-    if( ! ( input >> SN[ i ] ) )
-     throw( std::invalid_argument( "error reading start node" ) );
-
-    if( ( SN[ i ] < 1 ) || ( SN[ i ] > NNodes ) )
-     throw( std::invalid_argument( "invalid start node" ) );
-
-    if( ! ( input >> EN[ i ] ) )
-     throw( std::invalid_argument( "error reading end node" ) );
-
-    if( ( EN[ i ] < 1 ) || ( EN[ i ] > NNodes ) )
-     throw( std::invalid_argument( "LoadDMX: invalid end node" ) );
-
-    if( SN[ i ] == EN[ i ] )
-     throw( std::invalid_argument( "self-loops not permitted" ) );
-
-    FNumber LB;
-    if( ! ( input >> LB ) )
-     throw( std::invalid_argument( "error reading lower bound" ) );
-
-    U[ i ] = read_UB( input );
-
-    if( ! ( input >> C[ i ] ) )
-     throw( std::invalid_argument( "error reading arc cost" ) );
-
-    if( U[ i ] < LB )
-     throw( std::invalid_argument( "lower bound > upper bound" ) );
-
-    if( LB > 0 ) {
-     if( U[ i ] < Inf<CapacitatedFacilityLocationBlock::FNumber>() )
-      U[ i ] -= LB;
-     B[ SN[ i ] - 1 ] += LB;
-     B[ EN[ i ] - 1 ] -= LB;
-     }
-    i++;
-    break; 
-
-   default:  // invalid code- - - - - - - - - - - - - - - - - - - - - - - - -
-    throw( std::invalid_argument( "invalid DMX code" ) );
-
-   }  // end( switch( c ) )
-  }  // end( for( ever ) )
-
- if( i < NArcs )
-  throw( std::invalid_argument( "too few arc descriptors" ) );
-
- f_cond_lower = NAN;  // reset conditional bounds
-
- // simplify out the deta structures- - - - - - - - - - - - - - - - - - - - -
-
- if( std::all_of( C.begin() , C.end() ,
-		  []( c_CNumber ci ) { return( ci == 0 ); } ) )
-  C.clear();
-
- if( std::all_of( B.begin() , B.end() ,
-		  []( c_FNumber bi ) { return( bi == 0 ); } ) )
-  B.clear();
-
- if( std::all_of( U.begin() , U.end() ,
-		  []( c_FNumber ui ) { return( ui == Inf<FNumber>() ); } ) )
-  U.clear();
- 
- // allocate flow variables - - - - - - - - - - - - - - - - - - - - - - - - -
-
- generate_abstract_variables();
+ f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
 
  // issue Modification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // note: this is a NBModification, the "nuclear option"
@@ -369,343 +284,348 @@ void CapacitatedFacilityLocationBlock::load( std::istream &input )
  if( anyone_there() )
   add_Modification( std::make_shared<NBModification>( this ) );
 
- // the arc whose cost is infinite has to be closed,
- // in addition the cost has to be set to 0 - - - - - - - - - - - - - - - - -
+ return;
 
- for( Index j = 0; j < C.size() ; j++ )
-  if( C[j] >= Inf<double>() ) {
-   close_arc(j,eNoMod);
-   C[j] = 0;
-   }
+ input_failure:
+
+ throw( std::logic_error( _prfx + "error reading from stream" ) );
 
  }  // end( CapacitatedFacilityLocationBlock::load( istream ) )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::deserialize( const netCDF::NcGroup & group )
+void CapacitatedFacilityLocationBlock::deserialize(
+					      const netCDF::NcGroup & group )
 {
- // erase previous instance, if any- - - - - - - - - - - - - - - - - - - - - -
+ static const std::string _prfx =
+                            "CapacitatedFacilityLocationBlock::deserialize: ";
 
- if( MaxNNodes || get_MaxNArcs() )
+ // erase existing abstract representation, if any - - - - - - - - - - - - - -
+
+ if( AR & 7 )
   guts_of_destructor();
 		   
  // read problem data- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- netCDF::NcDim nn = group.getDim( "NNodes" );
- if( nn.isNull() )
-  throw( std::logic_error( "NNodes dimension is required" ) );
- NNodes = nn.getSize();
+ auto nf = group.getDim( "NFacilities" );
+ if( nf.isNull() )
+  throw( std::logic_error( _prfx + "NFacilities dimension is required" ) );
+ f_n_facilities = nf.getSize();
+ if( f_n_facilities == 0 )
+  throw( std::invalid_argument( _prfx + "number of facilities too small" ) );
 
- netCDF::NcDim na = group.getDim( "NArcs" );
- if( na.isNull() )
-  throw( std::logic_error( "NArcs dimension is required" ) );
- NArcs = na.getSize();
+ auto nc = group.getDim( "NCustomers" );
+ if( nc.isNull() )
+  throw( std::logic_error( _prfx + "NCustomers dimension is required" ) );
+ f_n_customers = nc.getSize();
+ if( f_n_customers == 0 )
+  throw( std::invalid_argument( _prfx + "number of customers too small" ) );
 
- Index DynNNodes = 0;
- netCDF::NcDim dn = group.getDim( "DynNNodes" );
- if( dn.isNull() )
-  NStaticNodes = NNodes;
- else {
-  DynNNodes = dn.getSize();
-  NStaticNodes = DynNNodes > NNodes ? 0 : NNodes - DynNNodes;
-  }
-
- Index DynNArcs = 0;
- netCDF::NcDim dm = group.getDim( "DynNArcs" );
- if( dm.isNull() )
-  NStaticArcs = NArcs;
- else {
-  DynNArcs = dm.getSize();
-  NStaticArcs = DynNArcs > NArcs ? 0 : NArcs - DynNArcs;
-  }
-
- MaxNNodes = NNodes;
- netCDF::NcDim mdn = group.getDim( "MaxDynNNodes" );
- if( ( ! mdn.isNull() ) && ( mdn.getSize() > DynNNodes ) )
-  MaxNNodes += mdn.getSize() - DynNNodes;
-
- Index MaxNArcs = NArcs;
- netCDF::NcDim mdm = group.getDim( "MaxDynNArcs" );
- if( ( ! mdm.isNull() ) && ( mdm.getSize() > DynNArcs ) )
-  MaxNArcs += mdm.getSize() - DynNArcs;
+ auto fq = group.getVar( "FacilityCapacity" );
+ if( fq.isNull() )
+  throw( std::logic_error( _prfx + "FacilityCapacity not found" ) );
+ auto fqs = ::get_sizes_dimensions( fq );
+ if( ( fqs.size() != 1 ) || ( fqs[ 0 ] != f_n_facilities ) )
+  throw( std::logic_error( _prfx + "FacilityCapacity has wrong size" ) );
  
- netCDF::NcVar sn = group.getVar( "SN" );
- if( sn.isNull() )
-  throw( std::logic_error( "Starting Nodes not found" ) );
+ v_capacity.resize( f_n_facilities );
+ fq.getVar( v_capacity.data() );
 
- SN.resize( MaxNArcs );
+ auto fc = group.getVar( "FacilityCost" );
+ if( fc.isNull() )
+  throw( std::logic_error( _prfx + "FacilityCost not found" ) );
+ auto fcs = ::get_sizes_dimensions( fc );
+ if( ( fcs.size() != 1 ) || ( fcs[ 0 ] != f_n_facilities ) )
+  throw( std::logic_error( _prfx + "FacilityCost has wrong size" ) );
+ 
+ v_fixed_cost.resize( f_n_facilities );
+ fq.getVar( v_fixed_cost.data() );
 
- sn.getVar( SN.data() );
+ auto cd = group.getVar( "CustomerDemand" );
+ if( cd.isNull() )
+  throw( std::logic_error( _prfx + "CustomerDemand not found" ) );
+ auto cds = ::get_sizes_dimensions( cd );
+ if( ( cds.size() != 1 ) || ( cds[ 0 ] != f_n_customers ) )
+  throw( std::logic_error( _prfx + "CustomerDemand has wrong size" ) );
+ 
+ v_demand.resize( f_n_customers );
+ cd.getVar( v_demand.data() );
 
- netCDF::NcVar en = group.getVar( "EN" );
- if( en.isNull() )
-  throw( std::logic_error( "Ending Nodes not found" ) );
+ auto tc = group.getVar( "TransportationCost" );
+ if( tc.isNull() )
+  throw( std::logic_error( _prfx + "TransportationCost not found" ) );
+ auto tcs = ::get_sizes_dimensions( tc );
+ if( ( tcs.size() != 2 ) ||
+     ( tcs[ 0 ] != f_n_customers ) || ( tcs[ 1 ] != f_n_facilities ) )
+  throw( std::logic_error( _prfx + "TransportationCost has wrong size" ) );
 
- EN.resize( MaxNArcs );
- en.getVar( EN.data() );
+ v_transp_cost.resize( tcs );
+ tc.getVar( std::vector< std::size_t >( 2 , 0 ) , tcs ,
+	    v_transp_cost.data() );
 
- netCDF::NcVar cst = group.getVar( "C" );
- if( ! cst.isNull() ) {
-  C.resize( MaxNArcs );
-  cst.getVar( C.data() );
-  if( std::all_of( C.begin() , C.begin() + NArcs ,
-		   []( c_CNumber ci ) { return( ci == 0 ); } ) )
-   C.clear();
-  }
-
- netCDF::NcVar cap = group.getVar( "U" );
- if( ! cap.isNull() ) {
-  U.resize( MaxNArcs );
-  cap.getVar( U.data() );
-  if( std::all_of( U.begin() , U.begin() + NArcs ,
-		   []( c_FNumber ui ) { return( ui == Inf<FNumber>() ); } ) )
-   U.clear();
-  }
-
- netCDF::NcVar dfc = group.getVar( "B" );
- if( ! dfc.isNull() ) {
-  B.resize( MaxNNodes );
-  std::vector<size_t> countn = { NNodes };
-  dfc.getVar( B.data() );
-  if( std::all_of( B.begin() , B.begin() + NNodes ,
-		   []( c_FNumber bi ) { return( bi == 0 ); } ) )
-   B.clear();
-  }
-
- f_cond_lower = NAN;  // reset conditional bounds
-
- // allocate flow variables - - - - - - - - - - - - - - - - - - - - - - - - -
-
- generate_abstract_variables();
+ f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
 
  // call the method of Block- - - - - - - - - - - - - - - - - - - - - - - - -
  // inside this the NBModification, the "nuclear option",  is issued
 
  Block::deserialize( group );
 
- // the arc whose cost is infinite has to be closed,
- // in addition the cost has to be set to 0 - - - - - - - - - - - - - - - - -
-
- for( Index j = 0; j < C.size() ; j++ )
-  if( C[j] >= Inf<double>() ) {
-   close_arc(j,eNoMod);
-   C[j] = 0;
-   }
-
  }  // end( CapacitatedFacilityLocationBlock::deserialize )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::generate_abstract_variables( Configuration *stvv )
+void CapacitatedFacilityLocationBlock::generate_abstract_variables(
+						       Configuration * stvv )
 {
  if( AR & HasVar )  // the variables are there already
   return;           // nothing to do
 
- if( HasStaticX() ) {
-  x.resize( get_NStaticArcs() );
-  for( auto & var : x )
-   var.is_positive( true , eNoBlck );
+ AR |= HasVar;      // variables will be constructed now once and for all
 
-  add_static_variable( x );
+ Index wf = 0;
+ if( ( ! stvv ) && f_BlockConfig )
+  stvv = f_BlockConfig->f_static_variables_Configuration;
+ if( auto sci = dynamic_cast< SimpleConfiguration< int > * >( stvv ) )
+  wf = sci->f_value;
+ 
+ if( ! ( wf & 3 ) ) {  // "natural formulation" (NF)- - - - - - - - - - - - -
+                       // - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // AR |= StdForm;  does nothing
+  v_y.resize( f_n_facilities );
+  for( auto yi : v_y ) {
+   yi.set_type( ColVariable::kBinary );
+   yi.set_Block( this );
+   }
+  add_static_variable( v_y , "y" );
+
+  v_x.resize( { f_n_customers , f_n_facilities } );
+  auto xt = ColVariable::kPosUnitary;
+  if( wf & 4 ) {  // unsplittable version
+   AR |= UnSpltF;
+   xt = ColVariable::kBinary;
+   }
+
+  for( auto xji : v_x ) {
+   xji.set_type( xt );
+   xji.set_Block( this );
+   }
+  add_static_variable( v_x , "x" );
+
+  return:
   }
 
- if( MayHaveDynX() ) {
-  dx.resize( get_NArcs() - get_NStaticArcs() );
-  for( auto & var : dx )
-   var.is_positive( true , eNoBlck );
+ if( ( wf & 3 ) == 1 ) {  // "knapasck formulation" (KF)- - - - - - - - - - -
+                          //- - - - - - - - - - - - - - - - - - - - - - - - -
+  AR |= KskForm;
+  // construct one knapsack problem for each facility
+  v_Block.resize( f_n_facilities );
 
-  add_dynamic_variable( dx );
-  } 
+  BinaryKnapsackBlock::doubleVec W( f_n_customers + 1 );
+  BinaryKnapsackBlock::doubleVec C( f_n_customers + 1 );
+  BinaryKnapsackBlock::boolVec I;
 
- AR |= HasVar;
+  if( wf & 4 ) {  // unsplittable version
+   AR |= UnSpltF;
+   I.resize( f_n_customers + 1 , true );
+   }
+  else {
+   I.resize( f_n_customers + 1 , false );
+   I[ f_n_customers ] = true;
+   }
+
+  for( Index i = 0 ; i < f_n_facilities ; ++i ) {
+   for( Index j = 0 ; j < f_n_customers ; ++j ) {
+    W[ j ] = v_demand[ j ];
+    C[ j ] = v_transp_cost[ j ][ i ] * v_demand[ j ];
+    }
+   W[ f_n_customers ] = - v_capacity[ i ];
+   C[ f_n_customers ] = v_fixed_cost[ i ];
+
+   auto ki = new BinaryKnapsackBlock( this );
+   ki->load( f_n_customers + 1 , 0 , W , P , I );
+   ki->generate_abstract_variables();
+   v_Block[ i ] = ki;
+   }
+
+  return:
+  }
+
+ if( ( wf & 3 ) == 2 ) {  // "flow formulation" (FF)- - - - - - - - - - - - -
+                          //- - - - - - - - - - - - - - - - - - - - - - - - -
+  AR |= FlwForm;
+  throw( std::invalid_argument( "flow formulation not implemented yet" ) );
+
+  return:
+  }
+
+ throw( std::invalid_argument(
+	   "CapacitatedFacilityLocationBlock::generate_abstract_variables: "
+	   "invalid formulation" ) );
 
  }  // end( CapacitatedFacilityLocationBlock::generate_abstract_variables )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::generate_abstract_constraints( Configuration *stcc )
+void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
+						       Configuration * stcc )
 {
- if( ! ( AR & HasFlw ) ) {
-  // count number of nonzeroes in each constraint, i.e., #FS( i ) + #BS( i )
-  Subset count( get_NNodes() );
- 
-  for( Index i = 0 ; i < get_NStaticArcs() ; ++i ) {
-   count[ SN[ i ] - 1 ]++;
-   count[ EN[ i ] - 1 ]++;
-   }
+ const static std::string _prfx =
+         "CapacitatedFacilityLocationBlock::generate_abstract_constraints: ";
 
-  for( Index i = NStaticArcs ; i < get_NArcs() ; ++i )
-   if( ! is_deleted( i ) ) {
-    count[ SN[ i ] - 1 ]++;
-    count[ EN[ i ] - 1 ]++;
+ if( ! ( AR & HasVar ) )
+  throw( std::logic_error( _prfx + "generate_abstract_variables not called"
+			   ) );
+ Index wc = 0;
+ if( ( ! stcc ) && f_BlockConfig )
+  stvv = f_BlockConfig->f_static_variables_Configuration;
+ if( auto sci = dynamic_cast< SimpleConfiguration< int > * >( stcc ) )
+  wc = sci->f_value;
+
+ if( ( AR & FormMsk ) == StdForm ) {  // "natural formulation" (NF) - - - - -
+                                      //- - - - - - - - - - - - - - - - - - -
+  if( ( ! ( wc & 1 ) && ( ! ( Ar & HasSatCns ) ) ) ) {
+   // construct customer satisfaction constraints (not there already)
+   v_sat.resize( f_n_customers );
+   for( Index j = 0 ; j < f_n_customers ; ++j ) {
+    std::vector< LinearFunction::v_coeff_pair > coeffs( f_n_facilities );
+
+    for( Index i = 0 ; i < f_n_facilities ; ++i )
+     coeffs[ i ] = std::make_pair( & v_x[ j ][ i ] , double( 1 ) );
+
+    v_sat[ j ].set_both( 1 );
+    v_sat[ j ].set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
     }
 
-  // initialize the vectors of coefficients, and reset count[]
-  std::vector< LinearFunction::v_coeff_pair > coeffs( get_NNodes() );
-
-  for( Index i = 0 ; i < get_NNodes() ; ++i ) {
-   coeffs[ i ].resize( count[ i ] );
-   count[ i ] = 0;
+   add_static_constraint( v_sat , "sat" );
+   AR |= HasSatCns;
    }
 
-  // construct the vector of coefficients, static phase
-  Index i = 0;
-  for( ; i < get_NStaticArcs() ; ++i ) {
-   coeffs[ SN[ i ] - 1 ][ count[ SN[ i ] - 1 ]++ ] =
-                                    std::make_pair( &x[ i ] , double( -1 ) );
-   coeffs[ EN[ i ] - 1 ][ count[ EN[ i ] - 1 ]++ ] =
-                                    std::make_pair( &x[ i ] , double( 1 ) );
-   }
+  if( ( ! ( wc & 2 ) ) && ( ! ( Ar & HasCapCns ) ) ) {
+   // construct facility capacity constraints (not there already)
+   v_cap.resize( f_n_facilities );
+   for( Index i = 0 ; i < f_n_facilities ; ++i ) {
+    std::vector< LinearFunction::v_coeff_pair > coeffs( f_n_customers + 1 );
 
-  // construct the vector of coefficients, dynamic phase
-  if( MayHaveDynX() )
-   for( auto dxi = dx.begin() ; i < get_NArcs() ; ++i , ++dxi )
-    if( ! is_deleted( i ) ) {
-     coeffs[ SN[ i ] - 1 ][ count[ SN[ i ] - 1 ]++ ] =
-                                    std::make_pair( &(*dxi) , double( -1 ) );
-     coeffs[ EN[ i ] - 1 ][ count[ EN[ i ] - 1 ]++ ] =
-                                    std::make_pair( &(*dxi) , double( 1 ) );
-     }
+    for( Index j = 0 ; j < f_n_customers ; ++j )
+     coeffs[ j ] = std::make_pair( & v_x[ j ][ i ] , v_demand[ j ] );
 
-  // generate the node-arc incidence matrix - - - - - - - - - - - - - - - - -
-  // each constraint is an equality, i.e., LHS = RHS = B[ i ]
-
-  // static part
-  if( HasStaticE() ) {
-   E.resize( get_NStaticNodes() );
-
-   for( Index i = 0 ; i < get_NStaticNodes() ; ++i ) {
-    E[ i ].set_both( B.empty() ? 0 : B[ i ] );
-    E[ i ].set_function( new LinearFunction( std::move( coeffs[ i ] ) , 0 ) );
+    coeffs[ f_n_customers ] = std::make_pair( & v_y[ i ] ,
+					      - v_capacity[ i ] );
+    v_cap[ j ].set_rhs( 0 );
+    v_cap[ j ].set_lhs( 1 ) = - Inf< RHSValue >();
+    v_cap[ j ].set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
     }
 
-   add_static_constraint( E );
+   add_static_constraint( v_cap , "cap" );
+   AR |= HasCapCns;
    }
 
-  // dynamic part
-  if( MayHaveDynE() ) {
-   dE.resize( get_NNodes() - get_NStaticNodes() );
+  return;
+  }
 
-   Index i = get_NStaticNodes();
-   for( auto & cnst : dE ) {
-    cnst.set_both( B.empty() ? 0 : B[ i ] );
-    cnst.set_function( new LinearFunction( std::move( coeffs[ i++ ] ) , 0 ) );
+ if( ( AR & FormMsk ) == KskForm ) {  // "knapsack formulation" (KF)- - - - -
+                                      //- - - - - - - - - - - - - - - - - - -
+  if( ( ! ( wc & 1 ) && ( ! ( AR & HasSatCns ) ) ) ) {
+   // construct customer satisfaction constraints (not there already)
+   v_sat.resize( f_n_customers );
+   for( Index j = 0 ; j < f_n_customers ; ++j ) {
+    std::vector< LinearFunction::v_coeff_pair > coeffs( f_n_facilities );
+
+    for( Index i = 0 ; i < f_n_facilities ; ++i )
+     coeffs[ i ] = std::make_pair(
+	static_cast< BinaryKnapsackBlock * >( v_Block[ i ] )->get_Var( j ) ,
+	double( 1 ) );
+
+    v_sat[ j ].set_both( 1 );
+    v_sat[ j ].set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
     }
 
-   add_dynamic_constraint( dE );
+   add_static_constraint( v_sat , "sat" );
+   AR |= HasSatCns;
    }
 
-  AR |= HasFlw;
-  }
+  if( ( ! ( wc & 2 ) ) && ( ! ( AR & HasCapCns ) ) ) {
+   // construct facility capacity constraints (not there already)
+   // these are just the constraint in the BinaryKnapsackBlock
+   for( auto ki : v_Block )
+    ki->generate_abstract_constraints();
 
- // generate the bound constraints- - - - - - - - - - - - - - - - - - - - - -
-
- if( AR & HasBnd )  // bound constraints there already
-  return;           // nothing to do
-
- if( U.empty() ) {
-  // if upper bounds are not there and the Configuration says so, the
-  // LB0Constraintare not constructed
-
-  auto tstcc = dynamic_cast<SimpleConfiguration<int> *>( stcc );
-
-  if( ( ! tstcc ) && f_BlockConfig &&
-      f_BlockConfig->f_static_constraints_Configuration )
-   tstcc = dynamic_cast<SimpleConfiguration<int> *>(
-                         f_BlockConfig->f_static_constraints_Configuration );
-  if( tstcc && ( tstcc->f_value != 0 ) )
-   return;
-  }
-
- // static part
- if( HasStaticX() ) {
-  UB.resize( get_NStaticArcs() );
-  for( Index i = 0 ; i < get_NStaticArcs() ; ++i ) {
-   UB[ i ].set_variable( & x[ i ] , eNoBlck );
-   UB[ i ].set_rhs( U[ i ] , eNoBlck );
+   AR |= HasCapCns;
    }
 
-  add_static_constraint( UB );
+  return;
   }
 
- // dynamic part
- if( MayHaveDynX() ) {
-  dUB.resize( get_NArcs() - get_NStaticArcs() );
+ // else it is the "flow formulation" (FF)- - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  auto dxi = dx.begin();
-  auto ui = U.begin() + get_NStaticArcs();
-  for( auto & cnst : dUB ) {
-   cnst.set_variable( &(*(dxi++)) , eNoBlck );
-   cnst.set_rhs( *(ui++) , eNoBlck );
-   }
+ throw( std::logic_error( _prfx + "flow formulation not implemented yet" ) );
 
-  add_dynamic_constraint( dUB );
-  }
-
- AR |= HasBnd;
-
+ /*!!
  #if CHECK_DS
   CheckAbsVSPhys();
  #endif
+ !!*/
 
  }  // end( CapacitatedFacilityLocationBlock::generate_abstract_constraints )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::generate_objective( Configuration *objc )
+void CapacitatedFacilityLocationBlock::generate_objective(
+						       Configuration * objc )
 {
+ const static std::string _prfx =
+                    "CapacitatedFacilityLocationBlock::generate_objective: ";
+ 
  if( AR & HasObj )  // the objective is there already
   return;           // cowardly (and silently) return
 
- // initialize objective function - - - - - - - - - - - - - - - - - - - - - -
+ if( ! ( AR & HasVar ) )
+  throw( std::logic_error( _prfx + "generate_abstract_variables not called"
+			   ) );
+ 
+ AR |= HasObj;      // Objective will be constructed now once and for all
 
- LinearFunction::v_coeff_pair p( get_NArcs() );
+ if( ( AR & FormMsk ) == StdForm ) {  // "natural formulation" (NF) - - - - -
+                                      //- - - - - - - - - - - - - - - - - - -
 
- // construct a "dense" LinearFunction- - - - - - - - - - - - - - - - - - - -
+  // construct a "dense" LinearFunction
+  LinearFunction::v_coeff_pair p( f_n_facilities * ( f_n_customers + 1 ) );
+  auto pi = p.begin();
 
- Index i = 0;
+  // first the Y[ i ] variables
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   *(pi++) = std::make_pair( & v_y[ i ] , v_fixed_cost[ i ] );
 
- // static part
- if( HasStaticX() ) {
-  if( C.empty() )
-   for( ; i < get_NStaticArcs() ; ++i ) {
-    p[ i ].first = &x[ i ];
-    p[ i ].second = 0;
-    }
-  else
-   for( ; i < get_NStaticArcs() ; ++i ) {
-    p[ i ].first = &x[ i ];
-    p[ i ].second = C[ i ];
-    }
+  // then the X[ j ][ i ] ones
+  for( Index j = 0 ; j < f_n_customers ; ++j )
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    *(pi++) = std::make_pair( & v_x[ j ][ i ] ,
+			      v_transp_cost[ j ][ i ] * v_demand[ j ] );
+
+  c.set_function( new LinearFunction( std::move( p ) , 0 ) , eNoMod );
+  set_objective( & c , eNoMod );
+  return;
   }
 
- // dynamic part
- if( HasDynamicX() ) {
-  auto dxi = dx.begin();
-  if( C.empty() )
-   for( ; i < get_NArcs() ; ++i ) {
-    p[ i ].first = &(*(dxi++));
-    p[ i ].second = 0;
-    }
-  else
-   for( ; i < get_NArcs() ; ++i ) {
-    p[ i ].first = &(*(dxi++));
-    p[ i ].second = C[ i ];
-    }
+ if( ( AR & FormMsk ) == KskForm ) {  // "knapsack formulation" (KF)- - - - -
+                                      //- - - - - - - - - - - - - - - - - - -
+  for( auto ki : v_Block )    // the Objective is all in the sub-Block
+   ki->generate_objective();
+
+  return;
   }
 
- // ensure no Modification is issued: this may happen in case a CapacitatedFacilityLocationBlock
- // is re-loaded, so that set_objective( c ) had already been called
- c.set_function( new LinearFunction( std::move( p ) , 0 ) , eNoMod );
- c.set_Block( this );
+ // else it is the "flow formulation" (FF)- - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- set_objective( & c , eNoMod );
+ throw( std::logic_error( _prfx + "flow formulation not supported yet" ) );
 
- AR |= HasObj;
-
+ /*!!
  #if CHECK_DS
   CheckAbsVSPhys();
  #endif
+ !!*/
 
  }  // end( CapacitatedFacilityLocationBlock::generate_objective )
 
@@ -1142,8 +1062,8 @@ bool CapacitatedFacilityLocationBlock::is_optimal( bool useabstract , Configurat
 /*------------------------- Methods for R3 Blocks --------------------------*/
 /*--------------------------------------------------------------------------*/
 
-Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration *r3bc , Block * base  ,
-				Block * father )
+Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration *r3bc ,
+					      Block * base , Block * father )
 {
  if( r3bc != nullptr )
   throw( std::invalid_argument( "non-nullptr R3B Configuration" ) );
@@ -2011,44 +1931,34 @@ void CapacitatedFacilityLocationBlock::add_Modification( sp_Mod mod , ChnlName c
  }
 
 /*--------------------------------------------------------------------------*/
-/*------------ METHODS FOR LOADING, PRINTING & SAVING THE CapacitatedFacilityLocationBlock ---------*/
+/*---- LOADING, PRINTING & SAVING THE CapacitatedFacilityLocationBlock -----*/
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::serialize( netCDF::NcGroup & group ) const
+void CapacitatedFacilityLocationBlock::serialize( netCDF::NcGroup & group )
+ const
 {
  // call the method of Block- - - - - - - - - - - - - - - - - - - - - - - - -
 
  Block::serialize( group );
 
- // now the CapacitatedFacilityLocationBlock data - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // now the CapacitatedFacilityLocationBlock data - - - - - - - - - - - - - -
 
- netCDF::NcDim nn = group.addDim( "NNodes" , get_NNodes() );
- netCDF::NcDim na = group.addDim( "NArcs" , get_NArcs() );
+ std::vector< netCDF::NcDim > dims( 2 );
 
- if( get_NNodes() > get_NStaticNodes() )
-  group.addDim( "DynNNodes" , get_NNodes() - get_NStaticNodes() );
+ auto nf = group.addDim( "NFacilities" , f_n_facilities );
+ auto nc = group.addDim( "NCustomers" , f_n_customers );
 
- if( get_NArcs() > get_NStaticArcs() )
-  group.addDim( "DynNArcs" , get_NArcs() - get_NStaticArcs() );
+ ( group.addVar( "FacilityCapacity" , netCDF::NcUint64() , nf )
+   ).putVar( v_capacity.data() );
 
- if( get_MaxNNodes() > get_NStaticNodes() )
-  group.addDim( "MaxDynNNodes" , get_MaxNNodes() - get_NStaticNodes() );
+ ( group.addVar( "FacilityCost" , netCDF::NcUint64() , nf )
+   ).putVar( v_fixed_cost.data() );
 
- if( get_MaxNArcs() > get_NStaticArcs() )
-  group.addDim( "MaxDynNArcs" , get_MaxNArcs() - get_NStaticArcs() );
+ ( group.addVar( "CustomerDemand" , netCDF::NcUint64() , nc )
+   ).putVar( v_demand.data() );
 
- ( group.addVar( "SN" , netCDF::NcUint64() , na ) ).putVar( SN.data() );
-
- ( group.addVar( "EN" , netCDF::NcUint64() , na ) ).putVar( EN.data() );
-
- if( ! C.empty() )
-  ( group.addVar( "C" , netCDF::NcDouble() , na ) ).putVar( C.data() );
-
- if( ! U.empty() )
-  ( group.addVar( "U" , netCDF::NcDouble() , na ) ).putVar( U.data() );
-
- if( ! B.empty() )
-  ( group.addVar( "B" , netCDF::NcDouble() , nn ) ).putVar( B.data() );
+ ::serialize( group , "TransportationCost" , netCDF::NcDouble() ,
+              { nc , nf } , v_transp_cost );
 
  }  // end( CapacitatedFacilityLocationBlock::serialize )
 
@@ -2056,8 +1966,10 @@ void CapacitatedFacilityLocationBlock::serialize( netCDF::NcGroup & group ) cons
 /*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::chg_costs( c_Vec_CNumber_it NCost , Range rng ,
-			  c_ModParam issueMod , c_ModParam issueAMod )
+void CapacitatedFacilityLocationBlock::chg_costs( c_Vec_CNumber_it NCost ,
+						  Range rng ,
+						  ModParam issueMod ,
+						  ModParam issueAMod )
 {
  rng.second = std::min( rng.second , get_NArcs() );
  if( rng.second <= rng.first )  // nothing to change
@@ -3376,45 +3288,52 @@ void CapacitatedFacilityLocationBlock::print( std::ostream &output ) const
 void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
 {
  /* clear() all Constraint to ensure that they do not bother to un-register
-    themselves from Variable that are going to be deleted anyway. Then
-    deletes all the "abstract representation", if any. */
+  * themselves from Variable that are going to be deleted anyway. Then
+  * deletes all the "abstract representation", if any.
+  *
+  * Note that this method is also called to reset the existing "abstract
+  * representation" in case a nwe instance is loaded in the object; yet, even
+  * in this case mo Modification pertaining to Variable and Constraint being
+  * removed is necessary, because a NBModification is issued immediately
+  * afterwards which means that any listening Observer already knows that
+  * none of the previus Variable and Constraint are valid any longer. */
 
- // clear the bound constraints
- for( auto & cnst : UB )
+ for( auto & cnst : v_sat )  // clear the satisfaction constraints
   cnst.clear();
- for( auto & cnst : dUB )
+ for( auto & cnst : v_cap )  // clear the capacity constraints
   cnst.clear();
-
- // clear the flow conservation constraints
- for( auto & cnst : E )
-  cnst.clear();
- for( auto & cnst : dE )
+ for( auto & cnst : v_sfc )  // clear the strong forcin constraints
   cnst.clear();
 
  // then delete them all
- dUB.clear();
- UB.clear();
- dE.clear();
- E.clear();
+ v_sfc.clear();
+ v_cap.clear();
+ v_sat.clear();
 
  // clear the objective function
  c.clear();
 
  // delete all Variable
- dx.clear();
  x.clear();
+ y.clear();
+
+ // delete all sub-Block
+ for( auto bi : v_Block )
+  delete bi;
+
+ v_Block.clear();
 
  // explicitly reset all Constraint and Variable
  // this is done for the case where this method is called prior to re-loading
  // a new instance: if not, the new representation would be added to the
- // (no longer 
+ // (no longer current) abstract representation 
  reset_static_constraints();
  reset_static_variables();
  reset_dynamic_constraints();
  reset_dynamic_variables();
  reset_objective();
 
- AR = 0;
+ AR = 0;  // no longer any abstract representation
 
  }  // end( CapacitatedFacilityLocationBlock::guts_of_destructor )
 
