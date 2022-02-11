@@ -52,6 +52,8 @@ using Subset = Block::Subset;
 using c_Subset = Block::c_Subset;
 */
 
+using v_coeff_pair = LinearFunction::v_coeff_pair;
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- CONSTANTS -------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -84,9 +86,14 @@ static constexpr unsigned char HasSatCns = 32;
 static constexpr unsigned char HasCapCns = 64;
 // 7th bit of AR == 1 if the capacity Constraints are constructed
 
-
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- FUNCTIONS -------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+static BinaryKnapsackBlock * BKB( Block * b ) {
+ return( static_cast< BinaryKnapsackBlock * >( b ) );
+ }
+
 /*----------------------------------------------------------------------------
 
 // returns the number of elements where two vectors differ
@@ -167,8 +174,8 @@ SMSpp_insert_in_factory_cpp_1( CapacitatedFacilityLocationBlock );
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::load( Index n , Index m ,
-					     DVector && Q , FCVector && F ,
-					     DVector && D , TCMatrix && C )
+					     DVector && Q , CVector && F ,
+					     DVector && D , CMatrix && C )
 {
  static const std::string _prfx = "CapacitatedFacilityLocationBlock::load: ";
 
@@ -183,11 +190,19 @@ void CapacitatedFacilityLocationBlock::load( Index n , Index m ,
  if( Q.size() != m )
   throw( std::invalid_argument( _prfx + "capacity vector has wrong size" ) );
 
+ if( std::any_of( Q.begin() , Q.begin() + m ,
+		  []( auto qi ) { return( qi <= 0 ); } ) )
+  throw( std::invalid_argument( _prfx + "non-positive capacity" ) );
+
  if( F.size() != m )
   throw( std::invalid_argument( _prfx + "opening cost vector has wrong size"
 				) );
  if( D.size() != n )
   throw( std::invalid_argument( _prfx + "demands vector has wrong size" ) );
+
+ if( std::any_of( D.begin() , D.begin() + n ,
+		  []( auto di ) { return( di <= 0 ); } ) )
+  throw( std::invalid_argument( _prfx + "non-positive demand" ) );
 
  auto shp = C.shape();
  if( ( shp[ 0 ] != n ) || ( shp[ 1 ] != m ) )
@@ -196,7 +211,7 @@ void CapacitatedFacilityLocationBlock::load( Index n , Index m ,
 
  // erase existing abstract representation, if any - - - - - - - - - - - - - -
 
- if( AR & 7 )
+ if( AR & ~7 )
   guts_of_destructor();
 		   
  // move over problem data - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -227,7 +242,7 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input )
 
  // erase existing abstract representation, if any - - - - - - - - - - - - - -
 
- if( AR & 7 )
+ if( AR & ~7 )
   guts_of_destructor();
 
  // read first non-comment line - - - - - - - - - - - - - - - - - - - - - - -
@@ -250,11 +265,13 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input )
  v_fixed_cost.resize( f_n_facilities );
 
  for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // for( each facility )
-  input >> eatcomments >> Q[ i ];
+  input >> eatcomments >> v_capacity[ i ];
   if( input.fail() )
    goto( input_failure );
+  if( v_capacity[ i ] <= 0 )
+   throw( std::invalid_argument( _prfx + "non-positive capacity" ) );
 
-  input >> eatcomments >> F[ i ];
+  input >> eatcomments >> v_fixed_cost[ i ];
   if( input.fail() )
    goto( input_failure );
 
@@ -267,6 +284,8 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input )
   input >> eatcomments >> v_demand[ j ];
   if( input.fail() )
    goto( input_failure );
+  if( v_demand[ j ] <= 0 )
+   throw( std::invalid_argument( _prfx + "non-positive demand" ) );
 
   for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // for( each facility )
    input >> eatcomments >> v_transp_cost[ j ][ i ];
@@ -302,7 +321,7 @@ void CapacitatedFacilityLocationBlock::deserialize(
 
  // erase existing abstract representation, if any - - - - - - - - - - - - - -
 
- if( AR & 7 )
+ if( AR & ~7 )
   guts_of_destructor();
 		   
  // read problem data- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -330,6 +349,9 @@ void CapacitatedFacilityLocationBlock::deserialize(
  
  v_capacity.resize( f_n_facilities );
  fq.getVar( v_capacity.data() );
+ if( std::any_of( v_capacity.begin() , v_capacity.begin() + f_n_facilities ,
+		  []( auto qi ) { return( qi <= 0 ); } ) )
+  throw( std::invalid_argument( _prfx + "non-positive capacity" ) );
 
  auto fc = group.getVar( "FacilityCost" );
  if( fc.isNull() )
@@ -350,6 +372,9 @@ void CapacitatedFacilityLocationBlock::deserialize(
  
  v_demand.resize( f_n_customers );
  cd.getVar( v_demand.data() );
+ if( std::any_of( v_demand.begin() , v_demand.begin() + f_n_customers ,
+		  []( auto dj ) { return( dj <= 0 ); } ) )
+  throw( std::invalid_argument( _prfx + "non-positive demand" ) );
 
  auto tc = group.getVar( "TransportationCost" );
  if( tc.isNull() )
@@ -381,7 +406,8 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   return;           // nothing to do
 
  AR |= HasVar;      // variables will be constructed now once and for all
-
+ f_unsplittable = wf & 4;
+ 
  Index wf = 0;
  if( ( ! stvv ) && f_BlockConfig )
   stvv = f_BlockConfig->f_static_variables_Configuration;
@@ -392,23 +418,19 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
                        // - - - - - - - - - - - - - - - - - - - - - - - - - -
   // AR |= StdForm;  does nothing
   v_y.resize( f_n_facilities );
-  for( auto yi : v_y ) {
+  for( auto yi : v_y )
    yi.set_type( ColVariable::kBinary );
-   yi.set_Block( this );
-   }
   add_static_variable( v_y , "y" );
 
   v_x.resize( { f_n_customers , f_n_facilities } );
   auto xt = ColVariable::kPosUnitary;
-  if( wf & 4 ) {  // unsplittable version
+  if( f_unsplittable ) {
    AR |= UnSpltF;
    xt = ColVariable::kBinary;
    }
 
-  for( auto xji : v_x ) {
+  for( auto xji : v_x )
    xji.set_type( xt );
-   xji.set_Block( this );
-   }
   add_static_variable( v_x , "x" );
 
   return:
@@ -424,7 +446,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   BinaryKnapsackBlock::doubleVec C( f_n_customers + 1 );
   BinaryKnapsackBlock::boolVec I;
 
-  if( wf & 4 ) {  // unsplittable version
+  if( f_unsplittable ) {
    AR |= UnSpltF;
    I.resize( f_n_customers + 1 , true );
    }
@@ -436,7 +458,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   for( Index i = 0 ; i < f_n_facilities ; ++i ) {
    for( Index j = 0 ; j < f_n_customers ; ++j ) {
     W[ j ] = v_demand[ j ];
-    C[ j ] = v_transp_cost[ j ][ i ] * v_demand[ j ];
+    C[ j ] = v_transp_cost[ j ][ i ];
     }
    W[ f_n_customers ] = - v_capacity[ i ];
    C[ f_n_customers ] = v_fixed_cost[ i ];
@@ -483,11 +505,11 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
 
  if( ( AR & FormMsk ) == StdForm ) {  // "natural formulation" (NF) - - - - -
                                       //- - - - - - - - - - - - - - - - - - -
-  if( ( ! ( wc & 1 ) && ( ! ( Ar & HasSatCns ) ) ) ) {
+  if( ( ! ( wc & 1 ) && ( ! ( AR & HasSatCns ) ) ) ) {
    // construct customer satisfaction constraints (not there already)
    v_sat.resize( f_n_customers );
    for( Index j = 0 ; j < f_n_customers ; ++j ) {
-    std::vector< LinearFunction::v_coeff_pair > coeffs( f_n_facilities );
+    v_coeff_pair coeffs( f_n_facilities );
 
     for( Index i = 0 ; i < f_n_facilities ; ++i )
      coeffs[ i ] = std::make_pair( & v_x[ j ][ i ] , double( 1 ) );
@@ -500,11 +522,11 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
    AR |= HasSatCns;
    }
 
-  if( ( ! ( wc & 2 ) ) && ( ! ( Ar & HasCapCns ) ) ) {
+  if( ( ! ( wc & 2 ) ) && ( ! ( AR & HasCapCns ) ) ) {
    // construct facility capacity constraints (not there already)
    v_cap.resize( f_n_facilities );
    for( Index i = 0 ; i < f_n_facilities ; ++i ) {
-    std::vector< LinearFunction::v_coeff_pair > coeffs( f_n_customers + 1 );
+    v_coeff_pair coeffs( f_n_customers + 1 );
 
     for( Index j = 0 ; j < f_n_customers ; ++j )
      coeffs[ j ] = std::make_pair( & v_x[ j ][ i ] , v_demand[ j ] );
@@ -529,13 +551,11 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
    // construct customer satisfaction constraints (not there already)
    v_sat.resize( f_n_customers );
    for( Index j = 0 ; j < f_n_customers ; ++j ) {
-    std::vector< LinearFunction::v_coeff_pair > coeffs( f_n_facilities );
+    v_coeff_pair coeffs( f_n_facilities );
 
     for( Index i = 0 ; i < f_n_facilities ; ++i )
-     coeffs[ i ] = std::make_pair(
-	static_cast< BinaryKnapsackBlock * >( v_Block[ i ] )->get_Var( j ) ,
-	double( 1 ) );
-
+     coeffs[ i ] = std::make_pair( BKB( v_Block[ i ] )->get_Var( j ) ,
+				   double( 1 ) );
     v_sat[ j ].set_both( 1 );
     v_sat[ j ].set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
     }
@@ -590,7 +610,7 @@ void CapacitatedFacilityLocationBlock::generate_objective(
                                       //- - - - - - - - - - - - - - - - - - -
 
   // construct a "dense" LinearFunction
-  LinearFunction::v_coeff_pair p( f_n_facilities * ( f_n_customers + 1 ) );
+  v_coeff_pair p( f_n_facilities * ( f_n_customers + 1 ) );
   auto pi = p.begin();
 
   // first the Y[ i ] variables
@@ -600,8 +620,7 @@ void CapacitatedFacilityLocationBlock::generate_objective(
   // then the X[ j ][ i ] ones
   for( Index j = 0 ; j < f_n_customers ; ++j )
    for( Index i = 0 ; i < f_n_facilities ; ++i )
-    *(pi++) = std::make_pair( & v_x[ j ][ i ] ,
-			      v_transp_cost[ j ][ i ] * v_demand[ j ] );
+    *(pi++) = std::make_pair( & v_x[ j ][ i ] , v_transp_cost[ j ][ i ] );
 
   c.set_function( new LinearFunction( std::move( p ) , 0 ) , eNoMod );
   set_objective( & c , eNoMod );
@@ -633,1002 +652,472 @@ void CapacitatedFacilityLocationBlock::generate_objective(
 /*--------------------- Methods for checking the Block ---------------------*/
 /*--------------------------------------------------------------------------*/
 
-bool CapacitatedFacilityLocationBlock::flow_feasible( c_FNumber feps , bool useabstract )
+bool CapacitatedFacilityLocationBlock::is_feasible( bool useabstract ,
+						    Configuration * fsbc )
 {
- if( useabstract ) {
-  // do it using the abstract representation- - - - - - - - - - - - - - - - -
+ double eps = 1e-10;
 
-  if( ! ( AR & HasFlw ) )
-   throw( std::logic_error( "Constraint required for flow_feasible( , true )"
-			    ) );
-  // static part
-  for( const auto & cnst : E )
-   if( cnst.rel_viol() > feps )
-    return( false );
+ if( ( ! fsbc ) && f_BlockConfig )
+  fsbc = f_BlockConfig->f_is_feasible_Configuration;
 
-  // dynamic part
-  for( const auto & cnst : dE )
-   if( cnst.rel_viol() > feps )
-    return( false );
-  }
- else {
-  // do it using the physical representation- - - - - - - - - - - - - - - - -
-
-  Index i = 0;
-  Vec_FNumber tB = B;
-
-  // static part
-  for( ; i < get_NStaticArcs() ; ++i ) {
-   c_FNumber xi = x[ i ].get_value();
-   tB[ SN[ i ] - 1 ] += xi;
-   tB[ EN[ i ] - 1 ] -= xi;
-   }
-
-  // dynamic part
-  if( HasDynamicX() ) {
-   auto dxi = dx.begin();
-   for( ; i < get_NArcs() ; ++i , ++dxi )
-    if( ! is_deleted( i ) ) {
-     c_FNumber xi = dxi->get_value();
-     tB[ SN[ i ] - 1 ] += xi;
-     tB[ EN[ i ] - 1 ] -= xi;
-     }
-   }
-
- for( Index i = 0 ; i < get_NNodes() ; ++i ) {
-   c_FNumber slck = B[ i ] == 0 ? std::abs( tB[ i ] ) :
-                                  std::abs( tB[ i ] / B[ i ] );
-   if( slck > feps )
-    return( false );
-   }
-  }
-
- return( true );
-
- }  // end( CapacitatedFacilityLocationBlock::flow_feasible )
-
-/*--------------------------------------------------------------------------*/
-
-bool CapacitatedFacilityLocationBlock::bound_feasible( c_FNumber feps , bool useabstract )
-{
- if( useabstract ) {
-  // do it using the abstract representation- - - - - - - - - - - - - - - - -
-
-  if( ( ! ( AR & ( HasFlw | HasVar ) ) ) )
-   throw( std::logic_error(
-	 "abstract representation not there in bound_feasible( , true )" ) );
-
-  // static part
-  if( HasStaticX() ) {
-   if( UB.empty() ) {
-    for( const auto & var : x )
-     if( ! var.is_feasible( feps ) )
-      return( false );
-    }
-   else
-    for( const auto & cnst : UB )
-     if( cnst.rel_viol() > feps )
-      return( false );
-   }
-
-  // dynamic part
-  if( HasDynamicX() ) {
-   if( dUB.empty() ) {
-    for( const auto & var : dx )
-     if( ! var.is_feasible( feps ) )
-      return( false );
-    }
-   else
-    for( const auto & cnst : dUB )
-     if( cnst.rel_viol() > feps )
-      return( false );
-   }
-  }
- else {
-  // do it using the physical representation- - - - - - - - - - - - - - - - -
-  Index i = 0;
-
-  // static part
-  for( ; i < get_NStaticArcs() ; ++i ) {
-   c_FNumber Ui = get_U( i );
-   c_FNumber xi = x[ i ].get_value();
-   if( Ui >= Inf<FNumber>() ) {
-    if( xi < - feps )
-     return( false );
-    }
-   else {
-    c_FNumber slck = Ui == 0 ? std::abs( xi ) :
-                               std::max( - xi , xi - Ui ) / std::abs( Ui );
-    if( slck > feps )
-     return( false );
-    }
-   }
-
-  // dynamic part
-  if( HasDynamicX() ) {
-   auto dxi = dx.begin();
-   for(  ; i < get_NArcs() ; ++i ) {
-    c_FNumber Ui = get_U( i );
-    c_FNumber xi = (*(dxi++)).get_value();
-    if( Ui >= Inf<FNumber>() ) {
-     if( xi < - feps )
-      return( false );
-     }
-    else {
-     c_FNumber slck = Ui == 0 ? std::abs( xi ) :
-                                std::max( - xi , xi - Ui ) / std::abs( Ui );
-     if( slck > feps )
-      return( false );
-     }
-    }
-   }
-  }
-
- return( true );
-
- }  // end( CapacitatedFacilityLocationBlock::bound_feasible )
-
-/*--------------------------------------------------------------------------*/
-
-bool CapacitatedFacilityLocationBlock::dual_feasible( c_CNumber ceps , bool useabstract )
-{
- if( useabstract ) {
-  // do it using the abstract representation- - - - - - - - - - - - - - - - -
-
-  if( ( ! ( AR & HasFlw ) ) || ( ! ( AR & HasObj ) ) )
-   throw( std::logic_error(
-	 "abstract representation not there in dual_feasible( , true )" ) );
-
-  auto obj = static_cast<FRealObjective *>( get_objective() );
-  assert( obj );
-  auto lfo = get_lfo();
-
-  for( auto & pi : (*lfo).get_v_var() ) {
-   auto xi = pi.first;
-   auto RCi = pi.second;
-   for( Index j = 0 ; j < xi->get_num_active() ; ++j ) {
-    ThinVarDepInterface * ci = xi->get_active( j );
-    if( auto rci = dynamic_cast< FRowConstraint * >( ci ) ) {
-     auto lrci = get_lfc( rci );
-     RCi -= rci->get_dual() * lrci->get_coefficient( lrci->is_active( xi ) );
-     }
-    else {
-     auto bci = dynamic_cast< BoxConstraint * >( ci );
-     assert( bci );
-     RCi -= bci->get_dual();
-     }
-    }
-
-   RCi = std::abs( RCi );
-   if( pi.second != 0 )
-    RCi /= pi.second;
-
-   if( RCi > ceps )
-    return( false );
-   }
-  }
- else {
-  // do it using the physical representation- - - - - - - - - - - - - - - - -
-
-  Vec_CNumber RC;
-  get_rc( RC );
-  Vec_CNumber Pi;
-  get_pi( Pi );
-
-  for( Index i = 0 ; i < get_NArcs() ; ++i ) {
-   if( is_deleted( i ) )
-    continue;
-
-   c_CNumber Ci = get_C( i );
-   c_CNumber RCi = Ci + Pi[ SN[ i ] - 1 ] - Pi[ EN[ i ] - 1 ];
-   c_CNumber df = std::abs( RCi - RC[ i ] );
-   c_CNumber mx = std::max( std::abs( Ci ) , df );
-   if( mx == 0 ) {
-    if( df > ceps )
-     return( false );
-    }
-   else
-    if( df > ceps * mx )
-     return( false );
-   }
-  }
-
- return( true );
-
- }  // end( CapacitatedFacilityLocationBlock::dual_feasible )
-
-/*--------------------------------------------------------------------------*/
-
-bool CapacitatedFacilityLocationBlock::complementary_slackness( c_CNumber ceps , c_FNumber feps ,
-					bool useabstract )
-{
- Vec_CNumber RC;
- get_rc( RC );
-
- if( useabstract ) {
-  // do it using the abstract representation- - - - - - - - - - - - - - - - -
-
-  if( ( ! ( AR & HasVar ) ) || ( ! ( AR & HasObj ) ) )
-   throw( std::logic_error(
-    "abstract representation not there in complementary_slackness(( , true )"
-			   ) );
-
-  auto obj = static_cast<FRealObjective *>( get_objective() );
-  assert( obj );
-  auto lfo = get_lfo();
-  Index i = 0;
-
-  // static part
-  if( HasStaticX() ) {
-   if( UB.empty() ) {
-    for( ; i < get_NStaticArcs() ; ++i ) {
-     c_CNumber Ci = lfo->get_coefficient( i );
-     CNumber RCi = RC[ i ];
-     if( Ci )
-      RCi /= Ci;
-     if( ( x[ i ].get_value() > feps ) && ( RCi < - ceps ) )
-      return( false );
-     }
-    }
-   else
-    for( ; i < get_NStaticArcs() ; ++i ) {
-     c_CNumber Ci = lfo->get_coefficient( i );
-     CNumber RCi = RC[ i ];
-     if( Ci )
-      RCi /= Ci;
-     c_FNumber xiv = x[ i ].get_value();
-     c_FNumber UBi = UB[ i ].get_rhs();
-     if( UBi >= Inf<RowConstraint::RHSValue>() ) {
-      if( ( xiv > feps ) && ( RCi < - ceps ) )
-       return( false );
-      }
-     else {
-      c_FNumber sfeps = ( UBi == 0 ? feps : feps * UBi );
-      if( ( ( xiv > sfeps ) && ( RCi < - ceps ) ) ||
-	  ( ( UBi - xiv > sfeps ) && ( RCi > ceps ) ) )
-       return( false );
-      }
-     }
-    }
-
-  // dynamic part
-  if( HasDynamicX() ) {
-   auto dxi = dx.begin();
-
-   if( dUB.empty() ) {
-    for( ; i < get_NStaticArcs() ; ++i )
-     if( ! is_deleted( i ) ) {
-      c_CNumber Ci = lfo->get_coefficient( i );
-      CNumber RCi = RC[ i ];
-      if( Ci )
-       RCi /= Ci;
-      if( ( (dxi++)->get_value() > feps ) && ( RCi < - ceps ) )
-       return( false );
-      }
-    }
-   else {
-    auto dubi = dUB.begin();
-
-    for( ; i < get_NArcs() ; ++i )
-     if( ! is_deleted( i ) ) {
-      c_CNumber Ci = lfo->get_coefficient( i );
-      CNumber RCi = RC[ i ];
-      if( Ci )
-       RCi /= Ci;
-      c_FNumber dxiv = (dxi++)->get_value();
-      c_FNumber UBi = (dubi++)->get_rhs();
-      if( UBi >= Inf<RowConstraint::RHSValue>() ) {
-       if( ( dxiv > feps ) && ( RCi < - ceps ) )
-	return( false );
-       }
-      else {
-       c_FNumber sfeps = ( UBi == 0 ? feps : feps * UBi );
-       if( ( ( dxiv > sfeps ) && ( RCi < - ceps ) ) ||
-	   ( ( UBi - dxiv > sfeps ) && ( RCi > ceps ) ) )
-	return( false );
-       }
-      }
-    }
-   }
-  }
- else {
-  // do it using the physical representation- - - - - - - - - - - - - - - - -
-  Index i = 0;
-
-  // static part
-  for(  ; i < get_NStaticArcs() ; ++i ) {
-   c_CNumber Ci = get_C( i );
-   CNumber RCi = RC[ i ];
-   if( Ci != 0 )
-    RCi /= C[ i ];
-
-   c_FNumber Ui = get_U( i );
-   c_FNumber xiv = x[ i ].get_value();
-
-   if( Ui >= Inf<FNumber>() ) {
-    if( ( xiv > feps ) && ( RCi < - ceps ) )
-     return( false );
-    }
-   else {
-    c_FNumber sfeps = ( Ui == 0 ? feps : feps * Ui );
-    if( ( ( xiv > sfeps ) && ( RCi < - ceps ) ) ||
-	( ( Ui - xiv > sfeps ) && ( RCi > ceps ) ) )
-     return( false );
-    }
-   }
-
-  // dynamic part
-  if( HasDynamicX() ) {
-   auto dxi = dx.begin();
-
-   for( ; i < get_NArcs() ; ++i , ++dxi )
-    if( ! is_deleted( i ) ) {
-     c_FNumber dxiv = dxi->get_value();
-     c_CNumber Ci = get_C( i );
-     CNumber RCi = RC[ i ];
-     if( Ci != 0 )
-      RCi /= C[ i ];
-
-     c_FNumber Ui = get_U( i );
-     if( Ui >= Inf<FNumber>() ) {
-      if( ( dxiv > feps ) && ( RCi < - ceps ) )
-       return( false );
-      }
-     else {
-      c_FNumber sfeps = ( Ui == 0 ? feps : feps * Ui );
-      if( ( ( dxiv > sfeps ) && ( RCi < - ceps ) ) ||
-	  ( ( Ui - dxiv > sfeps ) && ( RCi > ceps ) ) )
-       return( false );
-      }
-     }
-   }
-  }
-
- return( true );
-
- }  // end( CapacitatedFacilityLocationBlock::complementary_slackness )
-
-/*--------------------------------------------------------------------------*/
-
-bool CapacitatedFacilityLocationBlock::is_feasible( bool useabstract , Configuration *fsbc )
-{
- FNumber eps = 0;
- auto tfsbc = dynamic_cast<SimpleConfiguration<FNumber> *>( fsbc );
-
- if( ( ! tfsbc ) && f_BlockConfig &&
-     f_BlockConfig->f_is_feasible_Configuration )
-  tfsbc = dynamic_cast<SimpleConfiguration<FNumber> *>(
-                        f_BlockConfig->f_is_feasible_Configuration );
- if( tfsbc )
+ if( auto tfsbc = dynamic_cast< SimpleConfiguration< double > * >( fsbc ) )
   eps = tfsbc->f_value;
 
- return( flow_feasible( eps , useabstract ) &&
-	 bound_feasible( eps , useabstract ) );
+ return( customer_feasible( eps , useabstract ) &&
+	 facility_feasible( eps , useabstract ) );
 
  }  //  end( CapacitatedFacilityLocationBlock::is_feasible )
 
 /*--------------------------------------------------------------------------*/
 
-bool CapacitatedFacilityLocationBlock::is_optimal( bool useabstract , Configuration *optc )
+bool CapacitatedFacilityLocationBlock::customer_feasible( double eps ,
+							  bool useabstract )
 {
- CNumber ceps = 0;
- FNumber feps = 0;
- if( optc ) {
-  if( auto toptc =
-      dynamic_cast< SimpleConfiguration< std::pair< CNumber , FNumber > > * >(
-								    optc ) ) {
-   ceps = toptc->f_value.first;
-   feps = toptc->f_value.second;
+ const static std::string _prfx =
+                     "CapacitatedFacilityLocationBlock::customer_feasible: ";
+
+ if( ! ( AR & HasVar ) )
+  throw( std::logic_error( _prfx + "generate_abstract_variables not called"
+			   ) );
+
+ if( ! ( AR & HasSatCns ) )  // if customer constraints are not defined
+  useabstract = false;       // you cannot use them to chek feasibility
+
+ if( useabstract ) {
+  // do it using the abstract representation- - - - - - - - - - - - - - - - -
+
+  if( ( ( AR & FormMsk ) == StdForm ) ||
+      ( ( AR & FormMsk ) == KskForm ) ) {
+   for( const auto & cnst : v_sat )
+    if( cnst.rel_viol() > eps )
+     return( false );
+
+   return( true );
    }
-  else {
-   auto ttoptc = dynamic_cast< SimpleConfiguration< CNumber > * >( optc );
 
-   if( ( ! ttoptc ) && f_BlockConfig &&
-       f_BlockConfig->f_is_optimal_Configuration )
-    ttoptc = dynamic_cast< SimpleConfiguration< CNumber > * >(
-                           f_BlockConfig->f_is_optimal_Configuration );
-   if( ttoptc )
-    ceps = ttoptc->f_value;
+  throw( std::logic_error( _prfx + "flow formulation not supported yet" ) );
+  }
+ else {
+  // do it using the physical representation- - - - - - - - - - - - - - - - -
 
-   if( f_BlockConfig && f_BlockConfig->f_is_feasible_Configuration ) {
-    auto fsbc = dynamic_cast< SimpleConfiguration< FNumber > * >(
-                              f_BlockConfig->f_is_feasible_Configuration );
-    if( fsbc )
-     feps = fsbc->f_value;
-    }
+  for( Index j = 0 ; j < f_n_customers ; ++j ) {
+   auto tot = 0;
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    tot += get_x( j , i ).get_value();
+
+   if( std::abs( 1 - tot ) > eps )
+    return( false );
    }
   }
- else
-  if( f_BlockConfig ) {
-   if( f_BlockConfig->f_is_optimal_Configuration )
-    if( auto csbc = dynamic_cast< SimpleConfiguration< CNumber > * >(
-                              f_BlockConfig->f_is_optimal_Configuration ) )
-     ceps = csbc->f_value;
 
-   if( f_BlockConfig->f_is_feasible_Configuration )
-    if( auto fsbc = dynamic_cast< SimpleConfiguration<FNumber > * >(
-                              f_BlockConfig->f_is_feasible_Configuration ) )
-     feps = fsbc->f_value;
+ return( true );
+
+ }  // end( CapacitatedFacilityLocationBlock::customer_feasible )
+
+/*--------------------------------------------------------------------------*/
+
+bool CapacitatedFacilityLocationBlock::capacity_feasible( double eps ,
+							  bool useabstract )
+{
+ const static std::string _prfx =
+                     "CapacitatedFacilityLocationBlock::capacity_feasible: ";
+
+ if( ! ( AR & HasVar ) )
+  throw( std::logic_error( _prfx + "generate_abstract_variables not called"
+			   ) );
+
+ if( ! ( AR & HasCapCns ) )  // if capacity constraints are not defined
+  useabstract = false;       // you cannot use them to chek feasibility
+
+ if( useabstract ) {
+  // do it using the abstract representation- - - - - - - - - - - - - - - - -
+
+  if( ( AR & FormMsk ) == StdForm ) {
+   for( const auto & cnst : v_cap )
+    if( cnst.rel_viol() > eps )
+     return( false );
+
+   return( true );
    }
 
- return( flow_feasible( feps , useabstract ) &&
-	 bound_feasible( feps , useabstract ) &&
-	 dual_feasible( ceps , useabstract ) &&
-	 complementary_slackness( ceps , feps , useabstract ) );
+  if( ( AR & FormMsk ) == KskForm ) {
+   SimpleConfiguration< double > cfg( eps );
 
- }  //  end( CapacitatedFacilityLocationBlock::is_optimal )
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    if( ! v_Block[ i ]->is_feasible( true , & cfg ) )
+     return( false );
+
+   return( true );
+   }
+
+  throw( std::logic_error( _prfx + "flow formulation not supported yet" ) );
+  }
+ else {
+  // do it using the physical representation- - - - - - - - - - - - - - - - -
+
+  for( Index i = 0 ; i < f_n_facilities ; ++i ) {
+   auto tot = v_capacity[ i ] * get_y( i ).get_value();
+   for( Index j = 0 ; j < f_n_customers ; ++j )
+    tot -= v_demand[ j ] * get_x( j , i ).get_value();
+
+   if( tot < - eps * v_capacity[ i ] )
+    return( false );
+   }
+  }
+
+ return( true );
+
+ }  // end( CapacitatedFacilityLocationBlock::capacity_feasible )
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- Methods for R3 Blocks --------------------------*/
 /*--------------------------------------------------------------------------*/
 
-Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration *r3bc ,
+Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
 					      Block * base , Block * father )
 {
- if( r3bc != nullptr )
-  throw( std::invalid_argument( "non-nullptr R3B Configuration" ) );
+ const static std::string _prfx =
+                           "CapacitatedFacilityLocationBlock::get_R3_Block: ";
+ int wR3B = 0
+ if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( r3bc ) )
+  wR3B = tcfg->f_value;
 
- CapacitatedFacilityLocationBlock *MCFB;
- if( base ) {
-  MCFB = dynamic_cast< CapacitatedFacilityLocationBlock * >( base );
-  if( ! MCFB )
-   throw( std::invalid_argument( "base is not a CapacitatedFacilityLocationBlock" ) );
-  }
- else
-  MCFB = new CapacitatedFacilityLocationBlock( father );
+ if( ( wR3B < 0 ) || ( wR3B > 2 ) )
+  throw( std::invalid_argument(  _prfx + "invalid R3B type" ) );
 
- MCFB->load( get_NNodes() , get_NArcs() , EN , SN , U , C , B ,
-	     get_NNodes() - get_NStaticNodes() ,
-	     get_NArcs() - get_NStaticArcs() ,
-	     get_MaxNNodes() - get_NStaticNodes() ,
-	     get_MaxNArcs() - get_NStaticArcs() );
+ if( ! wR3B ) {  // "copy" R3B- - - - - - - - - - - - - - - - - - - - - - - -
+
+  CapacitatedFacilityLocationBlock * CFLB;
+  if( base ) {
+  CFLB = dynamic_cast< CapacitatedFacilityLocationBlock * >( base );
+  if( ! CFLB )
+   throw( std::invalid_argument( _prfx +
+			"base is not a CapacitatedFacilityLocationBlock" ) );
+   }
+  else
+   CFLB = new CapacitatedFacilityLocationBlock( father );
+
+  CFLB->load( f_n_facilities , f_n_customers , v_capacity , v_fixed_cost ,
+	      v_demand , v_transp_cost );
  
+  return( CFLB );
+  }
+
+ // "flow relaxation" R3B - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ MCFBlock * MCFB;
+ if( base ) {
+  MCFB = dynamic_cast< MCFBlock * >( base );
+  if( ! MCFB )
+   throw( std::invalid_argument( _prfx + "base is not a MCFBlock" ) );
+   }
+ else
+  MCFB = new MCFBlock( father );
+
+ Index NN = f_n_facilities + f_n_customers + 1;
+ Index NA = f_n_facilities * ( f_n_customers + 1 )
+          + wR3B > 1 ? f_n_customers : 0;
+
+ Subset EN( NA );
+ Subset SN( NA );
+ MCFBlock::Vec_FNumber U( NA );
+ MCFBlock::Vec_CNumber C( NA );
+ MCFBlock::Vec_FNumber B( NN );
+
+ // construct deficits vector
+ Index i = 0;
+ while( i <= f_n_facilities )
+  B[ i++ ] = 0;
+
+ for( Index j = 0 ; j < f_n_customers ; j++ ) {
+  B[ 0 ] -= v_demand[ j ];
+  B[ i++ ] = v_demand[ j ];
+  }
+
+ // construct arcs SN, EN, U, C: "common part" of the graph
+ Index a = 0;
+
+ // first the source -> facility arcs
+ for( i = 0 ; i < f_n_facilities ; ++i ) {
+  SN[ a ] = 1;
+  EN[ a ] = i + 2;
+  U[ a ] = v_capacity[ i ];
+  C[ a++ ] = v_fixed_cost[ i ] / v_capacity[ i ];
+  }
+
+ // now the facility -> customers arcs
+ for( Index j = 0 ; j < f_n_customers ; ++j )
+  for( i = 0 ; i < f_n_facilities ; ++i ) {
+   SN[ a ] = i + 2;
+   EN[ a ] = f_n_facilities + 2 + j;
+   U[ a ] = Inf< MCFClass::FNumber >();
+   C[ a++ ] = v_transp_cost[ j ][ i ] / v_demand[ j ];
+   }
+
+ if( wR3B > 1 ) {
+  // now the artificial arcs to ensure feasibility
+
+  for( Index j = 0 ; j < f_n_customers ; ++j ) {
+   SN[ a ] = 1;
+   EN[ a ] = f_n_facilities + 2 + j;
+   U[ a ] = Inf< MCFClass::FNumber >();
+
+   // compute an upper bound on the worst-case transportation cost
+   MCFClass::CNumber maxc = 0;
+   for( i = 0 ; i < f_n_facilities ; ++i , ++a )
+    if( auto tci = C[ i ] + v_transp_cost[ j ][ i ] / v_demand[ j ] ;
+	maxc < tci )
+     maxc = tci;
+   maxc += 1;    // ! +1
+   maxc *= 100;  // ! *100 
+   C[ a++ ] = maxc;
+   }
+  }
+
+ MCFB->load( NN , NA , EN , SN , U , C , B );
+
  return( MCFB );
 
  }  // end( CapacitatedFacilityLocationBlock::get_R3_Block )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::map_back_solution( Block *R3B , Configuration *r3bc ,
-				               Configuration *solc )
+void CapacitatedFacilityLocationBlock::map_back_solution( Block * R3B ,
+				 Configuration * r3bc , Configuration * solc )
 {
- // process Configuration - - - - - - - - - - - - - - - - - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ const static std::string _prfx =
+                      "CapacitatedFacilityLocationBlock::map_back_solution: ";
 
- auto MCFB = dynamic_cast<CapacitatedFacilityLocationBlock *>( R3B );
+ if( ! ( AR & HasVar ) )
+  throw( std::invalid_argument(  _prfx + "variables not generated yet" ) );
+
+ int ws = 3;
+ if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( solc ) )
+  ws = tcfg->f_value;
+
+ if( ! ( ws & 3 ) )  // actually nothing to map back
+  return;            // silently (and cowardly) return
+
+ int wR3B = 0
+ if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( r3bc ) )
+  wR3B = tcfg->f_value;
+
+ if( ( wR3B < 0 ) || ( wR3B > 2 ) )
+  throw( std::invalid_argument(  _prfx + "invalid R3B type" ) );
+
+ if( ! wR3B ) {  // "copy" R3B- - - - - - - - - - - - - - - - - - - - - - - -
+  auto CFLB = dynamic_cast< CapacitatedFacilityLocationBlock * >( R3B );
+  if( ! CFLB )
+   throw( std::invalid_argument( _prfx +
+			 "R3B is not a CapacitatedFacilityLocationBlock" ) );
+
+  if( ( get_NFacilities() != CFLB->get_NFacilities() ) ||
+      ( get_NCustomers() != CFLB->get_NCustomers() ) )
+   throw( std::invalid_argument( _prfx + "incompatible sizes in R3B" ) );
+
+  if( ws & 1 )
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    get_y( i ).set_value( CFLB->get_y( i ).get_value() );
+
+  if( ws & 2 )
+   for( Index j = 0 ; j < f_n_customers ; ++j )
+    for( Index i = 0 ; i < f_n_facilities ; ++i )
+     get_x( j , i ).set_value( CFLB->get_x( j , i ).get_value() );
+
+  return;
+  }
+
+ // "flow relaxation" R3B - - - - - - - - - - - - - - - - - - - - - - - - - -
+ 
+ auto MCFB = dynamic_cast< MCFBlock * >( R3B );
  if( ! MCFB )
-  throw( std::invalid_argument( "R3B is not a CapacitatedFacilityLocationBlock" ) );
- if( r3bc != nullptr )
-  throw( std::invalid_argument( "non-nullptr R3B Configuration" ) );
+  throw( std::invalid_argument( _prfx + "R3B is not a MCFBlock" ) );
 
- int wsol = 0;
- auto tsolc = dynamic_cast<SimpleConfiguration<int> *>( solc );
+ if( ( MCFB->get_NNodes() != f_n_facilities + f_n_customers + 1 ) ||
+     ( MCFB->get_NArcs() != f_n_facilities * ( f_n_customers + 1 ) +
+                            wR3B == 2 ? f_n_customers : 0 ) )
+  throw( std::invalid_argument( _prfx + "incompatible sizes in R3B" ) );
 
- if( ( ! tsolc ) && f_BlockConfig && f_BlockConfig->f_solution_Configuration )
-   tsolc = dynamic_cast<SimpleConfiguration<int> *>(
-                                    f_BlockConfig->f_solution_Configuration );
- if( tsolc )
-  wsol = tsolc->f_value;
-
- // if required, map back primal solution - - - - - - - - - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- if( ( wsol != 2 ) && ( AR & HasVar ) ) {  // ... if any
-  if( MCFB->get_NStaticArcs() != get_NStaticArcs() )
-   throw( std::invalid_argument( "incompatible static flow size" ) );
-
-  // static part
-  if( HasStaticX() )
-   for( auto xi = x.begin() , r3bxi = MCFB->x.begin() ; xi != x.end() ;
-	++xi , ++r3bxi )
-    if( ! xi->is_fixed() )
-     xi->set_value( r3bxi->get_value() );
+ Index l = ws & 1 ? f_n_facilities : 0;
+ Index u = ws & 2 ? f_n_facilities * ( f_n_customers + 1 ) : f_n_facilities;
  
-  // dynamic part
-  // note that if MCFB->dx is longer than this->dx the last part is
-  // ignored, while if the converse happens it is filled with zeros
-  if( HasDynamicX() ) {
-   auto dxi = dx.begin();
-   for( auto r3bdxi = MCFB->dx.begin() ;
-	( dxi != dx.end() ) && ( r3bdxi != MCFB->dx.end() ) ;
-	++dxi , ++r3bdxi )
-    if( ! dxi->is_fixed() )
-     dxi->set_value( r3bdxi->get_value() );
+ MCFBlock::Vec_FNumber x( u - l );
 
-   for( ; dxi != dx.end() ; ++dxi )
-    if( ! dxi->is_fixed() )
-     dxi->set_value();
-   }
-  }
+ MCFB->get_x( x , Range( l , u ) );
 
- // if required, map back dual solution - - - - - - - - - - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ auto it = x.begin();
+ if( ws & 1 )
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   get_y( i ).set_value( *(it++) / v_capacity[ i ] );
 
- if( ( wsol != 1 ) && ( AR & HasFlw ) ) {  // ... if any
+ if( ws & 2 )
+  for( Index j = 0 ; j < f_n_customers ; ++j )
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    get_x( j , i ).set_value( *(it++) / v_demand[ j ] );
 
-  // map back the potentials- - - - - - - - - - - - - - - - - - - - - - - - -
-
-  if( MCFB->get_NStaticNodes() != get_NStaticNodes() )
-   throw( std::invalid_argument( "incompatible static potential size" ) );
-
-  // static part
-  if( HasStaticE() )
-   for( auto ei = E.begin() , r3bei = MCFB->E.begin() ; ei != E.end() ; )
-    (ei++)->set_dual( (r3bei++)->get_dual() );
- 
-  // dynamic part
-  // note that if MCFB->dE is longer than this->dE the last part is
-  // ignored, while if the converse happens it is filled with zeros
-  if( HasDynamicE() ) {
-   auto dei = dE.begin();
-
-   for( auto r3bdei = MCFB->dE.begin() ;
-	( dei != dE.end() ) && ( r3bdei != MCFB->dE.end() ) ; )
-    (dei++)->set_dual( (r3bdei++)->get_dual() );
- 
-   while( dei != dE.end() )
-    (dei++)->set_dual( 0 );
-   }
-
-  // map back the reduced costs - - - - - - - - - - - - - - - - - - - - - - -
-
-  if( MCFB->get_NStaticArcs() != get_NStaticArcs() )
-   throw( std::invalid_argument( "incompatible static reduced cost size" ) );
-
-  // static part
-  if( HasStaticX() && ( ! UB.empty() ) ) {
-   if( MCFB->UB.empty() ) {
-    for( auto & cnst : UB )
-     cnst.set_dual();
-    }
-   else
-    for( auto drci = UB.begin() , r3bdrci = MCFB->UB.begin() ;
-	 drci != UB.end() ; )
-      (drci++)->set_dual( (r3bdrci++)->get_dual() );
-   }
-
-  // dynamic part
-  if( HasDynamicX() && ( ! dUB.empty() ) ) {
-   if( MCFB->dUB.empty() ) {
-    for( auto & cnst : dUB )
-     cnst.set_dual();
-    }
-   else {
-    auto drci = dUB.begin();
-    for( auto r3bdrci = MCFB->dUB.begin() ;
-	 ( drci != dUB.end() ) && ( r3bdrci != MCFB->dUB.end() ) ;
-	 ++drci , ++r3bdrci )
-     drci->set_dual( r3bdrci->get_dual() );
- 
-    while( drci != dUB.end() )
-     (drci++)->set_dual();
-    }
-   }
-  }
  }  // end( CapacitatedFacilityLocationBlock::map_back_solution )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::map_forward_solution( Block *R3B , Configuration *r3bc ,
-				                  Configuration *solc )
+void CapacitatedFacilityLocationBlock::map_forward_solution( Block * R3B ,
+			         Configuration * r3bc , Configuration * solc )
 {
- // process Configuration - - - - - - - - - - - - - - - - - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ const static std::string _prfx =
+                   "CapacitatedFacilityLocationBlock::map_forward_solution: ";
 
- auto MCFB = dynamic_cast<CapacitatedFacilityLocationBlock *>( R3B );
+ if( ! ( AR & HasVar ) )
+  throw( std::invalid_argument(  _prfx + "variables not generated yet" ) );
+
+ int ws = 3;
+ if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( solc ) )
+  ws = tcfg->f_value;
+
+ if( ! ( ws & 3 ) )  // actually nothing to map forward
+  return;            // silently (and cowardly) return
+
+ int wR3B = 0
+ if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( r3bc ) )
+  wR3B = tcfg->f_value;
+
+ if( ( wR3B < 0 ) || ( wR3B > 2 ) )
+  throw( std::invalid_argument(  _prfx + "invalid R3B type" ) );
+
+ if( ! wR3B ) {  // "copy" R3B- - - - - - - - - - - - - - - - - - - - - - - -
+  auto CFLB = dynamic_cast< CapacitatedFacilityLocationBlock * >( R3B );
+  if( ! CFLB )
+   throw( std::invalid_argument( _prfx +
+			 "R3B is not a CapacitatedFacilityLocationBlock" ) );
+
+  // fantastically dirty trick: because the two objects are copies, mapping
+  // forward a solution from this to R3B is the same as mapping back a
+  // solution from R3B to this
+
+  CFLB->map_back_solution( this , r3bc , solc );
+  return;
+  }
+
+ // "flow relaxation" R3B - - - - - - - - - - - - - - - - - - - - - - - - - -
+ 
+ auto MCFB = dynamic_cast< MCFBlock * >( R3B );
  if( ! MCFB )
-  throw( std::invalid_argument( "R3B is not a CapacitatedFacilityLocationBlock" ) );
- if( r3bc != nullptr )
-  throw( std::invalid_argument( "non-nullptr R3B Configuration" ) );
+  throw( std::invalid_argument( _prfx + "R3B is not a MCFBlock" ) );
 
- int wsol = 0;
- auto tsolc = dynamic_cast<SimpleConfiguration<int> *>( solc );
+ if( ( MCFB->get_NNodes() != f_n_facilities + f_n_customers + 1 ) ||
+     ( MCFB->get_NArcs() != f_n_facilities * ( f_n_customers + 1 ) +
+                            wR3B == 2 ? f_n_customers : 0 ) )
+  throw( std::invalid_argument( _prfx + "incompatible sizes in R3B" ) );
 
- if( ( ! tsolc ) && f_BlockConfig && f_BlockConfig->f_solution_Configuration )
-  tsolc = dynamic_cast<SimpleConfiguration<int> *>(
-                                    f_BlockConfig->f_solution_Configuration );
- if( tsolc )
-  wsol = tsolc->f_value;
-
- // if required, map forward primal solution- - - - - - - - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- if( ( wsol != 1 ) && ( AR & HasFlw ) ) {  // ... if any
-  if( MCFB->get_NStaticArcs() != get_NStaticArcs() )
-   throw( std::invalid_argument( "incompatible static flow size" ) );
-
-  // static part
-  if( MCFB->HasStaticX() )
-   for( auto xi = x.begin() , r3bxi = MCFB->x.begin() ; xi != x.end() ;
-	++xi , ++r3bxi )
-    if( ! r3bxi->is_fixed() )
-     r3bxi->set_value( xi->get_value() );
+ Index l = ws & 1 ? f_n_facilities : 0;
+ Index u = ws & 2 ? f_n_facilities * ( f_n_customers + 1 ) : f_n_facilities;
  
-  // dynamic part
-  // note that if this->dx is longer than MCFB->dx the last part is
-  // ignored, while if the converse happens it is filled with zeros
-  if( MCFB->HasDynamicX() ) {
-   auto r3bdxi = MCFB->dx.begin();
-   for( auto dxi = dx.begin();
-	( dxi != dx.end() ) && ( r3bdxi != MCFB->dx.end() ) ;
-	++dxi , ++r3bdxi )
-    if( ! r3bdxi->is_fixed() )
-     r3bdxi->set_value( dxi->get_value() );
+ MCFBlock::Vec_FNumber x( u - l );
 
-   for( ; r3bdxi != MCFB->dx.end() ; ++r3bdxi )
-    if( ! r3bdxi->is_fixed() )
-     r3bdxi->set_value();
-   }
-  }
+ auto it = x.begin();
+ if( ws & 1 )
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   *(it++) = get_y( i ).get_value() * v_capacity[ i ];
 
- // if required, map forward dual solution- - - - - - - - - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( ws & 2 )
+  for( Index j = 0 ; j < f_n_customers ; ++j )
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    *(it++) = get_x( j , i ).get_value() * v_demand[ j ];
 
- if( ( wsol != 1 ) && ( AR & HasFlw ) ) {  // ... if any
-  // map forward the potentials - - - - - - - - - - - - - - - - - - - - - - -
+ MCFB->set_x( x , Range( l , u ) );
 
-  if( MCFB->get_NStaticNodes() != get_NStaticNodes() )
-   throw( std::invalid_argument( "incompatible static potential size" ) );
-
-  // static part
-  if( MCFB->HasStaticE() )
-   for( auto ei = E.begin() , r3bei = MCFB->E.begin() ; ei != E.end() ; )
-    (r3bei++)->set_dual( (ei++)->get_dual() );
- 
-  // dynamic part
-  // note that if this->dE is longer than MCFB->dE the last part is
-  // ignored, while if the converse happens it is filled with zeros
-  if( MCFB->HasDynamicE() ) {
-   auto r3bdei = MCFB->dE.begin();
-
-   for( auto dei = dE.begin() ;
-	( dei != dE.end() ) && ( r3bdei != MCFB->dE.end() ) ; )
-    (r3bdei++)->set_dual( (dei++)->get_dual() );
- 
-   while( r3bdei != MCFB->dE.end() )
-    (r3bdei++)->set_dual( 0 );
-   }
-
-  // map forward the reduced costs- - - - - - - - - - - - - - - - - - - - - -
-
-  if( MCFB->get_NStaticArcs() != get_NStaticArcs() )
-   throw( std::invalid_argument( "incompatible static reduced cost size" ) );
-
-  // static part
-  if( MCFB->HasStaticX() && ( ! MCFB->UB.empty() ) ) {
-   if( UB.empty() ) {
-    for( auto & cnst : MCFB->UB )
-     cnst.set_dual( 0 );
-    }
-   else
-    for( auto drci = UB.begin() , r3bdrci = MCFB->UB.begin() ;
-	 drci != UB.end() ; )
-      (r3bdrci++)->set_dual( (drci++)->get_dual() );
-   }
-
-  // dynamic part
-  if( MCFB->HasDynamicX() && ( ! MCFB->dUB.empty() ) ) {
-   if( UB.empty() ) {
-    for( auto & cnst : MCFB->dUB )
-     cnst.set_dual( 0 );
-    }
-   else {
-    auto r3bdrci = MCFB->dUB.begin();
-
-    for( auto drci = dUB.begin() ;
-	 ( drci != dUB.end() ) && ( r3bdrci != MCFB->dUB.end() ) ; )
-     (r3bdrci++)->set_dual( (drci++)->get_dual() );
- 
-    while( r3bdrci != MCFB->dUB.end() )
-     (r3bdrci++)->set_dual( 0 );
-    }
-   }
-  }
  }  // end( CapacitatedFacilityLocationBlock::map_forward_solution )
 
 /*--------------------------------------------------------------------------*/
 
-bool CapacitatedFacilityLocationBlock::map_forward_Modification( Block *R3B , c_p_Mod mod ,
-					 Configuration *r3bc ,
-					 ModParam issuePMod ,
-					 ModParam issueAMod )
+bool CapacitatedFacilityLocationBlock::map_forward_Modification(
+			   Block * R3B , c_p_Mod mod , Configuration * r3bc ,
+			   ModParam issuePMod , ModParam issueAMod )
 {
  if( mod->concerns_Block() )  // an abstract Modification
   return( false );            // none of my business
- 
- auto MCFB = dynamic_cast< CapacitatedFacilityLocationBlock * >( R3B );
- if( ! MCFB )
-  throw( std::invalid_argument( "R3B is not a CapacitatedFacilityLocationBlock" ) );
- if( r3bc != nullptr )
-  throw( std::invalid_argument( "non-nullptr R3B Configuration" ) );
 
- /* When a GroupModification is processed, if no channel is provided, then
-    one is opened. This only happens "at root", after which in guts_of_mfM()
-    whenever a GroupModification is processed, then the channel is nested.
-    Indeed, if the "root" Modification is not a GroupModification, then there
-    cannot be any GroupModification in it. */
+ const static std::string _prfx =
+              "CapacitatedFacilityLocationBlock::map_forward_Modification: ";
 
- ModParam iPM = issuePMod;
- ModParam iPA = make_par( std::min( ModParam( eNoBlck ) ,
-				    par2mod( issueAMod ) ) ,
-			  par2chnl( issueAMod ) );
+ int wR3B = 0
+ if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( r3bc ) )
+  wR3B = tcfg->f_value;
 
- /* Use a Lambda to define a "guts" of the method that can be called
-    recursively without having to pass "local globals". Note the trick of
-    defining the std::function object and "passing" it to the lambda,
-    which allows recursive calls. Note the need to explicitly capture
-    "this" to use fields/methods of the class. */
+ if( ( wR3B < 0 ) || ( wR3B > 2 ) )
+  throw( std::invalid_argument(  _prfx + "invalid R3B type" ) );
 
- std::function< bool( c_p_Mod )> guts_of_mfM;
- guts_of_mfM = [ this , & guts_of_mfM , & MCFB , & iPM , & iPA ]( c_p_Mod mod
-								  ) {
-  // process Modification- - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  /* This requires to patiently sift through the possible Modification types
-     to find what this Modification exactly is, and call the appropriate
-     method of either MCFB, for a "physical Modification", or of the "abstract
-     representation" of MCFB for an "abstract Modification". */
+ if( ! wR3B ) {  // "copy" R3B- - - - - - - - - - - - - - - - - - - - - - - -
+  auto CFLB = dynamic_cast< CapacitatedFacilityLocationBlock * >( R3B );
+  if( ! CFLB )
+   throw( std::invalid_argument( _prfx +
+			 "R3B is not a CapacitatedFacilityLocationBlock" ) );
 
-  //!! std::cout << *mod << std::endl;
-  
-  // GroupModification - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  if( const auto tmod = dynamic_cast< GroupModification * const >( mod ) ) {
-   MCFB->nest_channel( par2chnl( iPM ) );  // nest the channel for PM
-   MCFB->nest_channel( par2chnl( iPA ) );  // nest the channel for PA
+  if( ( get_NFacilities() != CFLB->get_NFacilities() ) ||
+      ( get_NCustomers() != CFLB->get_NCustomers() ) )
+   throw( std::invalid_argument( _prfx + "incompatible sizes in R3Block" ) );
 
-   bool ok = true;
-   for( const auto & submod : tmod->sub_Modifications() )
-    if( ! guts_of_mfM( submod.get() ) )
-     ok = false;
-
-   MCFB->un_nest_channel( par2chnl( iPM ) );  // un-nest the channel for PM
-   MCFB->un_nest_channel( par2chnl( iPA ) );  // un-nest the channel for PA
-
-   return( ok );
-   }
-
-  // CapacitatedFacilityLocationBlockRngdMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  /* Note: in the following we can assume that C, B and U are nonempty. This
-     is because they can be empty only if they are so when the object is
-     loaded. But if a Modification has been issued they are no longer empty
-     (a Modification changin nothing from the "empty" state is not issued). */
-
-  if( const auto tmod = dynamic_cast< CapacitatedFacilityLocationBlockRngdMod * const >( mod ) ) {
-   switch( tmod->type() ) {
-    case( CapacitatedFacilityLocationBlockMod::eChgCost ):
-     #ifndef NDEBUG
-      if( ( tmod->rng().second > get_NArcs() ) ||
-	  ( tmod->rng().second > MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     if( tmod->rng().second == tmod->rng().first + 1 )
-      MCFB->chg_cost( C[ tmod->rng().first ] , tmod->rng().first ,
-		      iPM , iPA );
-     else
-      MCFB->chg_costs( C.begin() + tmod->rng().first , tmod->rng() ,
-		       iPM , iPA );
-     break;
-    case( CapacitatedFacilityLocationBlockMod::eChgCaps ):
-     #ifndef NDEBUG
-      if( ( tmod->rng().second > get_NArcs() ) ||
-	  ( tmod->rng().second > MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     if( tmod->rng().second == tmod->rng().first + 1 )
-      MCFB->chg_ucap( U[ tmod->rng().first ] , tmod->rng().first ,
-		      iPM , iPA );
-     else
-      MCFB->chg_ucaps( U.begin() + tmod->rng().first , tmod->rng() ,
-		       iPM , iPA );
-     break;
-    case( CapacitatedFacilityLocationBlockMod::eChgDfct ):
-     #ifndef NDEBUG
-      if( ( tmod->rng().second > get_NNodes() ) ||
-	  ( tmod->rng().second > MCFB->get_NNodes() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     if( tmod->rng().second == tmod->rng().first + 1 )
-      MCFB->chg_dfct( B[ tmod->rng().first ] , tmod->rng().first ,
-		      iPM , iPA );
-     else
-      MCFB->chg_dfcts( B.begin() + tmod->rng().first , tmod->rng() ,
-		       iPM , iPA );
-     break;
-    case( CapacitatedFacilityLocationBlockMod::eOpenArc ):
-     #ifndef NDEBUG
-      if( ( tmod->rng().second > get_NArcs() ) ||
-	  ( tmod->rng().second > MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     if( tmod->rng().second == tmod->rng().first + 1 )
-      MCFB->open_arc( tmod->rng().first , iPM , iPA );
-     else
-      MCFB->open_arcs( tmod->rng() , iPM , iPA );
-     break;
-    case( CapacitatedFacilityLocationBlockMod::eCloseArc ):
-     #ifndef NDEBUG
-      if( ( tmod->rng().second > get_NArcs() ) ||
-	  ( tmod->rng().second > MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     if( tmod->rng().second == tmod->rng().first + 1 )
-      MCFB->close_arc( tmod->rng().first , iPM , iPA );
-     else
-      MCFB->close_arcs( tmod->rng() , iPM , iPA );
-     break;
-    case( CapacitatedFacilityLocationBlockMod::eAddArc ):
-     #ifndef NDEBUG
-      if( tmod->rng().first > get_NArcs() )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     if( MCFB->add_arc( get_SN( tmod->rng().first ) ,
-			get_EN( tmod->rng().first ) ,
-			get_C( tmod->rng().first ) ,
-			get_U( tmod->rng().first ) , iPM , iPA )
-	 != tmod->rng().first )
-      throw( std::logic_error( "inconsistency between arc names" ) );       
-     break;
-    case( CapacitatedFacilityLocationBlockMod::eRmvArc ):
-     #ifndef NDEBUG
-      if( tmod->rng().first > MCFB->get_NArcs() )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     MCFB->remove_arc( tmod->rng().second - 1 , iPM , iPA );
-     break;
-    default:
-     throw( std::invalid_argument( "unknown CapacitatedFacilityLocationBlockRngdMod type" ) );
-    }
-   return( true );
-   }
-
-  // CapacitatedFacilityLocationBlockSbstMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  /* Note that tmod->f_nms need be copied, since the chg_*() methods
-   * *in principle* "consume" the names vector. This is actually not true
-   * if MCFB will *not* issue a physical modification, which one may
-   * actually know beforehand, but it has to be done anyway because the
-   * CapacitatedFacilityLocationBlockSbstMod only provides read-only access to the vector. */
-
-  if( const auto tmod = dynamic_cast< CapacitatedFacilityLocationBlockSbstMod * const >( mod ) ) {
-   switch( tmod->type() ) {
-    case( CapacitatedFacilityLocationBlockMod::eChgCost ): {
-     #ifndef NDEBUG
-      if( ( tmod->nms().back() >= get_NArcs() ) ||
-	  ( tmod->nms().back() >= MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     Vec_CNumber NCost( tmod->nms().size() );
-     for( Index i = 0 ; i < NCost.size() ; i++ )
-      NCost[ i ] = C[ tmod->nms()[ i ] ];
-
-     MCFB->chg_costs( NCost.begin() , Subset( tmod->nms() ) , iPM , iPA );
-     break;
-     }
-    case( CapacitatedFacilityLocationBlockMod::eChgCaps ): {
-     #ifndef NDEBUG
-      if( ( tmod->nms().back() >= get_NArcs() ) ||
-	  ( tmod->nms().back() >= MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     Vec_FNumber NCap( tmod->nms().size() );
-     for( Index i = 0 ; i < NCap.size() ; i++ )
-      NCap[ i ] = U[ tmod->nms()[ i ] ];
-
-     MCFB->chg_ucaps( NCap.begin() , Subset( tmod->nms() ) , iPM , iPA );
-     break;
-     }
-    case( CapacitatedFacilityLocationBlockMod::eChgDfct ): {
-     #ifndef NDEBUG
-      if( ( tmod->nms().back() >= get_NNodes() ) ||
-	  ( tmod->nms().back() >= MCFB->get_NNodes() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     Vec_FNumber NDfct( tmod->nms().size() );
-     for( Index i = 0 ; i < NDfct.size() ; i++ )
-      NDfct[ i ] = B[ tmod->nms()[ i ] ];
-
-     MCFB->chg_dfcts( NDfct.begin() , Subset( tmod->nms() ) , iPM , iPA );
-     break;
-     }
-    case( CapacitatedFacilityLocationBlockMod::eOpenArc ):
-     #ifndef NDEBUG
-      if( ( tmod->nms().back() >= get_NArcs() ) ||
-	  ( tmod->nms().back() >= MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     MCFB->open_arcs( Subset( tmod->nms() ) , iPM , iPA );
-     break;
-    case( CapacitatedFacilityLocationBlockMod::eCloseArc ):
-     #ifndef NDEBUG
-      if( ( tmod->nms().back() >= get_NArcs() ) ||
-	  ( tmod->nms().back() >= MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     MCFB->close_arcs( Subset( tmod->nms() ) , iPM , iPA );
-     break;
-    default:
-     throw( std::invalid_argument( "unknown CapacitatedFacilityLocationBlockSbstMod type" ) );
-    }
-   return( true );
-   }
-
-  // NBModification- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // this is the "nuclear option": the CapacitatedFacilityLocationBlock has been re-loaded
-  // one should check that the Block is this CapacitatedFacilityLocationBlock, but it cannot
-  // be otherwise, can it?
-
-  if( const auto tmod = dynamic_cast< NBModification * const >( mod ) ) {
-   MCFB->load( get_NNodes() , get_NArcs() , EN , SN , U , C , B ,
-	       get_NNodes() - get_NStaticNodes() ,
-	       get_NArcs() - get_NStaticArcs() ,
-	       get_MaxNNodes() - get_NStaticNodes() ,
-	       get_MaxNArcs() - get_NStaticArcs() );
-   return( true );
-   }
-
-  return( false );
-
-  };  // end( guts_of_mfM )- - - - - - - - - - - - - - - - - - - - - - - - - -
-      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- // finally, call the "guts of"- - - - - - - - - - - - - - - - - - - - - - - -
- // this is done differently if mod is a GroupModification, since at the root
- // a channel has to be opened while further down it has to be nested
-
- bool ok = true;  // final return value
-
- if( const auto tmod = dynamic_cast< GroupModification * const >( mod ) ) {
-  // if the channels are the default ones, open new ones
-  if( ! par2chnl( issuePMod ) )
-   iPM = make_par( par2mod( issuePMod ) , MCFB->open_channel() );
-  if( ! par2chnl( issueAMod ) )
-   iPA = make_par( par2mod( issueAMod ) , MCFB->open_channel() );
-
-  for( const auto & submod : tmod->sub_Modifications() )  // for each sub-Mod
-   if( ! guts_of_mfM( submod.get() ) )                    // make the call
-    ok = false;
-
-  // now close the opened channels, if any
-  if( ! par2chnl( issuePMod ) )
-   MCFB->close_channel( par2chnl( iPM ) );
-  if( ! par2chnl( issueAMod ) )
-   MCFB->close_channel( par2chnl( iPA ) );
+  return( guts_of_map_f_Mod_copy( CFLB , mod , issuePMod , issueAMod ) );
   }
- else                             // any other Modification
-  ok = guts_of_mfM( mod );        // just make the call
 
- return( ok );
+ // "flow relaxation" R3B - - - - - - - - - - - - - - - - - - - - - - - - - -
+ 
+ auto MCFB = dynamic_cast< MCFBlock * >( R3B );
+ if( ! MCFB )
+  throw( std::invalid_argument( _prfx + "R3B is not a MCFBlock" ) );
+
+ if( ( MCFB->get_NNodes() != f_n_facilities + f_n_customers + 1 ) ||
+     ( MCFB->get_NArcs() != f_n_facilities * ( f_n_customers + 1 ) +
+                            wR3B == 2 ? f_n_customers : 0 ) )
+  throw( std::invalid_argument( _prfx + "incompatible sizes in R3Block" ) );
+
+ return( guts_of_map_f_Mod_MCF( MCFB , mod , issuePMod , issueAMod ) );
+
 
  }  // end( CapacitatedFacilityLocationBlock::map_forward_Modification )
 
 /*--------------------------------------------------------------------------*/
 
-bool CapacitatedFacilityLocationBlock::map_back_Modification( Block *R3B , c_p_Mod mod ,
-				      Configuration *r3bc ,
-				      ModParam issuePMod ,
-				      ModParam issueAMod )
+bool CapacitatedFacilityLocationBlock::map_back_Modification( Block * R3B ,
+			            c_p_Mod mod , Configuration *r3bc ,
+				    ModParam issuePMod , ModParam issueAMod )
 {
- /* Fantastically dirty trick: because the two objects are copies, mapping
-    back a Modification to this from R3B is the same as mapping forward a
-    Modification from R3B to this. */
+ const static std::string _prfx =
+                 "CapacitatedFacilityLocationBlock::map_back_Modification: ";
+ int wR3B = 0
+ if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( r3bc ) )
+  wR3B = tcfg->f_value;
 
- auto MCFB = dynamic_cast<CapacitatedFacilityLocationBlock *>( R3B );
+ if( ( wR3B < 0 ) || ( wR3B > 2 ) )
+  throw( std::invalid_argument(  _prfx + "invalid R3B type" ) );
+
+ if( ! wR3B ) {  // "copy" R3B- - - - - - - - - - - - - - - - - - - - - - - -
+  auto CFLB = dynamic_cast< CapacitatedFacilityLocationBlock * >( R3B );
+  if( ! CFLB )
+   throw( std::invalid_argument( _prfx +
+			"r3bc is not a CapacitatedFacilityLocationBlock" ) );
+
+  // fantastically dirty trick: because the two objects are copies, mapping
+  // back a Modification to this from R3B is the same as mapping forward a
+  // Modification from R3B to this
+
+  return( CFLB->map_forward_Modification( this , mod , r3bc , issuePMod ,
+					  issueAMod ) );
+  }
+
+ // "flow relaxation" R3B - - - - - - - - - - - - - - - - - - - - - - - - - -
+ 
+ auto MCFB = dynamic_cast< MCFBlock * >( R3B );
  if( ! MCFB )
-  throw( std::invalid_argument( "R3B is not a CapacitatedFacilityLocationBlock" ) );
+  throw( std::invalid_argument( _prfx + "R3B is not a MCFBlock" ) );
 
- return( MCFB->map_forward_Modification( this , mod , r3bc , issuePMod ,
-					 issueAMod ) );
+ if( ( MCFB->get_NNodes() != f_n_facilities + f_n_customers + 1 ) ||
+     ( MCFB->get_NArcs() != f_n_facilities * ( f_n_customers + 1 ) +
+                            wR3B == 2 ? f_n_customers : 0 ) )
+  throw( std::invalid_argument( _prfx + "incompatible sizes in R3B" ) );
+
+ // TODO:: implement
+ // return( guts_of_map_b_Mod_MCF( MCFB , mod , issuePMod , issueAMod ) );
+
+ return( false );  // currently, no modification is properly mapped back
 
  }  // end( CapacitatedFacilityLocationBlock::map_back_Modification )
 
@@ -1636,18 +1125,17 @@ bool CapacitatedFacilityLocationBlock::map_back_Modification( Block *R3B , c_p_M
 /*----------------------- Methods for handling Solution --------------------*/
 /*--------------------------------------------------------------------------*/
 
-Solution * CapacitatedFacilityLocationBlock::get_Solution( Configuration *solc , bool emptys )
+Solution * CapacitatedFacilityLocationBlock::get_Solution(
+				         Configuration * solc , bool emptys )
 {
+ auto * sol = new CapacitatedFacilityLocationSolution();
+
  int wsol = 0;
- auto tsolc = dynamic_cast<SimpleConfiguration<int> *>( solc );
+ if( ( ! solc ) && f_BlockConfig )
+  solc = f_BlockConfig->f_solution_Configuration;
 
- if( ( ! tsolc ) && f_BlockConfig && f_BlockConfig->f_solution_Configuration )
-  tsolc = dynamic_cast<SimpleConfiguration<int> *>(
-                                    f_BlockConfig->f_solution_Configuration );
- if( tsolc )
+ if( auto tsolc = dynamic_cast< SimpleConfiguration< int > * >( solc ) )
   wsol = tsolc->f_value;
-
- auto *sol = new MCFSolution();
 
  if( wsol != 2 )
   sol->v_x.resize( get_NArcs() );
@@ -3339,7 +2827,8 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::guts_of_add_Modification( p_Mod mod , ChnlName chnl )
+void CapacitatedFacilityLocationBlock::guts_of_add_Modification(
+						c_p_Mod mod , ChnlName chnl )
 {
  // process abstract Modification - - - - - - - - - - - - - - - - - - - - - -
  /* This requires to patiently sift through the possible Modification types
@@ -3470,56 +2959,362 @@ void CapacitatedFacilityLocationBlock::guts_of_add_Modification( p_Mod mod , Chn
 
 /*--------------------------------------------------------------------------*/
 
+bool CapacitatedFacilityLocationBlock::guts_of_map_f_Mod_copy(
+		       CapacitatedFacilityLocationBlock * R3B , c_p_Mod mod ,
+		       ModParam issuePMod , ModParam issueAMod )
+{
+ bool ok = true;  // final return value
+
+ if( const auto tmod = dynamic_cast< GroupModification * const >( mod ) ) {
+  // if the channels are the default ones, open new ones
+  auto iPM = par2chnl( issuePMod ) ? issuePMod
+           : make_par( par2mod( issuePMod ) , R3B->open_channel() );
+  auto iPA = par2chnl( issueAMod ) ? issueAMod
+           : make_par( par2mod( issueAMod ) , R3B->open_channel() );
+
+  for( const auto & submod : tmod->sub_Modifications() )  // for each sub-Mod
+   if( ! guts_of_guts_of_map_f_Mod_copy( R3B , submod.get() , iPM , iPA ) )
+    ok = false;
+
+  // now close the opened channels, if any
+  if( ! par2chnl( issuePMod ) )
+   R3B->close_channel( par2chnl( iPM ) );
+  if( ! par2chnl( issueAMod ) )
+   R3B->close_channel( par2chnl( iPA ) );
+  }
+ else  // any other Modification: just make the call
+  ok = guts_of_guts_of_map_f_Mod_copy( R3B , mod , issuePMod , issueAMod );
+
+ return( ok );
+ 
+ }  // end( CapacitatedFacilityLocationBlock::guts_of_map_f_Mod_copy )
+
+/*--------------------------------------------------------------------------*/
+
+bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
+		       CapacitatedFacilityLocationBlock * R3B , c_p_Mod mod ,
+		       ModParam issuePMod , ModParam issueAMod )
+{
+ /* When a GroupModification is processed, if no channel is provided, then
+    one is opened. This only happens "at root", after which in guts_of_mfM()
+    whenever a GroupModification is processed, then the channel is nested.
+    Indeed, if the "root" Modification is not a GroupModification, then there
+    cannot be any GroupModification in it.
+
+ ModParam iPM = issuePMod;
+ ModParam iPA = make_par( std::min( ModParam( eNoBlck ) ,
+				    par2mod( issueAMod ) ) ,
+			  par2chnl( issueAMod ) );
+
+ /* Use a Lambda to define a "guts" of the method that can be called
+    recursively without having to pass "local globals". Note the trick of
+    defining the std::function object and "passing" it to the lambda,
+    which allows recursive calls. Note the need to explicitly capture
+    "this" to use fields/methods of the class.
+
+ std::function< bool( c_p_Mod )> guts_of_mfM;
+ guts_of_mfM = [ this , & guts_of_mfM , & MCFB , & iPM , & iPA ]( c_p_Mod mod
+								  ) {
+  // process Modification- - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  /* This requires to patiently sift through the possible Modification types
+     to find what this Modification exactly is, and call the appropriate
+     method of either MCFB, for a "physical Modification", or of the "abstract
+     representation" of MCFB for an "abstract Modification".
+
+  //!! std::cout << *mod << std::endl;
+  
+  // GroupModification - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  if( const auto tmod = dynamic_cast< GroupModification * const >( mod ) ) {
+   MCFB->nest_channel( par2chnl( iPM ) );  // nest the channel for PM
+   MCFB->nest_channel( par2chnl( iPA ) );  // nest the channel for PA
+
+   bool ok = true;
+   for( const auto & submod : tmod->sub_Modifications() )
+    if( ! guts_of_mfM( submod.get() ) )
+     ok = false;
+
+   MCFB->un_nest_channel( par2chnl( iPM ) );  // un-nest the channel for PM
+   MCFB->un_nest_channel( par2chnl( iPA ) );  // un-nest the channel for PA
+
+   return( ok );
+   }
+
+  // CapacitatedFacilityLocationBlockRngdMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  /* Note: in the following we can assume that C, B and U are nonempty. This
+     is because they can be empty only if they are so when the object is
+     loaded. But if a Modification has been issued they are no longer empty
+     (a Modification changin nothing from the "empty" state is not issued).
+
+  if( const auto tmod = dynamic_cast< CapacitatedFacilityLocationBlockRngdMod * const >( mod ) ) {
+   switch( tmod->type() ) {
+    case( CapacitatedFacilityLocationBlockMod::eChgCost ):
+     #ifndef NDEBUG
+      if( ( tmod->rng().second > get_NArcs() ) ||
+	  ( tmod->rng().second > MCFB->get_NArcs() ) )
+       throw( std::logic_error(
+		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
+     #endif
+     if( tmod->rng().second == tmod->rng().first + 1 )
+      MCFB->chg_cost( C[ tmod->rng().first ] , tmod->rng().first ,
+		      iPM , iPA );
+     else
+      MCFB->chg_costs( C.begin() + tmod->rng().first , tmod->rng() ,
+		       iPM , iPA );
+     break;
+    case( CapacitatedFacilityLocationBlockMod::eChgCaps ):
+     #ifndef NDEBUG
+      if( ( tmod->rng().second > get_NArcs() ) ||
+	  ( tmod->rng().second > MCFB->get_NArcs() ) )
+       throw( std::logic_error(
+		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
+     #endif
+     if( tmod->rng().second == tmod->rng().first + 1 )
+      MCFB->chg_ucap( U[ tmod->rng().first ] , tmod->rng().first ,
+		      iPM , iPA );
+     else
+      MCFB->chg_ucaps( U.begin() + tmod->rng().first , tmod->rng() ,
+		       iPM , iPA );
+     break;
+    case( CapacitatedFacilityLocationBlockMod::eChgDfct ):
+     #ifndef NDEBUG
+      if( ( tmod->rng().second > get_NNodes() ) ||
+	  ( tmod->rng().second > MCFB->get_NNodes() ) )
+       throw( std::logic_error(
+		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
+     #endif
+     if( tmod->rng().second == tmod->rng().first + 1 )
+      MCFB->chg_dfct( B[ tmod->rng().first ] , tmod->rng().first ,
+		      iPM , iPA );
+     else
+      MCFB->chg_dfcts( B.begin() + tmod->rng().first , tmod->rng() ,
+		       iPM , iPA );
+     break;
+    case( CapacitatedFacilityLocationBlockMod::eOpenArc ):
+     #ifndef NDEBUG
+      if( ( tmod->rng().second > get_NArcs() ) ||
+	  ( tmod->rng().second > MCFB->get_NArcs() ) )
+       throw( std::logic_error(
+		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
+     #endif
+     if( tmod->rng().second == tmod->rng().first + 1 )
+      MCFB->open_arc( tmod->rng().first , iPM , iPA );
+     else
+      MCFB->open_arcs( tmod->rng() , iPM , iPA );
+     break;
+    case( CapacitatedFacilityLocationBlockMod::eCloseArc ):
+     #ifndef NDEBUG
+      if( ( tmod->rng().second > get_NArcs() ) ||
+	  ( tmod->rng().second > MCFB->get_NArcs() ) )
+       throw( std::logic_error(
+		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
+     #endif
+     if( tmod->rng().second == tmod->rng().first + 1 )
+      MCFB->close_arc( tmod->rng().first , iPM , iPA );
+     else
+      MCFB->close_arcs( tmod->rng() , iPM , iPA );
+     break;
+    case( CapacitatedFacilityLocationBlockMod::eAddArc ):
+     #ifndef NDEBUG
+      if( tmod->rng().first > get_NArcs() )
+       throw( std::logic_error(
+		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
+     #endif
+     if( MCFB->add_arc( get_SN( tmod->rng().first ) ,
+			get_EN( tmod->rng().first ) ,
+			get_C( tmod->rng().first ) ,
+			get_U( tmod->rng().first ) , iPM , iPA )
+	 != tmod->rng().first )
+      throw( std::logic_error( "inconsistency between arc names" ) );       
+     break;
+    case( CapacitatedFacilityLocationBlockMod::eRmvArc ):
+     #ifndef NDEBUG
+      if( tmod->rng().first > MCFB->get_NArcs() )
+       throw( std::logic_error(
+		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
+     #endif
+     MCFB->remove_arc( tmod->rng().second - 1 , iPM , iPA );
+     break;
+    default:
+     throw( std::invalid_argument( "unknown CapacitatedFacilityLocationBlockRngdMod type" ) );
+    }
+   return( true );
+   }
+
+  // CapacitatedFacilityLocationBlockSbstMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  /* Note that tmod->f_nms need be copied, since the chg_*() methods
+   * *in principle* "consume" the names vector. This is actually not true
+   * if MCFB will *not* issue a physical modification, which one may
+   * actually know beforehand, but it has to be done anyway because the
+   * CapacitatedFacilityLocationBlockSbstMod only provides read-only access
+ to the vector.
+
+  if( const auto tmod = dynamic_cast< CapacitatedFacilityLocationBlockSbstMod * const >( mod ) ) {
+   switch( tmod->type() ) {
+    case( CapacitatedFacilityLocationBlockMod::eChgCost ): {
+     #ifndef NDEBUG
+      if( ( tmod->nms().back() >= get_NArcs() ) ||
+	  ( tmod->nms().back() >= MCFB->get_NArcs() ) )
+       throw( std::logic_error(
+		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
+     #endif
+     Vec_CNumber NCost( tmod->nms().size() );
+     for( Index i = 0 ; i < NCost.size() ; i++ )
+      NCost[ i ] = C[ tmod->nms()[ i ] ];
+
+     MCFB->chg_costs( NCost.begin() , Subset( tmod->nms() ) , iPM , iPA );
+     break;
+     }
+    case( CapacitatedFacilityLocationBlockMod::eChgCaps ): {
+     #ifndef NDEBUG
+      if( ( tmod->nms().back() >= get_NArcs() ) ||
+	  ( tmod->nms().back() >= MCFB->get_NArcs() ) )
+       throw( std::logic_error(
+		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
+     #endif
+     Vec_FNumber NCap( tmod->nms().size() );
+     for( Index i = 0 ; i < NCap.size() ; i++ )
+      NCap[ i ] = U[ tmod->nms()[ i ] ];
+
+     MCFB->chg_ucaps( NCap.begin() , Subset( tmod->nms() ) , iPM , iPA );
+     break;
+     }
+    case( CapacitatedFacilityLocationBlockMod::eChgDfct ): {
+     #ifndef NDEBUG
+      if( ( tmod->nms().back() >= get_NNodes() ) ||
+	  ( tmod->nms().back() >= MCFB->get_NNodes() ) )
+       throw( std::logic_error(
+		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
+     #endif
+     Vec_FNumber NDfct( tmod->nms().size() );
+     for( Index i = 0 ; i < NDfct.size() ; i++ )
+      NDfct[ i ] = B[ tmod->nms()[ i ] ];
+
+     MCFB->chg_dfcts( NDfct.begin() , Subset( tmod->nms() ) , iPM , iPA );
+     break;
+     }
+    case( CapacitatedFacilityLocationBlockMod::eOpenArc ):
+     #ifndef NDEBUG
+      if( ( tmod->nms().back() >= get_NArcs() ) ||
+	  ( tmod->nms().back() >= MCFB->get_NArcs() ) )
+       throw( std::logic_error(
+		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
+     #endif
+     MCFB->open_arcs( Subset( tmod->nms() ) , iPM , iPA );
+     break;
+    case( CapacitatedFacilityLocationBlockMod::eCloseArc ):
+     #ifndef NDEBUG
+      if( ( tmod->nms().back() >= get_NArcs() ) ||
+	  ( tmod->nms().back() >= MCFB->get_NArcs() ) )
+       throw( std::logic_error(
+		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
+     #endif
+     MCFB->close_arcs( Subset( tmod->nms() ) , iPM , iPA );
+     break;
+    default:
+     throw( std::invalid_argument( "unknown CapacitatedFacilityLocationBlockSbstMod type" ) );
+    }
+   return( true );
+   }
+
+  // NBModification- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // this is the "nuclear option": the CapacitatedFacilityLocationBlock has been re-loaded
+  // one should check that the Block is this CapacitatedFacilityLocationBlock, but it cannot
+  // be otherwise, can it?
+
+  if( const auto tmod = dynamic_cast< NBModification * const >( mod ) ) {
+   MCFB->load( get_NNodes() , get_NArcs() , EN , SN , U , C , B ,
+	       get_NNodes() - get_NStaticNodes() ,
+	       get_NArcs() - get_NStaticArcs() ,
+	       get_MaxNNodes() - get_NStaticNodes() ,
+	       get_MaxNArcs() - get_NStaticArcs() );
+   return( true );
+   }
+
+  return( false );
+
+  };  // end( guts_of_mfM )- - - - - - - - - - - - - - - - - - - - - - - - - -
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ // finally, call the "guts of"- - - - - - - - - - - - - - - - - - - - - - - -
+ // this is done differently if mod is a GroupModification, since at the root
+ // a channel has to be opened while further down it has to be nested
+
+ */
+
+ return( false );  // any other Modification is not mapped
+
+ }  // end( CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy )
+
+/*--------------------------------------------------------------------------*/
+
+bool CapacitatedFacilityLocationBlock::guts_of_map_f_Mod_MCF(
+				    MCFBlock * R3B , c_p_Mod mod ,
+			            ModParam issuePMod , ModParam issueAMod )
+{
+ bool ok = true;  // final return value
+
+ if( const auto tmod = dynamic_cast< GroupModification * const >( mod ) ) {
+  // if the channels are the default ones, open new ones
+  auto iPM = par2chnl( issuePMod ) ? issuePMod
+           : make_par( par2mod( issuePMod ) , R3B->open_channel() );
+  auto iPA = par2chnl( issueAMod ) ? issueAMod
+           : make_par( par2mod( issueAMod ) , R3B->open_channel() );
+
+  for( const auto & submod : tmod->sub_Modifications() )  // for each sub-Mod
+   if( ! guts_of_guts_of_map_f_Mod_MCF( R3B , submod.get() , iPM , iPA ) )
+    ok = false;
+
+  // now close the opened channels, if any
+  if( ! par2chnl( issuePMod ) )
+   R3B->close_channel( par2chnl( iPM ) );
+  if( ! par2chnl( issueAMod ) )
+   R3B->close_channel( par2chnl( iPA ) );
+  }
+ else  // any other Modification: just make the call
+  ok = guts_of_guts_of_map_f_Mod_MCF( R3B , mod , issuePMod , issueAMod );
+
+ return( ok );
+
+ }  // end( CapacitatedFacilityLocationBlock::guts_of_map_f_Mod_MCF )
+
+/*--------------------------------------------------------------------------*/
+
+bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
+				    MCFBlock * R3B , c_p_Mod mod ,
+			            ModParam issuePMod , ModParam issueAMod )
+{
+
+
+ return( false );  // any other Modification is not mapped
+ 
+ }  // end( CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF )
+
+/*--------------------------------------------------------------------------*/
+
 void CapacitatedFacilityLocationBlock::compute_conditional_bounds( void )
 {
  f_cond_lower = f_cond_upper = 0;
 
- auto tC = C.begin();
- auto tU = U.begin();
-
- for( ; tC < C.end() ; ++tC , ++tU ) {
-  if( *tC == 0 )
-   continue;
-
-  if( *tC < 0 ) {
-   if( *tU == Inf<FNumber>() ) {
-    f_cond_lower = - Inf<double>();
-    break;
-    }
-   else
-    f_cond_lower += *tC * (*tU);
-   }
+ for( Index i = 0 ; i < f_n_facilities ; ++i )
+  if( v_fixed_cost[ i ] >= 0 )
+   f_cond_upper += v_fixed_cost[ i ];
   else
-   if( *tU == Inf<FNumber>() ) {
-    f_cond_upper = Inf<double>();
-    break;
-    }
-   else
-    f_cond_upper += *tC * (*tU);
+   f_cond_lower += v_fixed_cost[ i ];
+
+ for( Index j = 0 ; j < f_n_customers ; ++j ) {
+  auto minj = Inf< TCost >();
+  auto maxj = - Inf< TCost >();
+
+  for( Index i = 0 ; i < f_n_facilities ; ++i ) {
+   if( minj > v_transp_cost[ j ][ i ] )
+    minj = v_transp_cost[ j ][ i ];
+   if( maxj < v_transp_cost[ j ][ i ] )
+    maxj = v_transp_cost[ j ][ i ];
    }
 
- if( f_cond_lower > - Inf<double>() ) {
-  for( ; tC < C.end() ; ++tC , ++tU )
-   if( *tC < 0 ) {
-    if( *tU == Inf<FNumber>() ) {
-     f_cond_lower = - Inf<double>();
-     break;
-     }
-    else
-     f_cond_lower += *tC * (*tU);
-    }
-  }
-
- if( f_cond_upper < Inf<double>() ) {
-  for( ; tC < C.end() ; ++tC , ++tU )
-   if( *tC > 0 ) {
-    if( *tU == Inf<FNumber>() ) {
-     f_cond_upper = Inf<double>();
-     break;
-     }
-    else
-     f_cond_upper += *tC * (*tU);
-    }
+  f_cond_lower += minj;
+  f_cond_upper += maxj;
   }
  }  // end( CapacitatedFacilityLocationBlock::compute_conditional_bounds )
 
@@ -3769,109 +3564,97 @@ void CapacitatedFacilityLocationBlock::CheckAbsVSPhys( void )
 #endif
 
 /*--------------------------------------------------------------------------*/
-/*-------------------------- METHODS OF MCFSolution ------------------------*/
+/*------------- METHODS OF CapacitatedFacilityLocationSolution -------------*/
 /*--------------------------------------------------------------------------*/
 
-void MCFSolution::deserialize( const netCDF::NcGroup & group )
+void CapacitatedFacilityLocationSolution::deserialize(
+					      const netCDF::NcGroup & group )
 {
- std::vector<size_t> start = { 0 };
+ netCDF::NcDim nf = group.getDim( "NFacilities" );
+ if( nf.isNull() )
+  throw( std::invalid_argument(
+   "CapacitatedFacilityLocationSolution: NFacilities dimension required" ) );
 
- netCDF::NcDim na = group.getDim( "NumArcs" );
- if( na.isNull() )
+ netCDF::NcDim nc = group.getDim( "NCustomers" );
+ if( nc.isNull() )
+  throw( std::invalid_argument(
+   "CapacitatedFacilityLocationSolution: NCustomers dimension required" ) );
+
+ netCDF::NcVar fs = group.getVar( "FacilityCapacitySolution" );
+ if( fs.isNull() )
+  v_y.clear();
+ else {
+  v_y.resize( nf.getSize() );
+  fs.getVar( v_y.data() );
+  }
+
+ netCDF::NcVar ts = group.getVar( "TransportationSolution" );
+ if( ts.isNull() )
   v_x.clear();
  else {
-  netCDF::NcVar fs = group.getVar( "FlowSolution" );
-  if( fs.isNull() )
-   v_x.clear();
-  else {
-   v_x.resize( na.getSize() );
-   fs.getVar( v_x.data() );
-   }
+  v_pi.resize( { nc.getSize() , nf.getSize() } );
+  ts.getVar( v_x.data() );
   }
 
- netCDF::NcDim nn = group.getDim( "NumNodes" );
- if( nn.isNull() )
-  v_pi.clear();
- else {
-  netCDF::NcVar ps = group.getVar( "Potentials" );
-  if( ps.isNull() )
-   v_pi.clear();
-  else {
-   v_pi.resize( nn.getSize() );
-   ps.getVar( v_pi.data() );
-   }
-  }
- }  // end( MCFSolution::deserialize )
+ }  // end( CapacitatedFacilityLocationSolution::deserialize )
 
 /*--------------------------------------------------------------------------*/
 
-void MCFSolution::read( const Block * const block )
+void CapacitatedFacilityLocationSolution::read( const Block * block )
 {
- auto MCFB = dynamic_cast< const CapacitatedFacilityLocationBlock * >( block );
- if( ! MCFB )
-  throw( std::invalid_argument( "block is not a CapacitatedFacilityLocationBlock" ) );
+ auto CFLB = dynamic_cast<const CapacitatedFacilityLocationBlock * >( block );
+ if( ! CFLB )
+  throw( std::invalid_argument(
+		        "block is not a CapacitatedFacilityLocationBlock" ) );
 
- // read flows- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // read y- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( v_x.size() < MCFB->get_NArcs() )
-  v_x.resize( MCFB->get_NArcs() );
+ if( ! v_y.empty() ) {
+  if( v_x.size() < MCFB->get_NArcs() )
+   v_x.resize( MCFB->get_NArcs() );
 
- auto vxi = v_x.begin();
+  auto vxi = v_x.begin();
 
- // static part
- for( auto & xi : MCFB->x )
-  *(vxi++) = xi.get_value();
+  // static part
+  for( auto & xi : MCFB->x )
+   *(vxi++) = xi.get_value();
+  }
 
- // dynamic part
- for( auto & xi : MCFB->dx )
-  *(vxi++) = xi.get_value();
+ // read x- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- // read potentials - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( ! v_x.empty() ) {
+  if( v_pi.size() < MCFB->get_NNodes() )
+   v_pi.resize( MCFB->get_NNodes() );
 
- if( MCFB->E.empty() && MCFB->dE.empty() )  // no potentials available
-  return;
-
- if( v_pi.size() < MCFB->get_NNodes() )
-  v_pi.resize( MCFB->get_NNodes() );
-
- auto vpii = v_pi.begin();
+  auto vpii = v_pi.begin();
  
- // static part
- for( auto & ei : MCFB->E )
-  *(vpii++) = ei.get_dual();
-
- // dynamic part
- for( auto & ei : MCFB->dE )
-  *(vpii++) = ei.get_dual();
-
- }  // end( MCFSolution::read )
+  // static part
+  for( auto & ei : MCFB->E )
+   *(vpii++) = ei.get_dual();
+  }
+ }  // end( CapacitatedFacilityLocationSolution::read )
 
 /*--------------------------------------------------------------------------*/
 
-void MCFSolution::write( Block * const block ) 
+void CapacitatedFacilityLocationSolution::write( Block * const block ) 
 {
- auto MCFB = dynamic_cast< CapacitatedFacilityLocationBlock * >( block );
- if( ! MCFB )
-  throw( std::invalid_argument( "block is not a CapacitatedFacilityLocationBlock" ) );
+ auto CFLB = dynamic_cast< CapacitatedFacilityLocationBlock * >( block );
+ if( ! CFLB )
+  throw( std::invalid_argument(
+		       "block is not a CapacitatedFacilityLocationBlock" ) );
 
- // write flows - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // write y - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( ! v_x.empty() ) {
   if( v_x.size() < MCFB->get_NStaticArcs() )
    throw( std::invalid_argument( "incompatible flow size" ) );
 
   auto vxi = v_x.begin();
 
-  // static part
   for( auto & xi : MCFB->x )
    xi.set_value( *(vxi++) );
-
-  // dynamic part
-  for( auto dxi = MCFB->dx.begin() ;
-       ( dxi != MCFB->dx.end() ) && ( vxi != v_x.end() ) ; )
-   (*(dxi++)).set_value( *(vxi++) );
   }
 
- // write potentials- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // write x - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( v_pi.empty() )  // no potentials to write
   return;
 
@@ -3908,7 +3691,8 @@ void MCFSolution::write( Block * const block )
       ( dubi != MCFB->dUB.end() ) && ( i < MCFB->get_NArcs() ) ; ++i )
   (dubi++)->set_dual( MCFB->get_C( i ) + v_pi[ MCFB->SN[ i ] - 1 ]
 		                       - v_pi[ MCFB->EN[ i ] - 1 ] );
- }  // end( MCFSolution::write )
+
+ }  // end( CapacitatedFacilityLocationSolution::write )
 
 /*--------------------------------------------------------------------------*/
 

@@ -80,15 +80,15 @@ namespace SMSpp_di_unipi_it
  * A ) with m + n nodes and m * n = (directed) arcs corresponding to
  * (directed) routes from each facility i \in I to each customer j \in J.
  * Each arc ( j , i ) has a linear cost coefficient C[ j , i ] corresponding
- * to the cost of trasporting one unit of the commodity from i to j. Finally,
- * each customer j \in J has a demand D[ j ] of the commodity.
+ * to the cost of serving all the demand of user j from facility i to j.
+ * Finally, each customer j \in J has a demand D[ j ] of the commodity.
  *
  * Introducing flow variables X[ j , i ] that represent the percentage of the
  * total demand of customer j served by facility i and binary variables
  * Y[ i ] that represent (in the obvious way) if the facility is opened, a
  * "natural formulation" of the problem is:
  * \f[
- *  \min \sum_{ j \in J } \sum_{ i \in I } C[ j , i ] D[ j ] X[ j , i ] +
+ *  \min \sum_{ j \in J } \sum_{ i \in I } C[ j , i ] X[ j , i ] +
  *       \sum_{ i \in I } F[ i ] Y[ i ]
  * \f]
  * \f[
@@ -157,50 +157,45 @@ public:
 
  using Demand = double;  ///< demands of customers = capacity of facilities
 
- using TCost = double;   ///< transportation costs
-
- using FCost = double;   ///< fixed costs
-
  using DVector = std::vector< Demand >;  ///< a vector of demands
 
- using c_DVector = const DVector;  ///< a const vector of demands
+ using c_DVector = const DVector;       ///< a const vector of demands
 
- using TCVector = std::vector< TCost >;  ///< a vector of transportation costs
+ using DV_it = DVector::iterator;       ///< iterator into a DVector
 
- using c_TCVector = const TCVector;
- ///< a const vector of transportation costs
+ using c_DV_it = DVector::const_iterator;
+ ///< const_iterator into a DVector
 
- using FCVector = std::vector< FCost >;  ///< a vector of fixed costs
+ using Cost = double;                  ///< transportation / fixed costs
 
- using c_FCVector = const FCVector;      ///< a const vector of fixed costs
+ using CVector = std::vector< Cost >;  ///< a vector of costs
 
- using TCMatrix = boost::multi_array< TCost , 2 >;
- ///< a 2-dimensional matrix of transportation costs
+ using c_CVector = const CVector;      ///< a const vector of costs
 
- using c_TCMatrix = const TCMatrix;
- ///< a const 2-dimensional matrix of transportation costs
+ using CV_it = CVector::iterator;      ///< iterator into a CVector
 
- using Arc = std::pair< Index , Index >;
- ///< an arc in the transportation graph, i.e., a pair ( Facility , Customer )
+ using c_CV_it = CVector::const_iterator;
+ ///< const_iterator into a CVector
 
- using FacilitySolution = std::vector< bool >;
- ///< the part of the solution regarding which facilities are open
+ using CMatrix = boost::multi_array< Cost , 2 >;
+ ///< a 2-dimensional matrix of costs
 
- using SplittableValue = double;  ///< a single splittable solution element
+ using c_CMatrix = const CMatrix;
+ ///< a const 2-dimensional matrix of costs
 
- using UnSplittableValue = bool;  ///< a single unsplittable solution element
+ using IntSolution = std::vector< bool >;   ///< an integer (binary) solution
 
- using SplittableSolution = boost::multi_array< SplittableValue , 2 >;
- ///< the part of the solution about how customers are served, splittable
+ using IS_it = IntSolution::iterator;       ///< iterator into a IntSolution
 
- using UnSplittableSolution = boost::multi_array< UnSplittableValue , 2 >;
- ///< the part of the solution about how customers are served, unsplittable
+ using c_IS_it = IntSolution::const_iterator;
+ ///< const_iterator into a IntSolution
 
- using Splittable1Solution = std::vector< SplittableValue >;
- ///< how a single customer is served, splittable
+ using CntSolution = std::vector< double >;  ///< a continuous solution
 
- using UnSplittable1Solution = std::vector< UnSplittableValue >;
- ///< how a single customer is served, unsplittable
+ using CS_it = CntSolution::iterator;        ///< iterator into a CntSolution
+
+ using c_CS_it = CntSolution::const_iterator;
+ ///< const_iterator into a CntSolution
 
 /** @} ---------------------------------------------------------------------*/
 /*------------------------------- FRIENDS ----------------------------------*/
@@ -262,8 +257,9 @@ public:
   *
   * - C    is the boost::multi_array< TCost , 2 > matrix of transportation
   *        costs, arranged customer-wise; this means that C[ i ] for i \in I
-  *        is a m-vector so that C[ i ][ j ] is the transportation cost
-  *        between facility j and customer i
+  *        is a m-vector so that C[ i ][ j ] is the total transportation cost
+  *        between facility j and customer i, i.e., the cost of serving all
+  *        the demand of customer j out of facility i.
   *
   * As the && tells, all the data becomes property of the
   * CapacitatedFacilityLocationBlock.
@@ -272,8 +268,8 @@ public:
   * CapacitatedFacilityLocationBlock then a NBModification (the "nuclear
   * option") is issued. */
 
- void load( Index n , Index m , DVector && Q , FCVector && F ,
-	    DVector && D , TCMatrix && C );
+ void load( Index n , Index m , DVector && Q , CVector && F ,
+	    DVector && D , CMatrix && C );
 
 /*--------------------------------------------------------------------------*/
  /// loads the CFL instance from memory, copying the input data
@@ -281,10 +277,9 @@ public:
   * the other form of load() except that (by being const & rather than &&)
   * the vectors/metrices are copied rather than moved.  */
 
- void load( Index n , Index m , const DVector & Q , const FCVector & F ,
-	    const DVector & D , const TCMatrix & C ) {
-  load( n , m , std::move( Q ) , std::move( F ) , std::move( D ) ,
-	std::move( C ) );
+ void load( Index n , Index m , c_DVector & Q , c_CVector & F ,
+	    c_DVector & D , c_CMatrix & C ) {
+  load( n , m , DVector( Q ) , CVector( F ) , DVector( D ) , CMatrix( C ) );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -313,7 +308,7 @@ public:
   * - the variable "TransportationCost", of type double and indexed over
   *   both the dimensions "NCustomers" and "NFacilities"; the entry ( i , j )
   *   is assumed to contain the *total* cost of serving customer i from
-  *   facility j, i.e., the product C[ i , j ] D[ i ]
+  *   facility j
   *
   * All the dimensions and variables are mandatory. */
 
@@ -339,7 +334,7 @@ public:
   *
   * - wf & 3 == 0 is the "natural formulation" (NF) always comprising
   *   \f[
-  *    \min \sum_{ j \in J } \sum_{ i \in I } C[ j , i ] D[ j ] X[ j , i ] +
+  *    \min \sum_{ j \in J } \sum_{ i \in I } C[ j , i ] X[ j , i ] +
   *         \sum_{ i \in I } F[ i ] Y[ i ]
   *   \f]
   *   \f[
@@ -382,7 +377,7 @@ public:
   *   while the last variable correspond to the design variable Y[ i ].
   *   That is, the i-th knapsack problem is
   *   \f[
-  *    \min \sum_{ j \in J } C[ j , i ] D[ j ] X[ j , i ] + F[ i ] Y[ i ]
+  *    \min \sum_{ j \in J } C[ j , i ] X[ j , i ] + F[ i ] Y[ i ]
   *   \f]
    *   \f[
   *    \sum_{ j \in J } D[ j ] X[ j , i ] - Q[ i ] Y[ i ] \leq 0
@@ -489,19 +484,33 @@ public:
   * formulation which is decided during the call to
   * generate_abstract_variables(), as follows:
   *
-  * - if 0 <= f_formulation <= 1 it is the objective function of the 
-  *   "natural formulation" with the standard "x" and "y" variables, i.e.,
-  *   \f[
-  *    \min \sum_{ (j , i) \in A } C[ j , i ] D[ i ] X[ j , i ] +
-  *         \sum_{ j \in J } F[ j ] Y[ j ]
-  *   \f]
+  * - If the "natural formulation" (SF) is used, there is a single "dense"
+  *   "linear objective" (FRealObjective with a LinearFunction) having
+  *   first the terms F[ i ] Y[ i ] (in order of i) and then all the terms
+  *   C[ j , i ] X[ j , i ] (in order of j and then i).
   *
-  * - if f_formulation == 2: to be continued ...
-  */
+  * - If the "knapsack formulation" (KF) is used, then all the objective is
+  *   expressed in terms of the objectives of the f_n_facilities
+  *   BinaryKnapsackBlock sub-Block.
+  *
+  * - If the "flow formulation" (FF) is used, then there is a single "dense"
+  *   "linear objective" (FRealObjective with a LinearFunction) having
+  *   the terms F[ i ] Y[ i ] (in order of i) in the first sub-Block where
+  *   the Y[] variables are defined; the remaining part of the objective
+  *   is represented by the "linear objective" of the MCFBlock, that has
+  *   cost C[ j , i ] / D[ j ] (since the flow on the arc represent the
+  *   actual amount of commodity shipped along the arc, as opposed to the
+  *   fraction of the demand D[ j ]) in the "transportation arc" ( i , j )
+  *   (from facility i to customer j), but zero costs on the "facility arcs"
+  *   (from the super-source to facilities).
+  *
+  * There are no options (save those above relative to the employed
+  * formulation which must have already been set before the method is
+  * called), hence objc is ignored. */
 
- void generate_objective( Configuration *objc = nullptr ) override;
+ void generate_objective( Configuration * objc = nullptr ) override;
 
-/**@} ----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*-- Methods for reading the data of the CapacitatedFacilityLocationBlock --*/
 /*--------------------------------------------------------------------------*/
 /** @name Reading the data of the CapacitatedFacilityLocationBlock
@@ -517,14 +526,9 @@ public:
 /*--------------------------------------------------------------------------*/
  /// getting upper bounds on the value of the Objective
  /** An upper bound on the optimal value of the problem is computed as
-  * \f[
-  *  \sum_{ ( i , j ) \in A : C[ i , j ] > 0 } C[ i , j ] D[ i ] +
-  *  \sum_{ j ) \in J : F[ j ] > 0 } F[ i ] 
-  * \f]
-  *
-  * TODO: better bounds could be computed by looking at the demand of any
-  *       customer and looking at the worst possible facility that could
-  *       serve it. */
+  * \f$ \sum_{ i \in I } : F[ i ] > 0 } F[ i ] \f$ plus, for each customer
+  * j \in J, the term \f$ C[ j , i ] \f$ corresponding to the maximum
+  * \f$ C[ j , i ] \f$ among all possible i \in I. */
 
  double get_valid_upper_bound( bool conditional = false )
   override final {
@@ -539,15 +543,10 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// getting a global valid lower bound on the value of the Objective
- /** A lower bound on the optimal value of the problem is computed as
-  * \f[
-  *  \sum_{ ( i , j ) \in A : C[ i , j ] < 0 } C[ i , j ] D[ i ] +
-  *  \sum_{ j ) \in J : F[ j ] < 0 } F[ i ] 
-  * \f]
-  *
-  * TODO: better bounds could be computed by looking at the demand of any
-  *       customer and looking at the best possible facility that could
-  *       serve it. */
+ /** An upper bound on the optimal value of the problem is computed as
+  * \f$ \sum_{ i \in I } : F[ i ] < 0 } F[ i ] \f$ plus, for each customer
+  * j \in J, the term \f$ C[ j , i ] \f$ corresponding to the minimum
+  * \f$ C[ j , i ] \f$ among all possible i \in I. */
 
  double get_valid_lower_bound( bool conditional = false )
   override final {
@@ -568,11 +567,6 @@ public:
  Index get_NCustomers( void ) const { return( f_n_customers ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// get the maximum number of nodes
-
- Index get_MaxNNodes( void ) const { return( MaxNNodes ); }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the splittable/unsplittale status
 
  bool get_Unsplittable( void ) const { return( f_unsplittable ); }
@@ -590,12 +584,12 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the vector of facility fixed costs
 
- c_FCVector & get_Fixed_Costs( void ) const { return( v_fixed_cost ); }
+ c_CVector & get_Fixed_Costs( void ) const { return( v_fixed_cost ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the fixed cost of facility i (0 <= i < get_NFacilities())
 
- FCost get_Fixed_Cost( Index i ) const { return( v_fixed_cost[ i ] ); }
+ Cost get_Fixed_Cost( Index i ) const { return( v_fixed_cost[ i ] ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the vector of customers' demands
@@ -613,37 +607,79 @@ public:
   * element [ i ][ j ] is the *unitary* transportation cost between customer
   * i and facility j. */
 
- c_TCMatrix & get_Transportation_Costs( void ) const {
+ c_CMatrix & get_Transportation_Costs( void ) const {
   return( v_transp_cost );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the transportation cost for a given pair ( customer , facility )
 
- TCost get_Transportation_Cost( Index customer , Index facility ) const {
+ Cost get_Transportation_Cost( Index customer , Index facility ) const {
   return( v_transp_cost[ customer ][ facility ] );
   }
 
- /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// get the cost for a given transportation arc
-
- TCost get_Transportation_Cost( Arc a ) const {
-  return( get_Transportation_Cost( a.first , a.second ) );
-  }
-
-/**@} ----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*--------------------- Methods for checking the Block ---------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Methods for checking the Block
  *  @{ */
 
-
  /// returns true if the current solution is approximately feasible
- 
- bool is_feasible( bool useabstract = false , Configuration *fsbc = nullptr )
-  override;
+ /** Returns true if the solution encoded in the current value of the design
+  * (Y) and transportation (X) Variable of the
+  * CapacitatedFacilityLocationBlock is approximately feasible. This clearly
+  * requires the Variable of the CapacitatedFacilityLocationBlock to have
+  * been defined, i.e., that generate_abstract_variables() has been called
+  * prior to this method, and then of course that a solution has been
+  * written there.
+  *
+  * The parameter for deciding what "approximately feasible" exactly means is
+  * a single double value, representing the *relative* tolerance for
+  * satisfaction of both the customer satisfaction constraint and the
+  * facility capacity ones. This value is to be found as:
+  *
+  * - if fsbc is not nullptr and it is a SimpleConfiguration< double >, then
+  *   it if fsbc->f_value;
+  *
+  * - otherwise, if f_BlockConfig is not nullptr,
+  *   f_BlockConfig->f_is_feasible_Configuration is not nullptr and it
+  *   is a SimpleConfiguration< double >, then it is
+  *   f_BlockConfig->f_is_feasible_Configuration->f_value;
+  *
+  * - otherwise, it is 1e-10. */
 
-/**@} ----------------------------------------------------------------------*/
+ bool is_feasible( bool useabstract = false ,
+		   Configuration * fsbc = nullptr ) override;
+
+ /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns true if the current solution is (approximately) customer feasible
+ /** Returns true if the solution encoded in the current value of the design
+  * (Y) and transportation (X) Variable of the
+  * CapacitatedFacilityLocationBlock (approximately) satisfies the customer
+  * satisfaction constraints. This clearly requires the Variable to have been
+  * defined, i.e., that generate_abstract_variables() has been called prior
+  * to this method, and then of course that a solution has been written
+  * there. The parameter feps is the relative accuracy defining
+  * "approximately". The parameter "useabstract" has the same meaning as in
+  * is_feasible(). */
+
+ bool customer_feasible( double eps , bool useabstract = false );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns true if the current solution is (approximately) facility feasible
+ /** Returns true if the solution encoded in the current value of the design
+  * (Y) and transportation (X) Variable of the
+  * CapacitatedFacilityLocationBlock (approximately) satisfies the facility
+  * capacity constraints. This clearly requires the Variable to have been
+  * defined, i.e., that generate_abstract_variables() has been called prior
+  * to this method, and then of course that a solution has been written
+  * there. The parameter feps is the relative accuracy defining
+  * "approximately". The parameter "useabstract" has the same meaning as in
+  * is_feasible(). */
+
+ bool facility_feasible( double eps , bool useabstract = false );
+
+/** @} ---------------------------------------------------------------------*/
 /*------------------------- Methods for R3 Blocks --------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Methods for R3 Blocks
@@ -655,26 +691,79 @@ public:
   * SimpleConfiguration< int >, whose f_value can be:
   *
   * - 0 (which is also assumed if r3bc == nullptr), indicating the standard
-  *   copy (a CapacitatedFacilityLocationBlock identical to this)
+  *   copy (a CapacitatedFacilityLocationBlock identical to this); in this
+  *   case, if \p base is passed then it must be a
+  *   CapacitatedFacilityLocationBlock (otherwise exception is thrown)
   *
-  * - 1: to be continued
-  */
+  * - 1 and 2: a MCFBlock containing the "flow relaxation" of the
+  *   CapacitatedFacilityLocationBlock is produced, the difference between
+  *   the two values is that with 2 the "flow relaxation" is arranged in
+  *   such a way as to always being feasible even of the "normal" arcs of
+  *   the graph are closed (or their capacity is reduced). If \p base is
+  *   passed then it must be a MCFBlock (otherwise exception is thrown).
+  *
+  *   In both cases, the graph has f_n_facilities + f_n_customers + 1 nodes,
+  *   with the following arrangement:
+  *
+  *   = node 1: super source, deficit == - sum of all demands
+  *
+  *   = nodes 2 ... f_n_facilities + 1: facilities, deficit == 0
+  *
+  *   = nodes f_n_facilities + 2 ... f_n_facilities + f_n_customers + 1: 
+  *     customers, deficit == customer demand
+  *
+  *   and *at least* f_n_facilities * ( f_n_customers + 1 ) with the
+  *   following arrangement:
+  *
+  *   = arcs 0 ...f_n_facilities - 1: from source to facilities, capacity ==
+  *     facility capacity, cost == fixed cost / facility capacity
+  *
+  *   = arcs f_n_facilities ... f_n_facilities * ( f_n_customers + 1 ) - 1:
+  *     from facilities to customers, arranged customer-wise (first all the
+  *     arcs of the first customer, then all the arcs of the second, ...),
+  *     capacity == infinite (Inf<MCFBlock:: FNumber >()), cost ==
+  *     unitary transportation cost between facility and customer
+  *
+  *   When the value is 2, f_n_customers "artificial" arcs are also added
+  *   from the super source to each customer, with capacity == infinite
+  *   Inf< (MCFBlock::FNumber >()) and a very large cost (somethng like
+  *   100 * ( max facility cost + max transportation cost from any
+  *   facility to the customer). Note that
+  *
+  *       THE COST OF THESE ARCS ARE NOT UPDATED WHEN THE ORIGINAL COSTS
+  *       CHANGE
+  *
+  *   as it is assumed that they are "large enough for good".
+  *
+  * - any other value: not supported (exception is thrown) */
 
- Block * get_R3_Block( Configuration *r3bc = nullptr ,
+ Block * get_R3_Block( Configuration * r3bc = nullptr ,
 		       Block * base = nullptr , Block * father = nullptr )
   override;
 
 /*--------------------------------------------------------------------------*/
  /// maps back the solution from a R3Block
+ /** Takes the solution stored in Block, which is supposed to be a R3Block
+  * of the type indicated by the [Simple]Configuration[< int >] r3bc with the
+  * same encoding as in get_R3_Block(), and moves it in the current Block.
+  *
+  * If not nullptr, solc is assumed to be a SimpleConfiguration< int > whose
+  * f_value encodes bit-wise which part of the solution is mapped back:
+  *
+  * - bit 0 (+1): the design solution (y) is mqpped back
+  *
+  * - bit 1 (+2): the transportation solution (x) is mqpped back
+  *
+  * If solc == nullptr, the value of 3 (map back everything) is assumed. */
 
- void map_back_solution( Block *R3B , Configuration *r3bc = nullptr ,
-			 Configuration *solc = nullptr ) override;
+ void map_back_solution( Block * R3B , Configuration * r3bc = nullptr ,
+			 Configuration * solc = nullptr ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// maps forward the solution to a R3Block
 
- void map_forward_solution( Block *R3B , Configuration *r3bc = nullptr ,
-			    Configuration *solc = nullptr ) override;
+ void map_forward_solution( Block * R3B , Configuration * r3bc = nullptr ,
+			    Configuration * solc = nullptr ) override;
 
 /*--------------------------------------------------------------------------*/
  /// maps forward Modification to a R3Block
@@ -710,8 +799,8 @@ public:
   * reason for it to issue "abstract" Modification with concerns_Block() ==
   * true. */
 
- bool map_forward_Modification( Block *R3B , c_p_Mod mod ,
-				Configuration *r3bc = nullptr ,
+ bool map_forward_Modification( Block * R3B , c_p_Mod mod ,
+				Configuration * r3bc = nullptr ,
 				ModParam issuePMod = eNoBlck ,
 				ModParam issueAMod = eModBlck ) override;
 
@@ -723,8 +812,8 @@ public:
   * Comments to be completed.
   */
 
- bool map_back_Modification( Block *R3B , c_p_Mod mod ,
-			     Configuration *r3bc = nullptr ,
+ bool map_back_Modification( Block * R3B , c_p_Mod mod ,
+			     Configuration * r3bc = nullptr ,
 			     ModParam issuePMod = eNoBlck ,
 			     ModParam issueAMod = eModBlck ) override;
 
@@ -746,8 +835,44 @@ public:
   * CapacitatedFacilityLocationBlock because the former uses some type
   * information declared in the latter. */ 
 
- Solution * get_Solution( Configuration *solc = nullptr ,
+ Solution * get_Solution( Configuration * solc = nullptr ,
 			  bool emptys = true ) override;
+
+/*--------------------------------------------------------------------------*/
+ /// gets a (reference to) the Y[] variable corresponding to facility i
+
+ ColVariable & get_y( Index i ) const {
+  #ifndef NDEBUG
+   if( ! ( AR &= HasVar ) )
+    throw( std::logic_error( "get_y: variables not generated" ) );
+  #endif
+
+  switch( AR & FormMsk ) {
+   case( StdForm ): return( v_y[ i ] );
+   case( KskForm ): return( * static_cast< BinaryKnapsackBlock * >(
+				  v_Block[ i ] )->get_Var( f_n_customers ) );
+   }
+
+  throw( std::logic_error( "get_y: flow formulation not implemented yet" ) );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// gets a (reference to) the X[ j ][ i ] variable
+
+ ColVariable & get_x( Index j , Index i ) const {
+  #ifndef NDEBUG
+   if( ! ( AR &= HasVar ) )
+    throw( std::logic_error( "get_x: variables not generated" ) );
+  #endif
+
+  switch( AR & FormMsk ) {
+   case( StdForm ): return( v_x[ j ][ i ] );
+   case( KskForm ): return( * static_cast< BinaryKnapsackBlock * >(
+				              v_Block[ i ] )->get_Var( j ) );
+   }
+
+  throw( std::logic_error( "get_x: flow formulation not implemented yet" ) );
+  }
 
 /*--------------------------------------------------------------------------*/
  /// gets a contiguous interval of the facility solution
@@ -755,13 +880,13 @@ public:
   * true if the facility rng.first + i is opened. Note that if the right
   * extreme of the range is >= get_NFacilities() it is ignored.  */
 
- void get_facility_solutions( FacilitySolution & FSol ,
+ void get_facility_solution( FacilitySolution & FSol ,
 			      Range rng = Range( 0 , Inf<Index>() ) );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets the facility solution for an arbitrary subset of arcs
  /** Method to get the facility solution; upon return, FSol[ i ] contains true
-  * if the facility nms[ i ] is pened for all 0 <= i < nms.size(). Note that
+  * if the facility nms[ i ] is opened for all 0 <= i < nms.size(). Note that
   *
   *     nms IS ASSUMED TO BE ORDERED BY INCREASING Index */
 
@@ -770,11 +895,11 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets the facility solution of the given facility
 
- vool get_facility_solution( Index facility ) {
-  if( facility >= get_NFacilities() )
+ bool get_facility_solution( Index i ) {
+  if( i >= get_NFacilities() )
    throw( std::invalid_argument( "invalid facility name" ) );
 
-  return( y[ facility ] );
+  return( get_y( i ).get_value() );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -1157,23 +1282,26 @@ public:
 /*--------------------------- PROTECTED FIELDS  ----------------------------*/
 /*--------------------------------------------------------------------------*/
 
- Index f_n_facilities;        ///< the number of facilities
- Index f_n_customers;         ///< the number of customers
- bool f_unsplittable;         ///< if customers can only be served once
+ // problem data- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- DVector v_capacity;          ///< vector of facility capacities
- FCVector v_fixed_cost;       ///< vector of facility fixed costs
- DVector v_demand;            ///< vector of customers demands
- TCMatrix v_transp_cost;      ///< matrix of transportation costs
-                              /**< The matrix of transportation costs is
-			       * arranged customer-wise, i.e.,
- * v_transp_cost[ j ][ i ] is the *unitary* transportation cost between
- * customer i and facility j. */
+ Index f_n_facilities;    ///< the number of facilities
+ Index f_n_customers;    ///< the number of customers
 
- unsigned char AR;               ///< bit-wise coded: what abstract is there
-                                 /**< The char field AR keeps track of which
-				  * part of the abstract representation has
-  * been constructed already, as well as *which formulation* is used.
+ DVector v_capacity;     ///< vector of facility capacities
+ CVector v_fixed_cost;   ///< vector of facility fixed costs
+ DVector v_demand;       ///< vector of customers demands
+ CMatrix v_transp_cost;  ///< matrix of transportation costs
+                         /**< The matrix of transportation costs is
+			  * arranged customer-wise, i.e.,
+  * v_transp_cost[ j ][ i ] is the *unitary* transportation cost between
+  * customer i and facility j. */
+
+ // abstract representation stuff - - - - - - - - - - - - - - - - - - - - - -
+
+ unsigned char AR;       ///< bit-wise coded: what abstract is there
+                         /**< The char field AR keeps track of which part of
+			  * the abstract representation has been constructed
+  * already, as well as *which formulation* is used.
   * The second part is coded in the first three bits of AR, as follows.
   * The first part is coded in the first three bits of AR, as follows:
   * The first two bits encode the "large-scale shape" of the formulatio:
@@ -1195,13 +1323,15 @@ public:
   * - AR & HasCapCns: if the capacity Constraints have been constructed
   */
 
- double f_cond_lower;            ///< conditional lower bound, can be infinite
- double f_cond_upper;            ///< conditional upper bound, can be infinite
+ bool f_unsplittable;    ///< if customers can only be served once
+
+ double f_cond_lower;    ///< conditional lower bound, can be infinite
+ double f_cond_upper;    ///< conditional upper bound, can be infinite
 
  boost::multi_array< ColVariable , 2 > v_x;  ///< the flow variables
                                              /**< x is a bi-dimensional array
 				              * of ColVariable representing
-  * transportation; thay is, x[ j ][ i ] is the fraction of demand of
+  * transportation; thay is, v_x[ j ][ i ] is the fraction of demand of
   * customer j served by facility i. */
 
  std::vector< ColVariable > v_y;  ///< the design variables
@@ -1212,9 +1342,9 @@ public:
 
  std::vector< FRowConstraint> v_cap;  ///< the facility capacity constraints
 
- std::list< FRowConstraint > v_sfc;  ///< the strong forcing constraints
+ std::list< FRowConstraint > v_sfc;   ///< the strong forcing constraints
 
- FRealObjective c;               ///< the (linear) objective function
+ FRealObjective c;                    ///< the (linear) objective function
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
@@ -1294,6 +1424,20 @@ public:
  void guts_of_destructor( void );
 
  void guts_of_add_Modification( p_Mod mod , ChnlName chnl );
+
+ bool guts_of_map_f_Mod_copy(
+			CapacitatedFacilityLocationBlock * R3B , p_Mod mod ,
+			ModParam issuePMod , ModParam issueAMod );
+
+ bool guts_of_guts_of_map_f_Mod_copy(
+			CapacitatedFacilityLocationBlock * R3B , p_Mod mod ,
+			ModParam issuePMod , ModParam issueAMod );
+
+ bool guts_of_map_f_Mod_MCF( MCFBlock * R3B , p_Mod mod ,
+			     ModParam issuePMod , ModParam issueAMod );
+
+ bool guts_of_guts_of_map_f_Mod_MCF( MCFBlock * R3B , p_Mod mod ,
+				    ModParam issuePMod , ModParam issueAMod );
 
  void compute_conditional_bounds( void );
 
