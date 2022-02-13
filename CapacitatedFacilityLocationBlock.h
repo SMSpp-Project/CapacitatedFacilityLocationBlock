@@ -33,8 +33,6 @@
 
 #include "FRowConstraint.h"
 
-#include "OneVarConstraint.h"
-
 #include "Solution.h"
 
 /*--------------------------------------------------------------------------*/
@@ -79,29 +77,29 @@ namespace SMSpp_di_unipi_it
  * Underlying the problem there is a complete bipartite graph G = ( I x J ,
  * A ) with m + n nodes and m * n = (directed) arcs corresponding to
  * (directed) routes from each facility i \in I to each customer j \in J.
- * Each arc ( j , i ) has a linear cost coefficient C[ j , i ] corresponding
- * to the cost of serving all the demand of user j from facility i to j.
- * Finally, each customer j \in J has a demand D[ j ] of the commodity.
+ * Each arc ( i , j ) has a linear cost coefficient C[ i , j ] corresponding
+ * to the cost of serving all the demand D[ j ] of the user j for the unique
+ * commodity from facility i.
  *
- * Introducing flow variables X[ j , i ] that represent the percentage of the
+ * Introducing flow variables X[ i , j ] that represent the percentage of the
  * total demand of customer j served by facility i and binary variables
- * Y[ i ] that represent (in the obvious way) if the facility is opened, a
+ * Y[ i ] that represent (in the obvious way) if the facility i is opened, a
  * "natural formulation" of the problem is:
  * \f[
- *  \min \sum_{ j \in J } \sum_{ i \in I } C[ j , i ] X[ j , i ] +
+ *  \min \sum_{ i \in I } \sum_{ j \in J } C[ i , j ] X[ i , j ] +
  *       \sum_{ i \in I } F[ i ] Y[ i ]
  * \f]
  * \f[
- *  \sum_{ i \in I } X[ j , i ] = 1                       \quad j \in J   (1)
+ *  \sum_{ i \in I } X[ i , j ] = 1                        \quad j \in J  (1)
  * \f]
  * \f[
- *  \sum_{ j \in J } D[ j ] X[ j , i ] \leq Q[ i ] Y[ i ]  \quad i \in I  (2)
+ *  \sum_{ j \in J } D[ j ] X[ i , j ] \leq Q[ i ] Y[ i ]  \quad i \in I  (2)
  * \f]
  * \f[
  *  Y[ i ] \in \{ 0 , 1 \}                                 \quad i \in I  (3)
  * \f]
  * \f[
- *  0 \leq X[ j , i ] \leq 1                     \quad j \in J , i \in I  (4)
+ *  0 \leq X[ i , j ] \leq 1                     \quad j \in J , i \in I  (4)
  * \f]
  * The n equations (1) impose that all the demand of each customer is
  * satisfied. The m inequalities (2) impose that a facility is only used to
@@ -111,7 +109,7 @@ namespace SMSpp_di_unipi_it
  * whereby a customer can be served by multiple facilities; with the "minor"
  * change in the model where (4) is replaced with
  * \f[
- *  X[ j , i ] \in \{ 0 , 1 \}                  \quad j \in J , i \in I  (4')
+ *  X[ i , j ] \in \{ 0 , 1 \}                  \quad j \in J , i \in I  (4')
  * \f]
  * one can represent the *unsplittable* version where each customer need be
  * served by exactly one facility.
@@ -122,7 +120,7 @@ namespace SMSpp_di_unipi_it
  * demand possibly subject to uncertainties, more complex installation and/or
  * handling costs for facilities (if a facility incurs a unitary cost H[ j ]
  * for handling one unit of commodity this is considered included in the
- * transportation cost C[ j , i ] here, but this is possible only if the
+ * transportation cost C[ i , j ] here, but this is possible only if the
  * handling cost is linear, which it may not be).
  *
  * This class only represent the "basic version" and it is primarily intended
@@ -256,10 +254,10 @@ public:
   *        have exactly size() == n
   *
   * - C    is the boost::multi_array< TCost , 2 > matrix of transportation
-  *        costs, arranged customer-wise; this means that C[ i ] for i \in I
-  *        is a m-vector so that C[ i ][ j ] is the total transportation cost
-  *        between facility j and customer i, i.e., the cost of serving all
-  *        the demand of customer j out of facility i.
+  *        costs, arranged facility-wise; this means that C[ i ] for i \in I
+  *        is a n-vector so that C[ i ][ j ] is the total transportation cost
+  *        between facility i and customer j, i.e., the cost of serving all
+  *        the demand D[ j ] of customer j out of facility i.
   *
   * As the && tells, all the data becomes property of the
   * CapacitatedFacilityLocationBlock.
@@ -306,7 +304,7 @@ public:
   *   contain the demand of the i-th customer
   *
   * - the variable "TransportationCost", of type double and indexed over
-  *   both the dimensions "NCustomers" and "NFacilities"; the entry ( i , j )
+  *   both the dimensions "NFacilities" and "NCustomers"; the entry ( i , j )
   *   is assumed to contain the *total* cost of serving customer i from
   *   facility j
   *
@@ -334,31 +332,31 @@ public:
   *
   * - wf & 3 == 0 is the "natural formulation" (NF) always comprising
   *   \f[
-  *    \min \sum_{ j \in J } \sum_{ i \in I } C[ j , i ] X[ j , i ] +
+  *    \min \sum_{ i \in I } \sum_{ j \in J } C[ i , j ] X[ i , j ] +
   *         \sum_{ i \in I } F[ i ] Y[ i ]
   *   \f]
   *   \f[
-  *    \sum_{ i \in I } X[ j , i ] = 1                           j \in J  (1)
+  *    \sum_{ i \in I } X[ i , j ] = 1                           j \in J  (1)
   *   \f]
   *   \f[
-  *    \sum_{ j \in J } D[ j ] X[ j , i ] \leq Q[ i ] Y[ i ]     i \in I  (2)
+  *    \sum_{ j \in J } D[ j ] X[ i , j ] \leq Q[ i ] Y[ i ]     i \in I  (2)
   *   \f]
   *   \f[
   *     Y[ i ] \in \{ 0 , 1 \}                                   i \in I  (3)
   *   \f]
   *   \f[
-  *    0 \leq X[ j , i ] \leq 1                        j \in J , i \in I  (4)
+  *    0 \leq X[ i , j ] \leq 1                        j \in J , i \in I  (4)
   *   \f]
   *   If wf & 4 (wf == 4) the "splittable constraints" (4) are replaced with
   *   the "unsplittable constraints"
   *   \f[
-  *    X[ j , i ] \in \{ 0 , 1 \}                      j \in J , i \in I  (4')
+  *    X[ i , j ] \in \{ 0 , 1 \}                      j \in J , i \in I  (4')
   *   \f]
   *   This means that the CapacitatedFacilityLocationBlock has no sub-Block,
-  *   the two groups of static variables
+  *   and the two groups of static variables X[] and Y[]:
   *
   *   = "x", a boost::multi_array< ColVariable , 2 > with sizes
-  *     f_n_customers and f_n_facilities, which are of type kPosUnitary
+  *     f_n_facilities and f_n_customers, which are of type kPosUnitary
   *     (is_positive() == is_unitary() == true) if wf == 0, and of type
   *     kBinary (in addition, is_unitary() == true) if wf == 4
   *
@@ -377,21 +375,21 @@ public:
   *   while the last variable correspond to the design variable Y[ i ].
   *   That is, the i-th knapsack problem is
   *   \f[
-  *    \min \sum_{ j \in J } C[ j , i ] X[ j , i ] + F[ i ] Y[ i ]
+  *    \min \sum_{ j \in J } C[ i , j ] X[ i , j ] + F[ i ] Y[ i ]
   *   \f]
-   *   \f[
-  *    \sum_{ j \in J } D[ j ] X[ j , i ] - Q[ i ] Y[ i ] \leq 0
+   *  \f[
+  *    \sum_{ j \in J } D[ j ] X[ i , j ] - Q[ i ] Y[ i ] \leq 0
   *   \f]
   *   \f[
   *     Y[ i ] \in \{ 0 , 1 \}
   *   \f]
   *   \f[
-  *    0 \leq X[ j , i ] \leq 1                        j \in J
+  *    0 \leq X[ i , j ] \leq 1                        j \in J
   *   \f]
   *   Then, wf & 4 (wf == 5) the previous "splittable constraints" are
   *   replaced by the "unsplittable constraints"
   *   \f[
-  *    X[ j , i ] \in \{ 0 , 1 \}                      j \in J
+  *    X[ i , j ] \in \{ 0 , 1 \}                      j \in J
   *   \f]
   *   That is, Y[ i ] is always kBinary (is_integer() == is_positive() ==
   *   is_unitary() == true), whereas X[ j ] are kBinary for wf == 5 and
@@ -486,8 +484,8 @@ public:
   *
   * - If the "natural formulation" (SF) is used, there is a single "dense"
   *   "linear objective" (FRealObjective with a LinearFunction) having
-  *   first the terms F[ i ] Y[ i ] (in order of i) and then all the terms
-  *   C[ j , i ] X[ j , i ] (in order of j and then i).
+  *   first the terms F[ i ] Y[ i ] in order of i, and then all the terms
+  *   C[ i , j ] X[ i , j ] in order of i and then of j.
   *
   * - If the "knapsack formulation" (KF) is used, then all the objective is
   *   expressed in terms of the objectives of the f_n_facilities
@@ -498,7 +496,7 @@ public:
   *   the terms F[ i ] Y[ i ] (in order of i) in the first sub-Block where
   *   the Y[] variables are defined; the remaining part of the objective
   *   is represented by the "linear objective" of the MCFBlock, that has
-  *   cost C[ j , i ] / D[ j ] (since the flow on the arc represent the
+  *   cost C[ i , j ] / D[ j ] (since the flow on the arc represent the
   *   actual amount of commodity shipped along the arc, as opposed to the
   *   fraction of the demand D[ j ]) in the "transportation arc" ( i , j )
   *   (from facility i to customer j), but zero costs on the "facility arcs"
@@ -527,8 +525,8 @@ public:
  /// getting upper bounds on the value of the Objective
  /** An upper bound on the optimal value of the problem is computed as
   * \f$ \sum_{ i \in I } : F[ i ] > 0 } F[ i ] \f$ plus, for each customer
-  * j \in J, the term \f$ C[ j , i ] \f$ corresponding to the maximum
-  * \f$ C[ j , i ] \f$ among all possible i \in I. */
+  * j \in J, the term \f$ C[ i , j ] \f$ corresponding to the maximum
+  * \f$ C[ i , j ] \f$ among all possible i \in I. */
 
  double get_valid_upper_bound( bool conditional = false )
   override final {
@@ -545,8 +543,8 @@ public:
  /// getting a global valid lower bound on the value of the Objective
  /** An upper bound on the optimal value of the problem is computed as
   * \f$ \sum_{ i \in I } : F[ i ] < 0 } F[ i ] \f$ plus, for each customer
-  * j \in J, the term \f$ C[ j , i ] \f$ corresponding to the minimum
-  * \f$ C[ j , i ] \f$ among all possible i \in I. */
+  * j \in J, the term \f$ C[ i , j ] \f$ corresponding to the minimum
+  * \f$ C[ i , j ] \f$ among all possible i \in I. */
 
  double get_valid_lower_bound( bool conditional = false )
   override final {
@@ -604,18 +602,18 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the matrix of transportation costs
  /** Returns a const reference to the matrix of transportation costs, i.e.,
-  * element [ i ][ j ] is the *unitary* transportation cost between customer
-  * i and facility j. */
+  * element [ i ][ j ] is the *unitary* transportation cost between facility
+  * i and customer j. */
 
  c_CMatrix & get_Transportation_Costs( void ) const {
   return( v_transp_cost );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// get the transportation cost for a given pair ( customer , facility )
+ /// get the transportation cost for a given pair ( facility , customer )
 
- Cost get_Transportation_Cost( Index customer , Index facility ) const {
-  return( v_transp_cost[ customer ][ facility ] );
+ Cost get_Transportation_Cost( Index facility , Index customer ) const {
+  return( v_transp_cost[ facility ][ customer ] );
   }
 
 /** @} ---------------------------------------------------------------------*/
@@ -719,14 +717,14 @@ public:
   *     facility capacity, cost == fixed cost / facility capacity
   *
   *   = arcs f_n_facilities ... f_n_facilities * ( f_n_customers + 1 ) - 1:
-  *     from facilities to customers, arranged customer-wise (first all the
-  *     arcs of the first customer, then all the arcs of the second, ...),
+  *     from facilities to customers, arranged facility-wise (first all the
+  *     arcs of the first facilities, then all the arcs of the second, ...),
   *     capacity == infinite (Inf<MCFBlock:: FNumber >()), cost ==
   *     unitary transportation cost between facility and customer
   *
   *   When the value is 2, f_n_customers "artificial" arcs are also added
   *   from the super source to each customer, with capacity == infinite
-  *   Inf< (MCFBlock::FNumber >()) and a very large cost (somethng like
+  *   (Inf< (MCFBlock::FNumber >()) and a very large cost (somethng like
   *   100 * ( max facility cost + max transportation cost from any
   *   facility to the customer). Note that
   *
@@ -743,8 +741,8 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /// maps back the solution from a R3Block
- /** Takes the solution stored in Block, which is supposed to be a R3Block
-  * of the type indicated by the [Simple]Configuration[< int >] r3bc with the
+ /** Takes the solution stored in R3B, which is supposed to be a R3Block of
+  * the type indicated by the [Simple]Configuration[< int >] r3bc with the
   * same encoding as in get_R3_Block(), and moves it in the current Block.
   *
   * If not nullptr, solc is assumed to be a SimpleConfiguration< int > whose
@@ -761,6 +759,20 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// maps forward the solution to a R3Block
+ /** Takes the solution stored in the current Block and moves it in R3B,
+  * which is supposed to be a R3Block of the type indicated by the
+  * [Simple]Configuration[< int >] r3bc with the same encoding as in
+  * get_R3_Block(), 
+  *
+  * If not nullptr, solc is assumed to be a SimpleConfiguration< int > whose
+  * f_value encodes bit-wise which part of the solution is mapped forward:
+  *
+  * - bit 0 (+1): the design solution (y) is mqpped forward
+  *
+  * - bit 1 (+2): the transportation solution (x) is mqpped forward
+  *
+  * If solc == nullptr, the value of 3 (map forward everything) is assumed.
+  */
 
  void map_forward_solution( Block * R3B , Configuration * r3bc = nullptr ,
 			    Configuration * solc = nullptr ) override;
@@ -825,7 +837,32 @@ public:
 
  /// returns the current CapacitatedFacilityLocationBlockSolution
  /** Returns a CapacitatedFacilityLocationBlockSolution representing the
-  * current solution status of this CapacitatedFacilityLocationBlock.
+  * current solution status of this CapacitatedFacilityLocationBlock. What
+  * part of the solution is saved depends on the integer value ws, obtained
+  * as follows:
+  *
+  * - if solc != nullptr and it is a SimpleConfiguration< int >, then
+  *   ws == solc->f_value:
+  *
+  * - if solc == nullptr, f_BlockConfig != nullptr,
+  *   f_BlockConfig->f_solution_Configuration != nullptr and it
+  *   is a SimpleConfiguration< int >, ws is its f_value
+  *
+  * - otherwise ws == 0.
+  *
+  * The encoding of ws is:
+  *
+  *   = 1 means "only save the design part of the solution (y)"
+  *
+  *   = 2 means "only save the transportation part of the solution (x)"
+  *
+  *   = everything else (e.g., 0) means "save everything";
+  *
+  * Note that CapacitatedFacilityLocationBlockSolution may not contain the
+  * required solution if the Variable have not been constructed yet: this
+  * throws an exception, unless emptys == true, in which case the
+  * CapacitatedFacilityLocationBlockSolution object is only prepped for
+  * getting a solution, but it is not really getting one now.
   *
   * Note that, although the method clearly returns a
   * CapacitatedFacilityLocationBlockSolution, formally the return type is
@@ -857,16 +894,16 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
- /// gets a (reference to) the X[ j ][ i ] variable
+ /// gets a (reference to) the X[ i ][ j ] variable
 
- ColVariable & get_x( Index j , Index i ) const {
+ ColVariable & get_x( Index i , Index j ) const {
   #ifndef NDEBUG
    if( ! ( AR &= HasVar ) )
     throw( std::logic_error( "get_x: variables not generated" ) );
   #endif
 
   switch( AR & FormMsk ) {
-   case( StdForm ): return( v_x[ j ][ i ] );
+   case( StdForm ): return( v_x[ i ][ j ] );
    case( KskForm ): return( * static_cast< BinaryKnapsackBlock * >(
 				              v_Block[ i ] )->get_Var( j ) );
    }
@@ -875,54 +912,256 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
- /// gets a contiguous interval of the facility solution
- /** Method to get the facility solution; upon return, FSol[ i ] contains
-  * true if the facility rng.first + i is opened. Note that if the right
-  * extreme of the range is >= get_NFacilities() it is ignored.  */
+ /// gets a contiguous interval of the (integer) facility solution
+ /** Method to get the facility solution: the components of the facility
+  * solution vector in the range [ rng.first , rng.second ) are written in
+  * the IntSolution in the positions starting from where the iterator Sol
+  * points, in the obvious order. Since Sol is an iterator to an IntSolution,
+  * this is the integer (binary) version of the solution. */
 
- void get_facility_solution( FacilitySolution & FSol ,
-			      Range rng = Range( 0 , Inf<Index>() ) );
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// gets the facility solution for an arbitrary subset of arcs
- /** Method to get the facility solution; upon return, FSol[ i ] contains true
-  * if the facility nms[ i ] is opened for all 0 <= i < nms.size(). Note that
-  *
-  *     nms IS ASSUMED TO BE ORDERED BY INCREASING Index */
-
- void get_facility_solutions( FacilitySolution & FSol , c_Subset & nms );
+ void get_facility_solution( IS_it Sol ,
+			     Range rng = Range( 0 , Inf< Index >() ) );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// gets the facility solution of the given facility
+ /// gets an arbitrary subset of the (integer) facility solution
+ /** Method to get the facility solution: the components of the facility
+  * solution vector whose indices are specified in nms[] are written in the
+  * IntSolution in the positions starting from where the iterator Sol points,
+  * in the obvious order. Since Sol is an iterator to an IntSolution, this is
+  * the integer (binary) version of the solution. Note that we don't require
+  * nms[] to be ordered, just the entries written in the (sub)vector
+  * will be in whatever order nms[] is. */
 
- bool get_facility_solution( Index i ) {
-  if( i >= get_NFacilities() )
-   throw( std::invalid_argument( "invalid facility name" ) );
+ void get_facility_solution( IS_it Sol , c_Subset & nms );
 
-  return( get_y( i ).get_value() );
-  }
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// gets a contiguous interval of the (continuous) facility solution
+ /** Method to get the facility solution: the components of the facility
+  * solution vector in the range [ rng.first , rng.second ) are written in
+  * the CntSolution in the positions starting from where the iterator Sol
+  * points, in the obvious order. Since Sol is an iterator to a CntSolution,
+  * this can be a fractional solution, e.g., as produced by a Solver that can
+  * only solve a continuous relaxation of the problem. */
+
+ void get_facility_solution( CS_it Sol ,
+			     Range rng = Range( 0 , Inf< Index >() ) );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// gets an arbitrary subset of the (continuous) facility solution
+ /** Method to get the facility solution: the components of the facility
+  * solution vector whose indices are specified in nms[] are written in the
+  * IntSolution in the positions starting from where the iterator Sol points,
+  * in the obvious order.  Note that we don't require nms[] to be ordered,
+  * just the entries written in the (sub)vector will be in whatever order
+  * nms[] is. Since Sol is an iterator to a CntSolution, this can be a
+  * fractional solution, e.g., as produced by a Solver that can only solve a
+  * continuous relaxation of the problem. */
+
+ void get_facility_solution( CS_it FSol , c_Subset & nms );
 
 /*--------------------------------------------------------------------------*/
- /// sets a contiguous interval of the flow solution
- /** Method to set the flow solution; the values found in the c_Vec_FNumber
-  * between fstrt (included) and fstop (excluded) are copied into the value of
-  * the flow variable x[ strt + i ]. This is typically used by a Solver. */
+ /// gets a contiguous interval of the (integer) transportation solution
+ /** Method to get the transportation solution: the components of the
+  * transportation solution vector in the range [ rng.first , rng.second )
+  * are written in the IntSolution in the positions starting from where the
+  * iterator TSol points, in the obvious order. The two-dimensional
+  * transportation solution is considered "flattened" into a one-dimensional
+  * vector, arranged facility-wise: first the components corresponding to
+  * the first facility (in order of customer), then these corresponding to
+  * the second facility ...
+  *
+  * Since Sol is an iterator to an IntSolution, this is the integer
+  * (binary) version of the solution, i.e., the "true" solution if the
+  * unsplittable version of the problem is solved (get_Unsplittable() ==
+  * true), or the integer rounding of the continuous solution otherwise. */
 
- void set_x( c_Vec_FNumber_it fstrt , c_Vec_FNumber_it fstop ,
-	     c_Index strt = 0 );
+ void get_transportation_solution( IS_it Sol ,
+				   Range rng = Range( 0 , Inf< Index >() ) );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// sets the flow solution of the given arc
+ /// gets an arbitrary subset of the (integer) transportation solution
+ /** Method to get the facility transportation: the components of the
+  * transportation solution vector whose indices are specified in nms[] are
+  * written in the IntSolution in the positions starting from where the
+  * iterator FSol points, in the obvious order. The two-dimensional
+  * transportation solution is considered "flattened" into a one-dimensional
+  * vector, arranged facility-wise: first the components corresponding to
+  * the first facility (in order of customer), then these corresponding to
+  * the second facility ... Note that we don't require nms[] to be ordered,
+  * just the entries written in the (sub)vector will be in whatever order
+  * nms[] is.
+  *
+  * Since Sol is an iterator to an IntSolution, this is the integer
+  * (binary) version of the solution, i.e., the "true" solution if the
+  * unsplittable version of the problem is solved (get_Unsplittable() ==
+  * true), or the integer rounding of the continuous solution otherwise. */
 
- void set_x( c_Index arc , c_FNumber FSol ) {
-  if( arc >= get_NArcs() )
-   throw( std::invalid_argument( "invalid arc name" ) );
+ void get_transportation_solution( IS_it FSol , c_Subset & nms );
 
-  if( arc < get_NStaticArcs() )
-   x[ arc ].set_value( FSol );
-  else
-   std::next( dx.begin() , arc - get_NStaticArcs() )->set_value( FSol );
-  }
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// gets a contiguous interval of the (continuous) transportation solution
+ /** Method to get the transportation solution: the components of the
+  * transportation solution vector in the range [ rng.first , rng.second )
+  * are written in the CntSolution in the positions starting from where the
+  * iterator Sol points, in the obvious order. The two-dimensional
+  * transportation solution is considered "flattened" into a one-dimensional
+  * vector, arranged facility-wise: first the components corresponding to
+  * the first facility (in order of customer), then these corresponding to
+  * the second facility ...
+  *
+  * Since Sol is an iterator to a CntSolution, this is the fractional version
+  * of the solution, i.e., the "true" solution if the splittable version of
+  * the problem is solved (get_Unsplittable() == false), or the integer
+  * rounding of the true continuous solution otherwise. */
+
+ void get_transportation_solution( CS_it Sol ,
+				   Range rng = Range( 0 , Inf< Index >() ) );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// gets an arbitrary subset of the (continuous) transportation solution
+ /** Method to get the transportation solution: the components of the 
+  * transportation solution vector whose indices are specified in nms[] are
+  * written in the CntSolution in the positions starting from where the
+  * iterator Sol points, in the obvious order. The two-dimensional
+  * transportation solution is considered "flattened" into a one-dimensional
+  * vector, arranged facility-wise: first the components corresponding to
+  * the first facility (in order of customer), then these corresponding to
+  * the second facility ... Note that we don't require nms[] to be ordered,
+  * just the entries written in the (sub)vector will be in whatever order
+  * nms[] is.
+  *
+  * Since Sol is an iterator to a CntSolution, this is the fractional version
+  * of the solution, i.e., the "true" solution if the splittable version of
+  * the problem is solved (get_Unsplittable() == false), or the integer
+  * rounding of the true continuous solution otherwise. */
+
+ void get_transportation_solution( IS_it FSol , c_Subset & nms );
+
+/*--------------------------------------------------------------------------*/
+ /// sets a contiguous interval of the (integer) facility solution
+ /** Method to set the facility solution: the components of the facility
+  * solution vector in the range [ rng.first , rng.second ) are read from
+  * the IntSolution in the positions starting from where the iterator Sol
+  * points, in the obvious order. Since Sol is an iterator to an IntSolution,
+  * this is the integer (binary) version of the solution. */
+
+ void set_facility_solution( c_IS_it Sol ,
+			     Range rng = Range( 0 , Inf< Index >() ) );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// sets an arbitrary subset of the (integer) facility solution
+ /** Method to set the facility solution: the components of the facility
+  * solution vector whose indices are specified in nms[] are read from the
+  * IntSolution in the positions starting from where the iterator Sol points,
+  * in the obvious order. Since Sol is an iterator to an IntSolution, this is
+  * the integer (binary) version of the solution. Note that we don't require
+  * nms[] to be ordered, just the entries read from the (sub)vector need be in
+  * whatever order nms[] is. */
+
+ void set_facility_solution( c_IS_it Sol , c_Subset & nms );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// sets a contiguous interval of the (continuous) facility solution
+ /** Method to set the facility solution: the components of the facility
+  * solution vector in the range [ rng.first , rng.second ) are read from
+  * the CntSolution in the positions starting from where the iterator Sol
+  * points, in the obvious order. Since Sol is an iterator to a CntSolution,
+  * this can be a fractional solution, e.g., as produced by a Solver that can
+  * only solve a continuous relaxation of the problem. */
+
+ void set_facility_solution( c_CS_it Sol ,
+			     Range rng = Range( 0 , Inf< Index >() ) );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// sets an arbitrary subset of the (continuous) facility solution
+ /** Method to set the facility solution: the components of the facility
+  * solution vector whose indices are specified in nms[] are read from the
+  * IntSolution in the positions starting from where the iterator Sol points,
+  * in the obvious order. Note that we don't require nms[] to be ordered,
+  * just the entries read from the (sub)vector need be in whatever order
+  * nms[] is. Since Sol is an iterator to a CntSolution, this can be a
+  * fractional solution, e.g., as produced by a Solver that can only solve a
+  * continuous relaxation of the problem. */
+
+ void set_facility_solution( c_CS_it FSol , c_Subset & nms );
+
+/*--------------------------------------------------------------------------*/
+ /// sets a contiguous interval of the (integer) transportation solution
+ /** Method to set the transportation solution: the components of the
+  * transportation solution vector in the range [ rng.first , rng.second )
+  * are read from the IntSolution in the positions starting from where the
+  * iterator TSol points, in the obvious order. The two-dimensional
+  * transportation solution is considered "flattened" into a one-dimensional
+  * vector, arranged facility-wise: first the components corresponding to
+  * the first facility (in order of customer), then these corresponding to
+  * the second facility ...
+  *
+  * Since Sol is an iterator to an IntSolution, this is the integer
+  * (binary) version of the solution, i.e., the "true" solution if the
+  * unsplittable version of the problem is solved (get_Unsplittable() ==
+  * true), or the integer rounding of the continuous solution otherwise. */
+
+ void set_transportation_solution( c_IS_it Sol ,
+				   Range rng = Range( 0 , Inf< Index >() ) );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// sets an arbitrary subset of the (integer) transportation solution
+ /** Method to set the facility transportation: the components of the
+  * transportation solution vector whose indices are specified in nms[] are
+  * read from the IntSolution in the positions starting from where the
+  * iterator FSol points, in the obvious order. The two-dimensional
+  * transportation solution is considered "flattened" into a one-dimensional
+  * vector, arranged facility-wise: first the components corresponding to
+  * the first facility (in order of customer), then these corresponding to
+  * the second facility ... Note that we don't require nms[] to be ordered,
+  * just the entries read from the (sub)vector need be in whatever order
+  * nms[] is.
+  *
+  * Since Sol is an iterator to an IntSolution, this is the integer
+  * (binary) version of the solution, i.e., the "true" solution if the
+  * unsplittable version of the problem is solved (get_Unsplittable() ==
+  * true), or the integer rounding of the continuous solution otherwise. */
+
+ void set_transportation_solution( c_IS_it FSol , c_Subset & nms );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// sets a contiguous interval of the (continuous) transportation solution
+ /** Method to set the transportation solution: the components of the
+  * transportation solution vector in the range [ rng.first , rng.second )
+  * are read from the CntSolution in the positions starting from where the
+  * iterator Sol points, in the obvious order. The two-dimensional
+  * transportation solution is considered "flattened" into a one-dimensional
+  * vector, arranged facility-wise: first the components corresponding to
+  * the first facility (in order of customer), then these corresponding to
+  * the second facility ...
+  *
+  * Since Sol is an iterator to a CntSolution, this is the fractional version
+  * of the solution, i.e., the "true" solution if the splittable version of
+  * the problem is solved (get_Unsplittable() == false), or the integer
+  * rounding of the true continuous solution otherwise. */
+
+ void set_transportation_solution( c_CS_it Sol ,
+				   Range rng = Range( 0 , Inf< Index >() ) );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// sets an arbitrary subset of the (continuous) transportation solution
+ /** Method to set the transportation solution: the components of the 
+  * transportation solution vector whose indices are specified in nms[] are
+  * read from the CntSolution in the positions starting from where the
+  * iterator Sol points, in the obvious order. The two-dimensional
+  * transportation solution is considered "flattened" into a one-dimensional
+  * vector, arranged facility-wise: first the components corresponding to
+  * the first facility (in order of customer), then these corresponding to
+  * the second facility ... Note that we don't require nms[] to be ordered,
+  * just the entries read from the (sub)vector need be in whatever order
+  * nms[] is.
+  *
+  * Since Sol is an iterator to a CntSolution, this is the fractional version
+  * of the solution, i.e., the "true" solution if the splittable version of
+  * the problem is solved (get_Unsplittable() == false), or the integer
+  * rounding of the true continuous solution otherwise. */
+
+ void set_transportation_solution( c_IS_it FSol , c_Subset & nms );
 
 /** @} ---------------------------------------------------------------------*/
 /*-------------------- Methods for handling Modification -------------------*/
@@ -1081,7 +1320,8 @@ public:
   * NCost.size(), (which means that nms.size() == NCost.size()). The
   * parameter ordered tells if the nms vector is ordered for increasing
   * index of the arc. As the the && tells, nms is "consumed" by the method,
-  * typically being shipped to an appropriate CapacitatedFacilityLocationBlockSbstMod object.
+  * typically being shipped to an appropriate
+  * CapacitatedFacilityLocationBlockSbstMod object.
   *
   * See chg_costs( range ) for Modification issued (except that, of course,
   * the "physical" one is a CapacitatedFacilityLocationBlockSbstMod). */
@@ -1423,24 +1663,48 @@ public:
  
  void guts_of_destructor( void );
 
- void guts_of_add_Modification( p_Mod mod , ChnlName chnl );
+ void guts_of_add_Modification( c_p_Mod mod , ChnlName chnl );
 
  bool guts_of_map_f_Mod_copy(
-			CapacitatedFacilityLocationBlock * R3B , p_Mod mod ,
+			CapacitatedFacilityLocationBlock * R3B , c_p_Mod mod ,
 			ModParam issuePMod , ModParam issueAMod );
 
  bool guts_of_guts_of_map_f_Mod_copy(
-			CapacitatedFacilityLocationBlock * R3B , p_Mod mod ,
+			CapacitatedFacilityLocationBlock * R3B , c_p_Mod mod ,
 			ModParam issuePMod , ModParam issueAMod );
 
- bool guts_of_map_f_Mod_MCF( MCFBlock * R3B , p_Mod mod ,
+ bool guts_of_map_f_Mod_MCF( MCFBlock * R3B , c_p_Mod mod ,
 			     ModParam issuePMod , ModParam issueAMod );
 
- bool guts_of_guts_of_map_f_Mod_MCF( MCFBlock * R3B , p_Mod mod ,
+ bool guts_of_guts_of_map_f_Mod_MCF( MCFBlock * R3B , c_p_Mod mod ,
 				    ModParam issuePMod , ModParam issueAMod );
 
  void compute_conditional_bounds( void );
 
+ template< typename T >
+ void get_y( std::vector< T >::iterator Sol , Range rng );
+
+ template< typename T >
+ void get_y( std::vector< T >::iterator Sol , c_Subset nms );
+
+ template< typename T >
+ void get_x( std::vector< T >::iterator Sol , Range rng );
+
+ template< typename T >
+ void get_x( std::vector< T >::iterator Sol , c_Subset nms );
+
+ template< typename T >
+ void set_y( std::vector< T >::cost_iterator Sol , Range rng );
+
+ template< typename T >
+ void set_y( std::vector< T >::const_iterator Sol , c_Subset nms );
+
+ template< typename T >
+ void set_x( std::vector< T >::cost_iterator Sol , Range rng );
+
+ template< typename T >
+ void set_x( std::vector< T >::const_iterator Sol , c_Subset nms );
+ 
  ModParam make_amod_param( ModParam issueAMod , Index num );
 
  void unmake_amod_param( ModParam oldiAM , ModParam newiAM , Index num );

@@ -205,7 +205,7 @@ void CapacitatedFacilityLocationBlock::load( Index n , Index m ,
   throw( std::invalid_argument( _prfx + "non-positive demand" ) );
 
  auto shp = C.shape();
- if( ( shp[ 0 ] != n ) || ( shp[ 1 ] != m ) )
+ if( ( shp[ 0 ] != m ) || ( shp[ 1 ] != n ) )
   throw( std::invalid_argument( _prfx +
 			   "transportation cost matrix has wrong shape"	) );
 
@@ -278,7 +278,7 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input )
   }  // end( for( each facility ) )
 
  v_demand.resize( f_n_customers );
- v_transp_cost.resize( boost::extents[ f_n_customers ][ f_n_facilities ] );
+ v_transp_cost.resize( boost::extents[ f_n_facilities ][ f_n_customers ] );
 
  for( Index j = 0 ; j < f_n_customers ; ++j ) {  // for( each customer )
   input >> eatcomments >> v_demand[ j ];
@@ -288,7 +288,7 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input )
    throw( std::invalid_argument( _prfx + "non-positive demand" ) );
 
   for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // for( each facility )
-   input >> eatcomments >> v_transp_cost[ j ][ i ];
+   input >> eatcomments >> v_transp_cost[ i ][ j ];
    if( input.fail() )
     goto( input_failure );
   
@@ -381,7 +381,7 @@ void CapacitatedFacilityLocationBlock::deserialize(
   throw( std::logic_error( _prfx + "TransportationCost not found" ) );
  auto tcs = ::get_sizes_dimensions( tc );
  if( ( tcs.size() != 2 ) ||
-     ( tcs[ 0 ] != f_n_customers ) || ( tcs[ 1 ] != f_n_facilities ) )
+     ( tcs[ 0 ] != f_n_facilities ) || ( tcs[ 1 ] != f_n_customers ) )
   throw( std::logic_error( _prfx + "TransportationCost has wrong size" ) );
 
  v_transp_cost.resize( tcs );
@@ -422,7 +422,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
    yi.set_type( ColVariable::kBinary );
   add_static_variable( v_y , "y" );
 
-  v_x.resize( { f_n_customers , f_n_facilities } );
+  v_x.resize( { f_n_facilities , f_n_customers } );
   auto xt = ColVariable::kPosUnitary;
   if( f_unsplittable ) {
    AR |= UnSpltF;
@@ -458,7 +458,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   for( Index i = 0 ; i < f_n_facilities ; ++i ) {
    for( Index j = 0 ; j < f_n_customers ; ++j ) {
     W[ j ] = v_demand[ j ];
-    C[ j ] = v_transp_cost[ j ][ i ];
+    C[ j ] = v_transp_cost[ i ][ j ];
     }
    W[ f_n_customers ] = - v_capacity[ i ];
    C[ f_n_customers ] = v_fixed_cost[ i ];
@@ -512,7 +512,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
     v_coeff_pair coeffs( f_n_facilities );
 
     for( Index i = 0 ; i < f_n_facilities ; ++i )
-     coeffs[ i ] = std::make_pair( & v_x[ j ][ i ] , double( 1 ) );
+     coeffs[ i ] = std::make_pair( & v_x[ i ][ j ] , double( 1 ) );
 
     v_sat[ j ].set_both( 1 );
     v_sat[ j ].set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
@@ -529,7 +529,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
     v_coeff_pair coeffs( f_n_customers + 1 );
 
     for( Index j = 0 ; j < f_n_customers ; ++j )
-     coeffs[ j ] = std::make_pair( & v_x[ j ][ i ] , v_demand[ j ] );
+     coeffs[ j ] = std::make_pair( & v_x[ i ][ j ] , v_demand[ j ] );
 
     coeffs[ f_n_customers ] = std::make_pair( & v_y[ i ] ,
 					      - v_capacity[ i ] );
@@ -618,9 +618,9 @@ void CapacitatedFacilityLocationBlock::generate_objective(
    *(pi++) = std::make_pair( & v_y[ i ] , v_fixed_cost[ i ] );
 
   // then the X[ j ][ i ] ones
-  for( Index j = 0 ; j < f_n_customers ; ++j )
    for( Index i = 0 ; i < f_n_facilities ; ++i )
-    *(pi++) = std::make_pair( & v_x[ j ][ i ] , v_transp_cost[ j ][ i ] );
+    for( Index j = 0 ; j < f_n_customers ; ++j )
+     *(pi++) = std::make_pair( & v_x[ i ][ j ] , v_transp_cost[ i ][ j ] );
 
   c.set_function( new LinearFunction( std::move( p ) , 0 ) , eNoMod );
   set_objective( & c , eNoMod );
@@ -663,6 +663,20 @@ bool CapacitatedFacilityLocationBlock::is_feasible( bool useabstract ,
  if( auto tfsbc = dynamic_cast< SimpleConfiguration< double > * >( fsbc ) )
   eps = tfsbc->f_value;
 
+ if( ! ( AR & HasVar ) )
+  throw( std::logic_error( "CapacitatedFacilityLocationBlock::is_feasible"
+			   "generate_abstract_variables not called" ) );
+
+ // check variable feasibility
+ for( Index i = 0 ; i < f_n_facilities ; ++i )
+  if( ! get_y( i ).is_feasible( eps ) )
+   return( false );
+
+ for( Index i = 0 ; i < f_n_facilities ; ++i )
+  for( Index j = 0 ; j < f_n_customers ; ++j )
+   if( ! get_x( i , j ).is_feasible( eps ) )
+    return( false );
+
  return( customer_feasible( eps , useabstract ) &&
 	 facility_feasible( eps , useabstract ) );
 
@@ -675,10 +689,6 @@ bool CapacitatedFacilityLocationBlock::customer_feasible( double eps ,
 {
  const static std::string _prfx =
                      "CapacitatedFacilityLocationBlock::customer_feasible: ";
-
- if( ! ( AR & HasVar ) )
-  throw( std::logic_error( _prfx + "generate_abstract_variables not called"
-			   ) );
 
  if( ! ( AR & HasSatCns ) )  // if customer constraints are not defined
   useabstract = false;       // you cannot use them to chek feasibility
@@ -703,7 +713,7 @@ bool CapacitatedFacilityLocationBlock::customer_feasible( double eps ,
   for( Index j = 0 ; j < f_n_customers ; ++j ) {
    auto tot = 0;
    for( Index i = 0 ; i < f_n_facilities ; ++i )
-    tot += get_x( j , i ).get_value();
+    tot += get_x( i , j ).get_value();
 
    if( std::abs( 1 - tot ) > eps )
     return( false );
@@ -721,10 +731,6 @@ bool CapacitatedFacilityLocationBlock::capacity_feasible( double eps ,
 {
  const static std::string _prfx =
                      "CapacitatedFacilityLocationBlock::capacity_feasible: ";
-
- if( ! ( AR & HasVar ) )
-  throw( std::logic_error( _prfx + "generate_abstract_variables not called"
-			   ) );
 
  if( ! ( AR & HasCapCns ) )  // if capacity constraints are not defined
   useabstract = false;       // you cannot use them to chek feasibility
@@ -758,7 +764,7 @@ bool CapacitatedFacilityLocationBlock::capacity_feasible( double eps ,
   for( Index i = 0 ; i < f_n_facilities ; ++i ) {
    auto tot = v_capacity[ i ] * get_y( i ).get_value();
    for( Index j = 0 ; j < f_n_customers ; ++j )
-    tot -= v_demand[ j ] * get_x( j , i ).get_value();
+    tot -= v_demand[ j ] * get_x( i , j ).get_value();
 
    if( tot < - eps * v_capacity[ i ] )
     return( false );
@@ -846,13 +852,13 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
   }
 
  // now the facility -> customers arcs
- for( Index j = 0 ; j < f_n_customers ; ++j )
-  for( i = 0 ; i < f_n_facilities ; ++i ) {
-   SN[ a ] = i + 2;
-   EN[ a ] = f_n_facilities + 2 + j;
-   U[ a ] = Inf< MCFClass::FNumber >();
-   C[ a++ ] = v_transp_cost[ j ][ i ] / v_demand[ j ];
-   }
+  for( i = 0 ; i < f_n_facilities ; ++i )
+   for( Index j = 0 ; j < f_n_customers ; ++j ) {
+    SN[ a ] = i + 2;
+    EN[ a ] = f_n_facilities + 2 + j;
+    U[ a ] = Inf< MCFClass::FNumber >();
+    C[ a++ ] = v_transp_cost[ i ][ j ] / v_demand[ j ];
+    }
 
  if( wR3B > 1 ) {
   // now the artificial arcs to ensure feasibility
@@ -865,7 +871,7 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
    // compute an upper bound on the worst-case transportation cost
    MCFClass::CNumber maxc = 0;
    for( i = 0 ; i < f_n_facilities ; ++i , ++a )
-    if( auto tci = C[ i ] + v_transp_cost[ j ][ i ] / v_demand[ j ] ;
+    if( auto tci = C[ i ] + v_transp_cost[ i ][ j ] / v_demand[ j ] ;
 	maxc < tci )
      maxc = tci;
    maxc += 1;    // ! +1
@@ -920,9 +926,9 @@ void CapacitatedFacilityLocationBlock::map_back_solution( Block * R3B ,
     get_y( i ).set_value( CFLB->get_y( i ).get_value() );
 
   if( ws & 2 )
-   for( Index j = 0 ; j < f_n_customers ; ++j )
-    for( Index i = 0 ; i < f_n_facilities ; ++i )
-     get_x( j , i ).set_value( CFLB->get_x( j , i ).get_value() );
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    for( Index j = 0 ; j < f_n_customers ; ++j )
+     get_x( i , j ).set_value( CFLB->get_x( i , j ).get_value() );
 
   return;
   }
@@ -951,9 +957,9 @@ void CapacitatedFacilityLocationBlock::map_back_solution( Block * R3B ,
    get_y( i ).set_value( *(it++) / v_capacity[ i ] );
 
  if( ws & 2 )
-  for( Index j = 0 ; j < f_n_customers ; ++j )
-   for( Index i = 0 ; i < f_n_facilities ; ++i )
-    get_x( j , i ).set_value( *(it++) / v_demand[ j ] );
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   for( Index j = 0 ; j < f_n_customers ; ++j )
+    get_x( i , j ).set_value( *(it++) / v_demand[ j ] );
 
  }  // end( CapacitatedFacilityLocationBlock::map_back_solution )
 
@@ -1018,9 +1024,9 @@ void CapacitatedFacilityLocationBlock::map_forward_solution( Block * R3B ,
    *(it++) = get_y( i ).get_value() * v_capacity[ i ];
 
  if( ws & 2 )
-  for( Index j = 0 ; j < f_n_customers ; ++j )
-   for( Index i = 0 ; i < f_n_facilities ; ++i )
-    *(it++) = get_x( j , i ).get_value() * v_demand[ j ];
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   for( Index j = 0 ; j < f_n_customers ; ++j )
+    *(it++) = get_x( i , j ).get_value() * v_demand[ j ];
 
  MCFB->set_x( x , Range( l , u ) );
 
@@ -1138,10 +1144,10 @@ Solution * CapacitatedFacilityLocationBlock::get_Solution(
   wsol = tsolc->f_value;
 
  if( wsol != 2 )
-  sol->v_x.resize( get_NArcs() );
+  sol->v_y.resize( f_n_facilities );
 
  if( wsol != 1 )
-  sol->v_pi.resize( get_NNodes() );
+  sol->v_x.resize( { f_n_customers , f_n_facilities } );
 
  if( ! emptys )
   sol->read( this );
@@ -2953,7 +2959,8 @@ void CapacitatedFacilityLocationBlock::guts_of_add_Modification(
   return;
   }
 
- throw( std::invalid_argument( "unsupported Modification to CapacitatedFacilityLocationBlock" ) );
+ throw( std::invalid_argument(
+	   "unsupported Modification to CapacitatedFacilityLocationBlock" ) );
 
  }  // end( CapacitatedFacilityLocationBlock::guts_of_add_Modification )
 
@@ -3317,6 +3324,28 @@ void CapacitatedFacilityLocationBlock::compute_conditional_bounds( void )
   f_cond_upper += maxj;
   }
  }  // end( CapacitatedFacilityLocationBlock::compute_conditional_bounds )
+
+/*--------------------------------------------------------------------------*/
+
+template< typename T >
+void CapacitatedFacilityLocationBlock::get_y(
+				 std::vector< T >::iterator Sol , Range rng )
+{
+
+ }
+ 
+/*--------------------------------------------------------------------------*/
+
+template< typename T >
+void CapacitatedFacilityLocationBlock::get_y(
+			      std::vector< T >::iterator Sol , c_Subset nms )
+{
+
+ }
+ 
+
+
+
 
 /*--------------------------------------------------------------------------*/
 
