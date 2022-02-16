@@ -412,7 +412,10 @@ public:
   *   facility i in the MCFBlock. In this case, setting wf & 4 true
   *   (wf == 6) is not supported in that the flows in the MCFBlock are scaled
   *   and there is no (simple) way to include the required integrality
-  *   constraints. */
+  *   constraints.
+  *
+  * - wf & 3 == 3: currently unused, but it may be an explicit pattern-based
+  *   formulation amenable to a direct Column Generation approach. */
 
  void generate_abstract_variables( Configuration *stvv = nullptr ) override;
 
@@ -882,6 +885,8 @@ public:
   #ifndef NDEBUG
    if( ! ( AR &= HasVar ) )
     throw( std::logic_error( "get_y: variables not generated" ) );
+   if( i >= f_n_facilities )
+    throw( std::logic_error( "get_y: invalid facility index" ) );
   #endif
 
   switch( AR & FormMsk ) {
@@ -890,7 +895,7 @@ public:
 				  v_Block[ i ] )->get_Var( f_n_customers ) );
    }
 
-  throw( std::logic_error( "get_y: flow formulation not implemented yet" ) );
+  return( * static_cast< MCFBlock * >( v_Block[ 1 ] )->i2p_x( i ) );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -900,6 +905,10 @@ public:
   #ifndef NDEBUG
    if( ! ( AR &= HasVar ) )
     throw( std::logic_error( "get_x: variables not generated" ) );
+  if( i >= f_n_facilities )
+    throw( std::logic_error( "get_x: invalid facility index" ) );
+  if( j >= f_n_customers )
+    throw( std::logic_error( "get_x: invalid customer index" ) );
   #endif
 
   switch( AR & FormMsk ) {
@@ -908,7 +917,8 @@ public:
 				              v_Block[ i ] )->get_Var( j ) );
    }
 
-  throw( std::logic_error( "get_x: flow formulation not implemented yet" ) );
+  return( * static_cast< MCFBlock * >( v_Block[ 1 ] )->i2p_x(
+			          f_n_facilities + i * f_n_customers + j ) );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -920,7 +930,9 @@ public:
   * this is the integer (binary) version of the solution. */
 
  void get_facility_solution( IS_it Sol ,
-			     Range rng = Range( 0 , Inf< Index >() ) );
+			     Range rng = Range( 0 , Inf< Index >() ) ) {
+  get_y( Sol , rng );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets an arbitrary subset of the (integer) facility solution
@@ -932,7 +944,9 @@ public:
   * nms[] to be ordered, just the entries written in the (sub)vector
   * will be in whatever order nms[] is. */
 
- void get_facility_solution( IS_it Sol , c_Subset & nms );
+ void get_facility_solution( IS_it Sol , c_Subset & nms ) {
+  get_y( Sol , nms );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets a contiguous interval of the (continuous) facility solution
@@ -944,7 +958,9 @@ public:
   * only solve a continuous relaxation of the problem. */
 
  void get_facility_solution( CS_it Sol ,
-			     Range rng = Range( 0 , Inf< Index >() ) );
+			     Range rng = Range( 0 , Inf< Index >() ) ) {
+  get_y( Sol , rng );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets an arbitrary subset of the (continuous) facility solution
@@ -957,7 +973,9 @@ public:
   * fractional solution, e.g., as produced by a Solver that can only solve a
   * continuous relaxation of the problem. */
 
- void get_facility_solution( CS_it FSol , c_Subset & nms );
+ void get_facility_solution( CS_it FSol , c_Subset & nms ) {
+  get_y( Sol , nms );
+  }
 
 /*--------------------------------------------------------------------------*/
  /// gets a contiguous interval of the (integer) transportation solution
@@ -976,7 +994,9 @@ public:
   * true), or the integer rounding of the continuous solution otherwise. */
 
  void get_transportation_solution( IS_it Sol ,
-				   Range rng = Range( 0 , Inf< Index >() ) );
+				   Range rng = Range( 0 , Inf< Index >() ) ) {
+  get_x( Sol , rng );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets an arbitrary subset of the (integer) transportation solution
@@ -987,16 +1007,16 @@ public:
   * transportation solution is considered "flattened" into a one-dimensional
   * vector, arranged facility-wise: first the components corresponding to
   * the first facility (in order of customer), then these corresponding to
-  * the second facility ... Note that we don't require nms[] to be ordered,
-  * just the entries written in the (sub)vector will be in whatever order
-  * nms[] is.
+  * the second facility ... nms[] must be ordered in increasing sense.
   *
   * Since Sol is an iterator to an IntSolution, this is the integer
   * (binary) version of the solution, i.e., the "true" solution if the
   * unsplittable version of the problem is solved (get_Unsplittable() ==
   * true), or the integer rounding of the continuous solution otherwise. */
 
- void get_transportation_solution( IS_it FSol , c_Subset & nms );
+ void get_transportation_solution( IS_it FSol , c_Subset & nms ) {
+  get_x( Sol , nms );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets a contiguous interval of the (continuous) transportation solution
@@ -1015,7 +1035,9 @@ public:
   * rounding of the true continuous solution otherwise. */
 
  void get_transportation_solution( CS_it Sol ,
-				   Range rng = Range( 0 , Inf< Index >() ) );
+				   Range rng = Range( 0 , Inf< Index >() ) ) {
+  get_x( Sol , rng );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets an arbitrary subset of the (continuous) transportation solution
@@ -1026,16 +1048,16 @@ public:
   * transportation solution is considered "flattened" into a one-dimensional
   * vector, arranged facility-wise: first the components corresponding to
   * the first facility (in order of customer), then these corresponding to
-  * the second facility ... Note that we don't require nms[] to be ordered,
-  * just the entries written in the (sub)vector will be in whatever order
-  * nms[] is.
+  * the second facility ... nms[] must be ordered in increasing sense.
   *
   * Since Sol is an iterator to a CntSolution, this is the fractional version
   * of the solution, i.e., the "true" solution if the splittable version of
   * the problem is solved (get_Unsplittable() == false), or the integer
   * rounding of the true continuous solution otherwise. */
 
- void get_transportation_solution( IS_it FSol , c_Subset & nms );
+ void get_transportation_solution( IS_it FSol , c_Subset & nms ) {
+  get_x( Sol , nms );
+  }
 
 /*--------------------------------------------------------------------------*/
  /// sets a contiguous interval of the (integer) facility solution
@@ -1046,7 +1068,9 @@ public:
   * this is the integer (binary) version of the solution. */
 
  void set_facility_solution( c_IS_it Sol ,
-			     Range rng = Range( 0 , Inf< Index >() ) );
+			     Range rng = Range( 0 , Inf< Index >() ) ) {
+  set_y( Sol , rng );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// sets an arbitrary subset of the (integer) facility solution
@@ -1058,7 +1082,9 @@ public:
   * nms[] to be ordered, just the entries read from the (sub)vector need be in
   * whatever order nms[] is. */
 
- void set_facility_solution( c_IS_it Sol , c_Subset & nms );
+ void set_facility_solution( c_IS_it Sol , c_Subset & nms ) {
+  set_y( Sol , nms );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// sets a contiguous interval of the (continuous) facility solution
@@ -1070,20 +1096,23 @@ public:
   * only solve a continuous relaxation of the problem. */
 
  void set_facility_solution( c_CS_it Sol ,
-			     Range rng = Range( 0 , Inf< Index >() ) );
+			     Range rng = Range( 0 , Inf< Index >() ) ) {
+  set_y( Sol , rng );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// sets an arbitrary subset of the (continuous) facility solution
  /** Method to set the facility solution: the components of the facility
   * solution vector whose indices are specified in nms[] are read from the
   * IntSolution in the positions starting from where the iterator Sol points,
-  * in the obvious order. Note that we don't require nms[] to be ordered,
-  * just the entries read from the (sub)vector need be in whatever order
-  * nms[] is. Since Sol is an iterator to a CntSolution, this can be a
-  * fractional solution, e.g., as produced by a Solver that can only solve a
-  * continuous relaxation of the problem. */
+  * in the obvious order. nms[] must be ordered in increasing sense. Since
+  * Sol is an iterator to a CntSolution, this can be a  fractional solution,
+  * e.g., as produced by a Solver that can only solve a continuous relaxation
+  * of the problem. */
 
- void set_facility_solution( c_CS_it FSol , c_Subset & nms );
+ void set_facility_solution( c_CS_it FSol , c_Subset & nms ) {
+  set_y( Sol , nms );
+  }
 
 /*--------------------------------------------------------------------------*/
  /// sets a contiguous interval of the (integer) transportation solution
@@ -1102,7 +1131,9 @@ public:
   * true), or the integer rounding of the continuous solution otherwise. */
 
  void set_transportation_solution( c_IS_it Sol ,
-				   Range rng = Range( 0 , Inf< Index >() ) );
+				   Range rng = Range( 0 , Inf< Index >() ) ) {
+  set_x( Sol , rng );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// sets an arbitrary subset of the (integer) transportation solution
@@ -1113,16 +1144,16 @@ public:
   * transportation solution is considered "flattened" into a one-dimensional
   * vector, arranged facility-wise: first the components corresponding to
   * the first facility (in order of customer), then these corresponding to
-  * the second facility ... Note that we don't require nms[] to be ordered,
-  * just the entries read from the (sub)vector need be in whatever order
-  * nms[] is.
+  * the second facility ... nms[] must be ordered in increasing sense.
   *
   * Since Sol is an iterator to an IntSolution, this is the integer
   * (binary) version of the solution, i.e., the "true" solution if the
   * unsplittable version of the problem is solved (get_Unsplittable() ==
   * true), or the integer rounding of the continuous solution otherwise. */
 
- void set_transportation_solution( c_IS_it FSol , c_Subset & nms );
+ void set_transportation_solution( c_IS_it FSol , c_Subset & nms ) {
+  set_y( Sol , nms );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// sets a contiguous interval of the (continuous) transportation solution
@@ -1141,7 +1172,9 @@ public:
   * rounding of the true continuous solution otherwise. */
 
  void set_transportation_solution( c_CS_it Sol ,
-				   Range rng = Range( 0 , Inf< Index >() ) );
+				   Range rng = Range( 0 , Inf< Index >() ) ) {
+  set_x( Sol , rng );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// sets an arbitrary subset of the (continuous) transportation solution
@@ -1152,16 +1185,16 @@ public:
   * transportation solution is considered "flattened" into a one-dimensional
   * vector, arranged facility-wise: first the components corresponding to
   * the first facility (in order of customer), then these corresponding to
-  * the second facility ... Note that we don't require nms[] to be ordered,
-  * just the entries read from the (sub)vector need be in whatever order
-  * nms[] is.
+  * the second facility ... nms[] must be ordered in increasing sense.
   *
   * Since Sol is an iterator to a CntSolution, this is the fractional version
   * of the solution, i.e., the "true" solution if the splittable version of
   * the problem is solved (get_Unsplittable() == false), or the integer
   * rounding of the true continuous solution otherwise. */
 
- void set_transportation_solution( c_IS_it FSol , c_Subset & nms );
+ void set_transportation_solution( c_IS_it FSol , c_Subset & nms ) {
+  set_y( Sol , nms );
+  }
 
 /** @} ---------------------------------------------------------------------*/
 /*-------------------- Methods for handling Modification -------------------*/

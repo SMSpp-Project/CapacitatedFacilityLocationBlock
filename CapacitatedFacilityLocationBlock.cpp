@@ -18,6 +18,12 @@
 
 #include "CapacitatedFacilityLocationBlock.h"
 
+#include "MCFBlock.h"
+
+#include "BinaryKnapsackBlock.h"
+
+#include "AbstractBlock.h"
+
 /*--------------------------------------------------------------------------*/
 /*--------------------------------- MACROS ---------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -92,6 +98,18 @@ static constexpr unsigned char HasCapCns = 64;
 
 static BinaryKnapsackBlock * BKB( Block * b ) {
  return( static_cast< BinaryKnapsackBlock * >( b ) );
+ }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+static AbstractBlock * AB( Block * b ) {
+ return( static_cast< AbstractBlock * >( b ) );
+ }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+static MCFBlock * MCFB( Block * b ) {
+ return( static_cast< MCFBlock * >( b ) );
  }
 
 /*----------------------------------------------------------------------------
@@ -475,7 +493,29 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
  if( ( wf & 3 ) == 2 ) {  // "flow formulation" (FF)- - - - - - - - - - - - -
                           //- - - - - - - - - - - - - - - - - - - - - - - - -
   AR |= FlwForm;
-  throw( std::invalid_argument( "flow formulation not implemented yet" ) );
+
+  v_Block.resize( 2 );  // exactly two sub-Block
+
+  // the first sub-Block is an AbstractBlock with the y[] variables
+  auto ab = new AbstractBlock( this );
+  v_Block[ 0 ] = ab;
+
+  v_y.resize( f_n_facilities );
+  for( auto yi : v_y )
+   yi.set_type( ColVariable::kBinary );
+  ab->add_static_variable( v_y , "y" );
+
+  // the second Block is a MCFBlock as constructed by get_R3_Block
+  static SimpleConfiguration< int > r3bc( 2 );
+  auto mcfb = static_cast< MCFBlock * >( get_R3_Block( & r3bc ) );
+  v_Block[ 1 ] = mcfb;
+
+  // ... except the cost of the facility arcs are zerod
+  MCFBlock::Vec_CNumber zero( f_n_facilities , 0 );
+  mcfb->chg_costs( zero.begin() , Range( 0 , f_n_facilities ),
+		   eNoMod , eNoMod );
+  mcfb->generate_abstract_variables();
+  mcfb->set_f_Block( this );
 
   return:
   }
@@ -533,9 +573,9 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
 
     coeffs[ f_n_customers ] = std::make_pair( & v_y[ i ] ,
 					      - v_capacity[ i ] );
-    v_cap[ j ].set_rhs( 0 );
-    v_cap[ j ].set_lhs( 1 ) = - Inf< RHSValue >();
-    v_cap[ j ].set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
+    v_cap[ i ].set_rhs( 0 );
+    v_cap[ i ].set_lhs( 1 ) = - Inf< RHSValue >();
+    v_cap[ i ].set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
     }
 
    add_static_constraint( v_cap , "cap" );
@@ -579,7 +619,37 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
  // else it is the "flow formulation" (FF)- - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- throw( std::logic_error( _prfx + "flow formulation not implemented yet" ) );
+ if( ( ! ( wc & 1 ) && ( ! ( AR & HasSatCns ) ) ) ) {
+  // construct customer satisfaction constraints (not there already)
+  // these are, just the MCFBlock ones
+  v_Block[ 1 ]->generate_abstract_constraints();
+  AR |= HasSatCns;
+  }
+
+ if( ( ! ( wc & 2 ) ) && ( ! ( AR & HasCapCns ) ) ) {
+  // construct facility capacity constraints (not there already)
+  // these are the ones linking the y[] variables to the
+  // arc flow variables of facility arcs
+
+  auto ab = AB( v_Block[ 0 ] );
+  auto mcfb = MCFB( v_Block[ 1 ] );
+
+  v_cap.resize( f_n_facilities );
+  for( Index i = 0 ; i < f_n_facilities ; ++i ) {
+   v_coeff_pair coeffs( 2 );
+
+   coeffs[ 0 ] = std::make_pair( mcfb->i2p_x( i ) , double( 1 ) );
+   coeffs[ 0 ] = std::make_pair( & v_y[ i ] , - v_capacity[ i ] );
+
+   v_cap[ i ].set_rhs( 0 );
+   v_cap[ i ].set_lhs( 1 ) = - Inf< RHSValue >();
+   v_cap[ i ].set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
+   }
+
+  ab->add_static_constraint( v_sat , "sat" );
+
+  AR |= HasCapCns;
+  }
 
  /*!!
  #if CHECK_DS
@@ -637,8 +707,18 @@ void CapacitatedFacilityLocationBlock::generate_objective(
 
  // else it is the "flow formulation" (FF)- - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // construct a "dense" LinearFunction for the y[] variables only in the
+ // first sub-Block
 
- throw( std::logic_error( _prfx + "flow formulation not supported yet" ) );
+ v_coeff_pair p( f_n_facilities );
+ for( Index i = 0 ; i < f_n_facilities ; ++i )
+  p[ i ] = std::make_pair( & v_y[ i ] , v_fixed_cost[ i ] );
+
+ c.set_function( new LinearFunction( std::move( p ) , 0 ) , eNoMod );
+ AB( v_Block[ 0 ] )->set_objective( & c , eNoMod );
+
+ // generate the objective in the MCFBlock
+ MCFB( v_Block[ 1 ] )->generate_objective();
 
  /*!!
  #if CHECK_DS
@@ -705,6 +785,9 @@ bool CapacitatedFacilityLocationBlock::customer_feasible( double eps ,
    return( true );
    }
 
+  SimpleConfiguration< double > cfg( eps ); 
+  return( MCFB( v_Block[ 1 ] )->is_feasible( true , & cfg );
+  
   throw( std::logic_error( _prfx + "flow formulation not supported yet" ) );
   }
  else {
@@ -738,7 +821,8 @@ bool CapacitatedFacilityLocationBlock::capacity_feasible( double eps ,
  if( useabstract ) {
   // do it using the abstract representation- - - - - - - - - - - - - - - - -
 
-  if( ( AR & FormMsk ) == StdForm ) {
+  if( ( ( AR & FormMsk ) == StdForm ) ||
+      ( ( AR & FormMsk ) == FlwForm ) ) {
    for( const auto & cnst : v_cap )
     if( cnst.rel_viol() > eps )
      return( false );
@@ -792,12 +876,13 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
   throw( std::invalid_argument(  _prfx + "invalid R3B type" ) );
 
  if( ! wR3B ) {  // "copy" R3B- - - - - - - - - - - - - - - - - - - - - - - -
+                 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   CapacitatedFacilityLocationBlock * CFLB;
   if( base ) {
-  CFLB = dynamic_cast< CapacitatedFacilityLocationBlock * >( base );
-  if( ! CFLB )
-   throw( std::invalid_argument( _prfx +
+   CFLB = dynamic_cast< CapacitatedFacilityLocationBlock * >( base );
+   if( ! CFLB )
+    throw( std::invalid_argument( _prfx +
 			"base is not a CapacitatedFacilityLocationBlock" ) );
    }
   else
@@ -810,6 +895,7 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
   }
 
  // "flow relaxation" R3B - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  MCFBlock * MCFB;
  if( base ) {
@@ -912,6 +998,8 @@ void CapacitatedFacilityLocationBlock::map_back_solution( Block * R3B ,
   throw( std::invalid_argument(  _prfx + "invalid R3B type" ) );
 
  if( ! wR3B ) {  // "copy" R3B- - - - - - - - - - - - - - - - - - - - - - - -
+                 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
   auto CFLB = dynamic_cast< CapacitatedFacilityLocationBlock * >( R3B );
   if( ! CFLB )
    throw( std::invalid_argument( _prfx +
@@ -934,7 +1022,8 @@ void CapacitatedFacilityLocationBlock::map_back_solution( Block * R3B ,
   }
 
  // "flow relaxation" R3B - - - - - - - - - - - - - - - - - - - - - - - - - -
- 
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
  auto MCFB = dynamic_cast< MCFBlock * >( R3B );
  if( ! MCFB )
   throw( std::invalid_argument( _prfx + "R3B is not a MCFBlock" ) );
@@ -989,6 +1078,8 @@ void CapacitatedFacilityLocationBlock::map_forward_solution( Block * R3B ,
   throw( std::invalid_argument(  _prfx + "invalid R3B type" ) );
 
  if( ! wR3B ) {  // "copy" R3B- - - - - - - - - - - - - - - - - - - - - - - -
+                 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
   auto CFLB = dynamic_cast< CapacitatedFacilityLocationBlock * >( R3B );
   if( ! CFLB )
    throw( std::invalid_argument( _prfx +
@@ -1003,7 +1094,8 @@ void CapacitatedFacilityLocationBlock::map_forward_solution( Block * R3B ,
   }
 
  // "flow relaxation" R3B - - - - - - - - - - - - - - - - - - - - - - - - - -
- 
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
  auto MCFB = dynamic_cast< MCFBlock * >( R3B );
  if( ! MCFB )
   throw( std::invalid_argument( _prfx + "R3B is not a MCFBlock" ) );
@@ -1052,6 +1144,8 @@ bool CapacitatedFacilityLocationBlock::map_forward_Modification(
   throw( std::invalid_argument(  _prfx + "invalid R3B type" ) );
 
  if( ! wR3B ) {  // "copy" R3B- - - - - - - - - - - - - - - - - - - - - - - -
+                 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
   auto CFLB = dynamic_cast< CapacitatedFacilityLocationBlock * >( R3B );
   if( ! CFLB )
    throw( std::invalid_argument( _prfx +
@@ -1065,7 +1159,8 @@ bool CapacitatedFacilityLocationBlock::map_forward_Modification(
   }
 
  // "flow relaxation" R3B - - - - - - - - - - - - - - - - - - - - - - - - - -
- 
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
  auto MCFB = dynamic_cast< MCFBlock * >( R3B );
  if( ! MCFB )
   throw( std::invalid_argument( _prfx + "R3B is not a MCFBlock" ) );
@@ -1096,6 +1191,8 @@ bool CapacitatedFacilityLocationBlock::map_back_Modification( Block * R3B ,
   throw( std::invalid_argument(  _prfx + "invalid R3B type" ) );
 
  if( ! wR3B ) {  // "copy" R3B- - - - - - - - - - - - - - - - - - - - - - - -
+                 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
   auto CFLB = dynamic_cast< CapacitatedFacilityLocationBlock * >( R3B );
   if( ! CFLB )
    throw( std::invalid_argument( _prfx +
@@ -1110,7 +1207,8 @@ bool CapacitatedFacilityLocationBlock::map_back_Modification( Block * R3B ,
   }
 
  // "flow relaxation" R3B - - - - - - - - - - - - - - - - - - - - - - - - - -
- 
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
  auto MCFB = dynamic_cast< MCFBlock * >( R3B );
  if( ! MCFB )
   throw( std::invalid_argument( _prfx + "R3B is not a MCFBlock" ) );
@@ -1157,262 +1255,11 @@ Solution * CapacitatedFacilityLocationBlock::get_Solution(
  }  // end( CapacitatedFacilityLocationBlock::get_Solution )
 
 /*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::get_x( Vec_FNumber & FSol , Range rng )
-{
- auto FSi = FSol.begin();
- for( ; rng.first < std::min( rng.second , get_NStaticArcs() ) ; )
-  *(FSi++) = x[ rng.first++ ].get_value();
-
- if( HasDynamicX() ) {
-  auto dxi = dx.begin();
-  for( ; rng.first++ < std::min( rng.second , get_NArcs() ) ; )
-   *(FSi++) = (*(dxi++)).get_value();
-  }
- }  // end( CapacitatedFacilityLocationBlock::get_x( interval ) )
-
-/*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::get_x( Vec_FNumber & FSol , c_Subset & nms )
-{
- if( ! ( AR & HasVar ) )
-  throw( std::logic_error( "flow Variable not available" ) );
-
- auto FSi = FSol.begin();
- auto nmsi = nms.begin();
-
- if( HasDynamicX() ) {
-  while( ( nmsi != nms.end() ) && ( *nmsi < get_NStaticArcs() ) )
-   *(FSi++) = x[ *(nmsi++) ].get_value();
-
-  if( nmsi == nms.end() )
-   return;
-
-  auto i = get_NStaticArcs();
-  for( auto dxi = dx.begin() ; nmsi != nms.end() ; ++dxi )
-   if( *nmsi == i++ ) {
-    *(FSi++) = (*dxi).get_value();
-    nmsi++;
-    }
-  }
- else
-  while( nmsi != nms.end() ) 
-   *(FSi++) = x[ *(nmsi++) ].get_value();
-
- }  // end( CapacitatedFacilityLocationBlock::get_x( subset ) )
-
-/*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::get_pi( Vec_CNumber & PSol , Range rng )
-{
- if( ! ( AR & HasFlw ) )
-  throw( std::logic_error( "potentials unavailable if Constraint aren't" ) );
-
- auto PSi = PSol.begin();
- Index i = rng.first;
- for( ; i < std::min( rng.second , get_NStaticNodes() ) ; )
-  *(PSi++) = E[ i++ ].get_dual();
-
- if( HasDynamicE() ) {
-  auto dei = std::next( dE.begin() , rng.first >= get_NStaticNodes() ?
-			             i - get_NStaticNodes() : 0 );
-   for( ; i++ < std::min( rng.second , get_NNodes() ) ; )
-   *(PSi++) = (*(dei++)).get_dual();
-  }
- }  // end( CapacitatedFacilityLocationBlock::get_pi( interval ) )
-
-/*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::get_pi( Vec_CNumber & PSol , c_Subset & nms )
-{
- if( ! ( AR & HasFlw ) )
-  throw( std::logic_error( "potentials unavailable if Constraint aren't" ) );
-
- auto PSi = PSol.begin();
- auto nmsi = nms.begin();
-
- if( HasDynamicE() ) {
-  while( ( nmsi != nms.end() ) && ( *nmsi < get_NStaticNodes() ) )
-   *(PSi++) = E[ *(nmsi++) ].get_dual();
-
-  if( nmsi == nms.end() )
-   return;
-
-  auto i = get_NStaticNodes();
-  for( auto dei = dE.begin() ; nmsi != nms.end() ; ++dei )
-   if( *nmsi == i++ ) {
-    *(PSi++) = (*dei).get_dual();
-    nmsi++;
-    }
-  }
- else
-  while( nmsi != nms.end() )
-   *(PSi++) = E[ *(nmsi++) ].get_dual();
-
- }  // end( CapacitatedFacilityLocationBlock::get_pi( subset ) )
-
-/*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::get_rc( Vec_CNumber & RC , Range rng )
-{
- if( ! ( AR & HasFlw ) )
-  throw( std::logic_error( "reduced costs unavailable if Constraint aren't" )
-	 );
-
- auto RCi = RC.begin();
-
- if( AR & HasBnd ) {
-  Index i = rng.first;
-  if( HasStaticX() )
-   for( ; i < std::min( rng.second , get_NStaticArcs() ) ; )
-    *(RCi++) = UB[ i++ ].get_dual();
-
-  if( HasDynamicX() ) {
-   auto dubi = std::next( dUB.begin() , rng.first >= get_NStaticArcs() ?
-			                i - get_NStaticArcs() : 0 );
-   for( ; i++ < std::min( rng.second , get_NArcs() ) ; )
-    *(RCi++) = (*(dubi++)).get_dual();
-   }
-  }
- else
-  for( ; rng.first < std::min( rng.second , get_NArcs() ) ; ++rng.first )
-   *(RCi++) = get_C( rng.first ) + get_pi( SN[ rng.first ] - 1 )
-                                 - get_pi( EN[ rng.first ] - 1 );
-
- }  // end( CapacitatedFacilityLocationBlock::get_rc( interval ) )
-
-/*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::get_rc( Vec_CNumber & RC , c_Subset & nms )
-{
- if( ! ( AR & HasFlw ) )
-  throw( std::logic_error( "reduced costs unavailable if Constraint aren't" )
-	 );
-
- auto RCi = RC.begin();
- auto nmsi = nms.begin();
-
- if( AR & HasBnd ) {
-  if( HasDynamicX() ) {
-   while( ( nmsi != nms.end() ) && ( *nmsi < get_NStaticArcs() ) )
-     *(RCi++) = UB[ *(nmsi++) ].get_dual();
-
-   if( nmsi == nms.end() )
-    return;
-
-   auto i = get_NStaticArcs();
-   for( auto dubi = dUB.begin() ; nmsi != nms.end() ; ++dubi )
-    if( *nmsi == i++ ) {
-     *(RCi++) = (*dubi).get_dual();
-     nmsi++;
-     }
-   }
-  else
-   while( nmsi != nms.end() ) 
-    *(RCi++) = UB[ *(nmsi++) ].get_dual();
-  }
- else
-  for( ; nmsi != nms.end() ; ++nmsi ) 
-   *(RCi++) = get_C( *nmsi ) + get_pi( SN[ *nmsi ] - 1 )
-                             - get_pi( EN[ *nmsi ] - 1 );
- 
- }  // end( CapacitatedFacilityLocationBlock::get_rc( subset ) )
-
-/*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::set_x( c_Vec_FNumber_it fstrt , c_Vec_FNumber_it fstop ,
-		      c_Index strt )
-{
- if( ! ( AR & HasVar ) )  // nowhere to put the value in
-  return;                 // cowardly (and silently) return
-
- if( std::distance( fstrt , fstop ) + strt > get_NArcs() )
-  throw( std::invalid_argument( "too many values provided" ) );
-
- Index i = strt;
-
- if( HasStaticX() )
-  for( auto xi = x.begin() + strt ;
-       ( fstrt != fstop ) && ( i < get_NStaticArcs() ) ; ++i )
-   (xi++)->set_value( *(fstrt++) );
-
- if( ( fstrt == fstop ) || ( ! HasDynamicX() ) )
-  return;
-
- auto dxi = dx.begin();
- if( i > get_NStaticArcs() )
-  dxi = std::next( dxi , i - get_NStaticArcs() );
-
- while( fstrt != fstop )
-  (dxi++)->set_value( *(fstrt++) );
-
- }  // end( CapacitatedFacilityLocationBlock::set_x( range ) )
-
-/*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::set_pi( c_Vec_CNumber_it pstrt , c_Vec_CNumber_it pstop ,
-		       c_Index strt )
-{
- if( ! ( AR & HasFlw ) )  // nowhere to put the value in
-  return;                 // cowardly (and silently) return
-
- if( std::distance( pstrt , pstop ) + strt > get_NNodes() )
-  throw( std::invalid_argument( "too many values provided" ) );
-
- Index i = strt;
-
- if( HasStaticE() )
-  for( auto ei = E.begin() + strt ;
-       ( pstrt != pstop ) && ( i < get_NStaticArcs() ) ; ++i )
-   (ei++)->set_dual( *(pstrt++) );
-
- if( ( pstrt == pstop ) || ( ! HasDynamicE() ) )
-  return;
-
- auto dei = dE.begin();
- if( i > get_NStaticArcs() )
-  dei = std::next( dei , i - get_NStaticArcs() );
-
- while( pstrt != pstop )
-  (dei++)->set_dual( *(pstrt++) );
-
- }  // end( CapacitatedFacilityLocationBlock::set_pi( range ) )
-
-/*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::set_rc( c_Vec_CNumber_it rcstrt , c_Vec_CNumber_it rcstop ,
-		       c_Index strt )
-{
- if( ! ( AR & HasBnd ) )  // nowhere to put the value in
-  return;                 // cowardly (and silently) return
-
- if( std::distance( rcstrt , rcstop ) + strt > get_NArcs() )
-  throw( std::invalid_argument( "too many values provided" ) );
-
- Index i = strt;
-
- if( HasStaticX() )
-  for( auto ubi = UB.begin() + strt ;
-       ( rcstrt != rcstop ) && ( i < get_NStaticArcs() ) ; ++i )
-   (ubi++)->set_dual( *(rcstrt++) );
-
- if( ( rcstrt == rcstop ) || ( ! HasDynamicX() ) )
-  return;
-
- auto dubi = dUB.begin();
- if( i > get_NStaticArcs() )
-  dubi = std::next( dubi , i - get_NStaticArcs() );
-
- while( rcstrt != rcstop )
-  (dubi++)->set_dual( *(rcstrt++) );
-
- }  // end( CapacitatedFacilityLocationBlock::set_rc( range ) )
-
-/*--------------------------------------------------------------------------*/
 /*-------------------- Methods for handling Modification -------------------*/
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::add_Modification( sp_Mod mod , ChnlName chnl )
+void CapacitatedFacilityLocationBlock::add_Modification( sp_Mod mod ,
+							 ChnlName chnl )
 {
  //!! std::cout << *mod << std::endl;
 
@@ -3331,8 +3178,28 @@ template< typename T >
 void CapacitatedFacilityLocationBlock::get_y(
 				 std::vector< T >::iterator Sol , Range rng )
 {
+ if( rng.second <= rng.first )  // Range is empty
+  return;                       // nothing to do
 
- }
+ #ifndef NDEBUG
+  if( ! ( AR &= HasVar ) )
+   throw( std::logic_error( "get_facility_solution: variables not generated"
+			    ) );
+  if( rng.second > f_n_facilities )
+   rng.second = f_n_facilities;
+ #endif
+
+ if( ( AR & FormMsk ) == KskForm ) {  // knapsack formulation- - - - - - - - -
+  for( Index i = rng.first ; i < rng.second ; )
+   *(Sol++) = BKB( v_Block[ i ] )->get_x( f_n_customers );
+  return;
+  }
+
+ // all other formulations- - - - - - - - - - - - - - - - - - - - - - - - - -
+ for( Index i = rng.first ; i < rng.second ; )
+  *(Sol++) = v_y[ i++ ].get_value();
+
+ }  // end( get_y( Range ) )
  
 /*--------------------------------------------------------------------------*/
 
@@ -3340,16 +3207,324 @@ template< typename T >
 void CapacitatedFacilityLocationBlock::get_y(
 			      std::vector< T >::iterator Sol , c_Subset nms )
 {
+ if( nms.empty() )  // Subset is empty
+  return;           // nothing to do
 
- }
+ #ifndef NDEBUG
+  const std::string _prfx = "get_facility_solution: ";
+  if( ! ( AR &= HasVar ) )
+   throw( std::logic_error( _prfx + "variables not generated" ) );
+  if( std__any_of( nms.begin() , nms.end ,
+		   [ & f_n_facilities ]( auto i ) {
+		    return( i > f_n_facilities );
+		    }
+		   ) )
+   throw( std::logic_error( _prfx + "invalid facility index in nms" ) );
+ #endif
+
+ if( ( AR & FormMsk ) == KskForm ) {  // knapsack formulation- - - - - - - - -
+  for( auto i : nms )
+   *(Sol++) = BKB( v_Block[ i ] )->get_x( f_n_customers );
+  return;
+  }
+
+ // all other formulations- - - - - - - - - - - - - - - - - - - - - - - - - -
+ for( auto i : nms )
+  *(Sol++) = v_y[ i ].get_value();
+
+ }  // end( get_y( Subset ) )
  
-
-
-
-
 /*--------------------------------------------------------------------------*/
 
-ModParam CapacitatedFacilityLocationBlock::make_amod_param( ModParam issueAMod , Index num )
+template< typename T >
+void CapacitatedFacilityLocationBlock::get_x(
+				 std::vector< T >::iterator Sol , Range rng )
+{
+ if( rng.second <= rng.first )  // Range is empty
+  return;                       // nothing to do
+
+ #ifndef NDEBUG
+  if( ! ( AR &= HasVar ) )
+   throw( std::logic_error( "get_transportation_solution: "
+			    "variables not generated" ) );
+  if( rng.second > f_n_facilities * f_n_customers )
+   rng.second = f_n_facilities * f_n_customers;
+ #endif
+
+ if( ( AR & FormMsk ) == StdForm ) {  // standard formulation- - - - - - - - -
+  for( Index h = rng.first ; h < rng.second ; )
+   *(Sol++) = (v_x.data())[ h++ ].get_value();
+  return;
+  }
+
+ if( ( AR & FormMsk ) == KskForm ) {  // knapsack formulation- - - - - - - - -
+  Index i = rng.first / f_n_customers;
+  Index frst = rng.first % f_n_customers;
+  // simple case: it's always the same facility
+  if( i == rng.second / f_n_customers ) {
+   BKB( v_Block[ i ] )->get_x( Sol , Range( frst ,
+					    rng.second % f_n_customers ) );
+   return;
+   }
+  // it's at least two facilities
+  for( Index h = rng.first ; h < rng.second ; ++h , ++i ) {
+   Index scnd = std::min( rng.second - h , f_n_customers );
+   BKB( v_Block[ i ] )->get_x( Sol , Range( frst , second ) );
+   if( scnd < f_n_customers )
+    break;
+   scnd -= frst;
+   frst = 0;
+   h += scnd;
+   Sol += scnd;
+   }
+  return;
+  }
+
+ // flow formulation: first get it from the MCFBlock, but it is scaled- - - -
+ MCFB( v_Block[ 1 ] )->get_x( Sol , Range( rng.first + f_n_facilities ,
+					   rng.second + f_n_facilities ) );
+ // now de-scale it
+ for( Index h = rng.first ; h < rng.second ; ++h )
+  *(Sol++) /= v_demand[ h % f_n_customers ];
+
+ }  // end( get_x( Range ) )
+ 
+/*--------------------------------------------------------------------------*/
+
+template< typename T >
+void CapacitatedFacilityLocationBlock::get_x(
+			      std::vector< T >::iterator Sol , c_Subset nms )
+{
+ if( nms.empty() )  // Subset is empty
+  return;           // nothing to do
+
+ #ifndef NDEBUG
+  const std::string _prfx = "get_transportation_solution: ";
+  if( ! ( AR &= HasVar ) )
+   throw( std::logic_error( _prfx + "variables not generated" ) );
+  if( std__any_of( nms.begin() , nms.end ,
+		   [ & f_n_facilities ]( auto i ) {
+		    return( i > f_n_facilities );
+		    }
+		   ) )
+   throw( std::logic_error( _prfx + "invalid index in nms" ) );
+ #endif
+
+
+ if( ( AR & FormMsk ) == StdForm ) {  // standard formulation- - - - - - - - -
+  for( auto i : nms )
+   *(Sol++) = (v_x.data())[ i ].get_value();
+  return;
+  }
+
+ if( ( AR & FormMsk ) == KskForm ) {  // knapsack formulation- - - - - - - - -
+  auto nbit = nms.begin();
+  for( Index i = *nbit / f_n_customers ; nbit != nms.end() ; ++i ) {
+   auto neit = ++nbit;
+   while( ( neit != nms.end() ) && ( *neit / f_n_customers == i ) )
+    ++neit;
+   Subset nnms( nbit , neit );
+   for( auto & nm : nnms )
+    nm %= f_n_customers;
+   BKB( v_Block[ i ] )->get_x( Sol , nnms );
+   Sol += nnms.size();
+   nbit = neit;
+   }
+  return;
+  }
+
+ // flow formulation: first get it from the MCFBlock, but it is scaled- - - -
+ Subset nnms( nms );
+ for( auto & nm : nnms )
+  nm -= f_n_facilities;
+ MCFB( v_Block[ 1 ] )->get_x( Sol , nnms );
+ // now de-scale it
+ for( Index h : nms )
+  *(Sol++) /= v_demand[ h % f_n_customers ];
+
+ }  // end( get_x( Subset ) )
+ 
+/*--------------------------------------------------------------------------*/
+
+template< typename T >
+void CapacitatedFacilityLocationBlock::set_y(
+				 std::vector< T >::iterator Sol , Range rng )
+{
+ if( rng.second <= rng.first )  // Range is empty
+  return;                       // nothing to do
+
+ #ifndef NDEBUG
+  if( ! ( AR &= HasVar ) )
+   throw( std::logic_error( "set_facility_solution: variables not generated"
+			    ) );
+  if( rng.second > f_n_facilities )
+   rng.second = f_n_facilities;
+ #endif
+
+ if( ( AR & FormMsk ) == KskForm ) {  // knapsack formulation- - - - - - - - -
+  for( Index i = rng.first ; i < rng.second ; )
+   BKB( v_Block[ i ] )->set_x( f_n_customers , *(Sol++) );
+  return;
+  }
+
+ // all other formulations- - - - - - - - - - - - - - - - - - - - - - - - - -
+ for( Index i = rng.first ; i < rng.second ; )
+  v_y[ i++ ].set_value( *(Sol++) );
+
+ }  // end( set_y( Range ) )
+ 
+/*--------------------------------------------------------------------------*/
+
+template< typename T >
+void CapacitatedFacilityLocationBlock::set_y(
+			      std::vector< T >::iterator Sol , c_Subset nms )
+{
+ if( nms.empty() )  // Subset is empty
+  return;           // nothing to do
+
+ #ifndef NDEBUG
+  const std::string _prfx = "set_facility_solution: ";
+  if( ! ( AR &= HasVar ) )
+   throw( std::logic_error( _prfx + "variables not generated" ) );
+  if( std__any_of( nms.begin() , nms.end ,
+		   [ & f_n_facilities ]( auto i ) {
+		    return( i > f_n_facilities );
+		    }
+		   ) )
+   throw( std::logic_error( _prfx + "invalid facility index in nms" ) );
+ #endif
+
+ if( ( AR & FormMsk ) == KskForm ) {  // knapsack formulation- - - - - - - - -
+  for( auto i : nms )
+   BKB( v_Block[ i ] )->set_x( f_n_customers , *(Sol++) );
+  return;
+  }
+
+ // all other formulations- - - - - - - - - - - - - - - - - - - - - - - - - -
+ for( auto i : nms )
+  v_y[ i ].set_value( *(Sol++) );
+
+ }  // end( set_y( Subset ) )
+ 
+/*--------------------------------------------------------------------------*/
+
+template< typename T >
+void CapacitatedFacilityLocationBlock::set_x(
+				 std::vector< T >::iterator Sol , Range rng )
+{
+ if( rng.second <= rng.first )  // Range is empty
+  return;                       // nothing to do
+
+ #ifndef NDEBUG
+  if( ! ( AR &= HasVar ) )
+   throw( std::logic_error( "set_transportation_solution: "
+			    "variables not generated" ) );
+  if( rng.second > f_n_facilities * f_n_customers )
+   rng.second = f_n_facilities * f_n_customers;
+ #endif
+
+ if( ( AR & FormMsk ) == StdForm ) {  // standard formulation- - - - - - - - -
+  for( Index h = rng.first ; h < rng.second ; )
+   (v_x.data())[ h++ ].set_value( *(Sol++) );
+  return;
+  }
+
+ if( ( AR & FormMsk ) == KskForm ) {  // knapsack formulation- - - - - - - - -
+  Index i = rng.first / f_n_customers;
+  Index frst = rng.first % f_n_customers;
+  // simple case: it's always the same facility
+  if( i == rng.second / f_n_customers ) {
+   BKB( v_Block[ i ] )->set_x( Sol , Range( frst ,
+					    rng.second % f_n_customers ) );
+   return;
+   }
+  // it's at least two facilities
+  for( Index h = rng.first ; h < rng.second ; ++h , ++i ) {
+   Index scnd = std::min( rng.second - h , f_n_customers );
+   BKB( v_Block[ i ] )->set_x( Sol , Range( frst , second ) );
+   if( scnd < f_n_customers )
+    break;
+   scnd -= frst;
+   frst = 0;
+   h += scnd;
+   Sol += scnd;
+   }
+  return;
+  }
+
+ // flow formulation: first need to scale the solution- - - - - - - - - - - -
+ MCFBlock::Vec_FNumber SSol( Sol , Sol + ( rng.second - rng.first ) );
+ auto Sit = SSol.begin();
+ for( Index h = rng.first ; h < rng.second ; ++h )
+  *(Sit++) *= v_demand[ h % f_n_customers ];
+
+ // now set it in the MCFBlock
+ MCFB( v_Block[ 1 ] )->set_x( SSol.begin() ,
+			      Range( rng.first + f_n_facilities ,
+				     rng.second + f_n_facilities ) );
+ }  // end( set_x( Range ) )
+ 
+/*--------------------------------------------------------------------------*/
+
+template< typename T >
+void CapacitatedFacilityLocationBlock::set_x(
+			      std::vector< T >::iterator Sol , c_Subset nms )
+{
+ if( nms.empty() )  // Subset is empty
+  return;           // nothing to do
+
+ #ifndef NDEBUG
+  const std::string _prfx = "set_transportation_solution: ";
+  if( ! ( AR &= HasVar ) )
+   throw( std::logic_error( _prfx + "variables not generated" ) );
+  if( std__any_of( nms.begin() , nms.end ,
+		   [ & f_n_facilities ]( auto i ) {
+		    return( i > f_n_facilities );
+		    }
+		   ) )
+   throw( std::logic_error( _prfx + "invalid index in nms" ) );
+ #endif
+
+ if( ( AR & FormMsk ) == StdForm ) {  // standard formulation- - - - - - - - -
+  for( auto i : nms )
+   (v_x.data())[ i ].set_value( *(Sol++) );
+  return;
+  }
+
+ if( ( AR & FormMsk ) == KskForm ) {  // knapsack formulation- - - - - - - - -
+  auto nbit = nms.begin();
+  for( Index i = *nbit / f_n_customers ; nbit != nms.end() ; ++i ) {
+   auto neit = ++nbit;
+   while( ( neit != nms.end() ) && ( *neit / f_n_customers == i ) )
+    ++neit;
+   Subset nnms( nbit , neit );
+   for( auto & nm : nnms )
+    nm %= f_n_customers;
+   BKB( v_Block[ i ] )->set_x( Sol , nnms );
+   Sol += nnms.size();
+   nbit = neit;
+   }
+  return;
+  }
+
+ // flow formulation: first need to scale the solution- - - - - - - - - - - -
+ MCFBlock::Vec_FNumber SSol( Sol , Sol + nms.size() );
+ auto Sit = SSol.begin();
+ for( Index h : nms )
+  *(Sit++) *= v_demand[ h % f_n_customers ];
+
+ // now set it in the MCFBlock
+ Subset nnms( nms );
+ for( auto & nm : nnms )
+  nm -= f_n_facilities;
+ MCFB( v_Block[ 1 ] )->set_x( SSol , nnms );
+
+ }  // end( set_x( Subset ) )
+ 
+/*--------------------------------------------------------------------------*/
+
+ModParam CapacitatedFacilityLocationBlock::make_amod_param(
+					     ModParam issueAMod , Index num )
 {
  if( issue_mod( issueAMod ) ) {
   ChnlName chnl = par2chnl( issueAMod );
@@ -3372,8 +3547,8 @@ ModParam CapacitatedFacilityLocationBlock::make_amod_param( ModParam issueAMod ,
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::unmake_amod_param( ModParam oldiAM , ModParam newiAM ,
-				  Index num )
+void CapacitatedFacilityLocationBlock::unmake_amod_param( ModParam oldiAM ,
+						ModParam newiAM , Index num )
 {
  if( newiAM == eNoMod )
   return;
@@ -3396,198 +3571,7 @@ void CapacitatedFacilityLocationBlock::CheckAbsVSPhys( void )
  // check that the (part that has actually been constructed of the) abstract
  // representation coincides with the physical representation
 
- // check variables, these are always there - - - - - - - - - - - - - - - - -
- if( x.size() != get_NStaticArcs() )
-  std::cerr << "x.size() != NStaticArcs" << std::endl;
 
- if( dx.size() < get_NArcs() - get_NStaticArcs() )
-  std::cerr << "dx.size() too small" << std::endl;
-
- // check flow constraints- - - - - - - - - - - - - - - - - - - - - - - - - -
- if( AR & HasFlw ) { 
-  if( E.size() != get_NStaticNodes() )
-   std::cerr << "E.size() != NStaticNodes" << std::endl;
-
-  if( dE.size() < get_NNodes() - get_NStaticNodes() )
-   std::cerr << "dE.size() too small" << std::endl;
-  
-  Subset NRIncid( get_NNodes() , 0 );
-
-  Index objbnd = 0;          // number of actives between obj and bound
-  if( AR & HasBnd )
-   ++objbnd;
-  if( AR & HasObj )
-   ++objbnd;
-  Index expnc = 2 + objbnd;  // total number of active stuff per variable
-
-  // static arcs
-  Index a = 0;
-  for( auto xi = x.begin() ; a < get_NStaticArcs() ; ++a , ++xi ) {
-   if( is_deleted( a ) ) {
-    std::cerr << "static arc " << a << " deleted" << std::endl;
-    continue;
-    }
-   
-   if( xi->get_num_active() != expnc )
-    std::cerr << "arc " << a << " active in " << xi->get_num_active()
-	      << " constraints" << std::endl;
-
-   Index sna = SN[ a ];
-   if( ! sna )
-    std::cerr << "SN[ " << a << " ] == 0" << std::endl;
-   else
-    --sna;
-   if( sna >= get_NArcs() )
-    std::cerr << "SN[ " << a << " ] == " << sna << " >= |A!" << std::endl;
-
-   if( ( SN[ a ] > 0 ) && ( sna < get_NArcs() ) ) {
-    ++NRIncid[ sna ];
-    auto snc = get_lfc( i2p_e( sna ) );
-    auto sni = snc->is_active( &(*xi) );
-    if( sni >= snc->get_num_active_var() )
-     std::cerr << "static arc " << a
-	       << " absent in flow constraint for SN[ a ] == "
-	       << sna << std::endl;
-    }
-    
-   Index ena = EN[ a ];
-   if( ! ena )
-    std::cerr << "EN[ " << a << " ] == 0" << std::endl;
-   else
-    --ena;
-   if( ena >= get_NArcs() )
-    std::cerr << "EN[ " << a << " ] == " << ena << " >= |A!" << std::endl;
-
-   if( ( EN[ a ] > 0 ) && ( ena < get_NArcs() ) ) {
-    ++NRIncid[ ena ];
-    auto enc = get_lfc( i2p_e( ena ) );
-    auto eni = enc->is_active( &(*xi) );
-    if( eni >= enc->get_num_active_var() )
-     std::cerr << "static arc " << a
-	       << " absent in flow constraint for EN[ a ] == "
-	       << ena << std::endl;
-    }
-   }
-
-  // dynamic arcs
-  for( auto xi = dx.begin() ; a < get_NArcs() ; ++a , ++xi ) {
-   if( is_deleted( a ) ) {
-    if( xi->get_num_active() != objbnd )
-     std::cerr << "deleted arc " << a << " active in "
-	       << xi->get_num_active() << " constraints" << std::endl;
-    continue;
-    }
-   
-   if( xi->get_num_active() != expnc )
-    std::cerr << "arc " << a << " active in " << xi->get_num_active()
-	      << " constraints" << std::endl;
-
-   Index sna = SN[ a ];
-   if( ! sna )
-    std::cerr << "SN[ " << a << " ] == 0 " << std::endl;
-   else
-    --sna;
-   if( sna >= get_NArcs() )
-    std::cerr << "SN[ " << a << " ] == " << sna << " >= |A!" << std::endl;
-
-   if( ( SN[ a ] > 0 ) && ( sna < get_NArcs() ) ) {
-    ++NRIncid[ sna ];
-    auto snc = get_lfc( i2p_e( sna ) );
-    auto sni = snc->is_active( &(*xi) );
-    if( sni >= snc->get_num_active_var() )
-     std::cerr << "static arc " << a
-	       << " absent in flow constraint for SN[ a ] == "
-	       << sna << std::endl;
-    }
-
-   Index ena = EN[ a ];
-   if( ! ena )
-    std::cerr << "EN[ " << a << " ] == 0 " << std::endl;
-   else
-    --ena;
-   if( ena >= get_NArcs() )
-    std::cerr << "EN[ " << a << " ] == " << ena << " >= |A!" << std::endl;
-
-   if( ( EN[ a ] > 0 ) && ( ena < get_NArcs() ) ) {
-    ++NRIncid[ ena ];
-    auto enc = get_lfc( i2p_e( ena ) );
-    auto eni = enc->is_active( &(*xi) );
-    if( eni >= enc->get_num_active_var() )
-     std::cerr << "static arc " << a
-	       << " absent in flow constraint for EN[ a ] == "
-	       << ena << std::endl;
-    }
-   }
-
-  if( HasDynamicX() && is_deleted( get_NArcs() - 1 ) )
-   std::cerr << "last dynamic arc is deleted" << std::endl;
-
-  // static nodes
-  Index n = 0;
-  for( auto ni = E.begin() ; n < get_NStaticNodes() ; ++n , ++ni ) {
-   auto lni = get_lfc( &(*ni) );
-   if( lni->get_num_active_var() != NRIncid[ n ] )
-    std::cerr << "active variables in static flow constraint " << n
-	      << " == " << lni->get_num_active_var()
-	      << " do not match with incident arcs " << NRIncid[ n ]
-	      << std::endl;
-   }
-   
-  // dynamic nodes
-  for( auto ni = dE.begin() ; n < get_NNodes() ; ++n , ++ni ) {
-   auto lni = get_lfc( &(*ni) );
-   if( lni->get_num_active_var() != NRIncid[ n ] )
-    std::cerr << "active variables in dynamic flow constraint " << n
-	      << " == " << lni->get_num_active_var()
-	      << " do not match with incident arcs " << NRIncid[ n ]
-	      << std::endl;
-   }
-  }  // end( if( AR & HasFlw ) )
-
- // check bound constraints - - - - - - - - - - - - - - - - - - - - - - - - -
- if( AR & HasBnd ) {
-  // static bounds
-  Index a = 0;
-  auto UBi = UB.begin();
-  for( auto xi = x.begin() ; xi != x.end() ; ++a , ++xi , ++UBi ) {
-   if( UBi->is_active( &(*xi) ) >= UBi->get_num_active_var() )
-    std::cerr << "static arc " << a << " absent in bound constraint"
-	      << std::endl;
-   }
-
- // dynamic bounds
-  auto dUBi = dUB.begin();
-  for( auto xi = dx.begin() ; xi != dx.end() ; ++a , ++xi , ++dUBi ) {
-   if( is_deleted( a ) )
-    continue;
-
-   if( dUBi->is_active( &(*xi) ) >= dUBi->get_num_active_var() )
-    std::cerr << "dynamic arc " << a << " absent in bound constraint"
-	      << std::endl;
-   }
-  }  // end( if( AR & HasBnd ) )
-
- // check objective - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- if( AR & HasObj ) {
-  auto lfo = get_lfo();
-  if( lfo->get_num_active_var() != get_NArcs() )
-   std::cerr << "objective has " << lfo->get_num_active_var()
-	     << " variables while |A| = " << get_NArcs() << std::endl;
-
-  Index a = 0;
-  for( auto & xi : x ) {
-   if( lfo->is_active( & xi ) >= get_NArcs() )
-    std::cerr << "static arc " << a << " absent from objective " << std::endl;
-   ++a;
-   }
-
-  for( auto & xi : dx ) {
-   if( lfo->is_active( & xi ) >= get_NArcs() )
-    std::cerr << "dynamic arc " << a << " absent from objective "
-	      << std::endl;
-   ++a;
-   }
-  }  // end( if( AR & HasObj ) )
  }  // end( CapacitatedFacilityLocationBlock::CheckAbsVSPhys )
 
 #endif
@@ -3599,15 +3583,14 @@ void CapacitatedFacilityLocationBlock::CheckAbsVSPhys( void )
 void CapacitatedFacilityLocationSolution::deserialize(
 					      const netCDF::NcGroup & group )
 {
+ const std::string _prfx = "CapacitatedFacilityLocationSolution: ";
  netCDF::NcDim nf = group.getDim( "NFacilities" );
  if( nf.isNull() )
-  throw( std::invalid_argument(
-   "CapacitatedFacilityLocationSolution: NFacilities dimension required" ) );
+  throw( std::invalid_argument( _pfrx + "NFacilities dimension required" ) );
 
  netCDF::NcDim nc = group.getDim( "NCustomers" );
  if( nc.isNull() )
-  throw( std::invalid_argument(
-   "CapacitatedFacilityLocationSolution: NCustomers dimension required" ) );
+  throw( std::invalid_argument( _pfrx + "NCustomers dimension required" ) );
 
  netCDF::NcVar fs = group.getVar( "FacilityCapacitySolution" );
  if( fs.isNull() )
@@ -3624,7 +3607,6 @@ void CapacitatedFacilityLocationSolution::deserialize(
   v_pi.resize( { nc.getSize() , nf.getSize() } );
   ts.getVar( v_x.data() );
   }
-
  }  // end( CapacitatedFacilityLocationSolution::deserialize )
 
 /*--------------------------------------------------------------------------*/
@@ -3637,29 +3619,20 @@ void CapacitatedFacilityLocationSolution::read( const Block * block )
 		        "block is not a CapacitatedFacilityLocationBlock" ) );
 
  // read y- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
  if( ! v_y.empty() ) {
-  if( v_x.size() < MCFB->get_NArcs() )
-   v_x.resize( MCFB->get_NArcs() );
+  if( v_x.size() < CFLB->get_NFacilities() )
+   v_x.resize( CFLB->get_NFacilities );
 
-  auto vxi = v_x.begin();
-
-  // static part
-  for( auto & xi : MCFB->x )
-   *(vxi++) = xi.get_value();
+  CFLB->get_facility_solution( v_y.begin() );
   }
 
  // read x- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
  if( ! v_x.empty() ) {
-  if( v_pi.size() < MCFB->get_NNodes() )
-   v_pi.resize( MCFB->get_NNodes() );
+  if( ( (v_x.shape())[ 0 ] != CFLB->get_NFacilities() ) ||
+      ( (v_x.shape())[ 1 ] != CFLB->get_NCustomers() ) )
+   v_x.resize( { CFLB->get_NFacilities() , CFLB->get_NCustomers() } );
 
-  auto vpii = v_pi.begin();
- 
-  // static part
-  for( auto & ei : MCFB->E )
-   *(vpii++) = ei.get_dual();
+  CFLB->get_transportation_solution( v_x.data().begin() );
   }
  }  // end( CapacitatedFacilityLocationSolution::read )
 
@@ -3673,54 +3646,21 @@ void CapacitatedFacilityLocationSolution::write( Block * const block )
 		       "block is not a CapacitatedFacilityLocationBlock" ) );
 
  // write y - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- if( ! v_x.empty() ) {
-  if( v_x.size() < MCFB->get_NStaticArcs() )
-   throw( std::invalid_argument( "incompatible flow size" ) );
+ if( ! v_y.empty() ) {
+  if( v_y.size() < CFLB->get_NFacilities() )
+   throw( std::invalid_argument( "incompatible facility size" ) );
 
-  auto vxi = v_x.begin();
-
-  for( auto & xi : MCFB->x )
-   xi.set_value( *(vxi++) );
+  CFLB->set_facility_solution( v_y.begin() );
   }
 
  // write x - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- if( v_pi.empty() )  // no potentials to write
-  return;
+ if( ! v_x.empty() ) {
+  if( ( (v_x.shape())[ 0 ] != CFLB->get_NFacilities() ) ||
+      ( (v_x.shape())[ 1 ] != CFLB->get_NCustomers() ) )
+   throw( std::invalid_argument( "incompatible transportation size" ) );
 
- if( MCFB->E.empty() && MCFB->dE.empty() )  // no Constraint to write to
-  return;
-
- if( v_pi.size() < MCFB->get_NStaticNodes() )
-  throw( std::invalid_argument( "incompatible potential size" ) );
-
- auto vpii = v_pi.begin();
-
- // static part
- for( auto & ei : MCFB->E )
-  ei.set_dual( *(vpii++) );
-
- // dynamic part
- for( auto dei = MCFB->dE.begin() ;
-      ( dei != MCFB->dE.end() ) && ( vpii != v_pi.end() ) ; )
-  (*(dei++)).set_dual( *(vpii++) );
-
- // write reduced costs (if any)- - - - - - - - - - - - - - - - - - - - - - -
-  
- if( MCFB->UB.empty() && MCFB->dUB.empty() )  // no bounds to write to
-  return;
-
- CapacitatedFacilityLocationBlock::Index i = 0;
-
- // static part
- for( auto ubi = MCFB->UB.begin() ; ubi != MCFB->UB.end() ; ++i )
-  (ubi++)->set_dual( MCFB->get_C( i ) + v_pi[ MCFB->SN[ i ] - 1 ]
-		                      - v_pi[ MCFB->EN[ i ] - 1 ] );
- // dynamic part
- for( auto dubi = MCFB->dUB.begin() ;
-      ( dubi != MCFB->dUB.end() ) && ( i < MCFB->get_NArcs() ) ; ++i )
-  (dubi++)->set_dual( MCFB->get_C( i ) + v_pi[ MCFB->SN[ i ] - 1 ]
-		                       - v_pi[ MCFB->EN[ i ] - 1 ] );
-
+  CFLB->set_transportation_solution( v_x.data().begin() );
+  }
  }  // end( CapacitatedFacilityLocationSolution::write )
 
 /*--------------------------------------------------------------------------*/
