@@ -1135,7 +1135,6 @@ bool CapacitatedFacilityLocationBlock::map_forward_Modification(
 
  const static std::string _prfx =
               "CapacitatedFacilityLocationBlock::map_forward_Modification: ";
-
  int wR3B = 0
  if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( r3bc ) )
   wR3B = tcfg->f_value;
@@ -1245,7 +1244,7 @@ Solution * CapacitatedFacilityLocationBlock::get_Solution(
   sol->v_y.resize( f_n_facilities );
 
  if( wsol != 1 )
-  sol->v_x.resize( { f_n_customers , f_n_facilities } );
+  sol->v_x.resize( f_n_customers * f_n_facilities );
 
  if( ! emptys )
   sol->read( this );
@@ -3584,27 +3583,28 @@ void CapacitatedFacilityLocationSolution::deserialize(
 					      const netCDF::NcGroup & group )
 {
  const std::string _prfx = "CapacitatedFacilityLocationSolution: ";
- netCDF::NcDim nf = group.getDim( "NFacilities" );
- if( nf.isNull() )
-  throw( std::invalid_argument( _pfrx + "NFacilities dimension required" ) );
 
- netCDF::NcDim nc = group.getDim( "NCustomers" );
- if( nc.isNull() )
-  throw( std::invalid_argument( _pfrx + "NCustomers dimension required" ) );
-
- netCDF::NcVar fs = group.getVar( "FacilityCapacitySolution" );
+ auto fs = group.getVar( "FacilitySolution" );
  if( fs.isNull() )
   v_y.clear();
  else {
+  auto nf = group.getDim( "NFacilities" );
+  if( nf.isNull() )
+   throw( std::invalid_argument( _pfrx + "NFacilities dimension required"
+				 ) );
   v_y.resize( nf.getSize() );
   fs.getVar( v_y.data() );
   }
 
- netCDF::NcVar ts = group.getVar( "TransportationSolution" );
+ auto ts = group.getVar( "TransportationSolution" );
  if( ts.isNull() )
   v_x.clear();
  else {
-  v_pi.resize( { nc.getSize() , nf.getSize() } );
+  auto td = group.getDim( "TransportationDim" );
+  if( td.isNull() )
+   throw( std::invalid_argument( _pfrx +
+				 "TransportationDim dimension required" ) );
+  v_x.resize( td.getSize() );
   ts.getVar( v_x.data() );
   }
  }  // end( CapacitatedFacilityLocationSolution::deserialize )
@@ -3628,9 +3628,8 @@ void CapacitatedFacilityLocationSolution::read( const Block * block )
 
  // read x- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( ! v_x.empty() ) {
-  if( ( (v_x.shape())[ 0 ] != CFLB->get_NFacilities() ) ||
-      ( (v_x.shape())[ 1 ] != CFLB->get_NCustomers() ) )
-   v_x.resize( { CFLB->get_NFacilities() , CFLB->get_NCustomers() } );
+  if( v_x.size() < CFLB->get_NFacilities() * CFLB->get_NCustomers() )
+   v_x.resize( CFLB->get_NFacilities() * CFLB->get_NCustomers() );
 
   CFLB->get_transportation_solution( v_x.data().begin() );
   }
@@ -3638,7 +3637,7 @@ void CapacitatedFacilityLocationSolution::read( const Block * block )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationSolution::write( Block * const block ) 
+void CapacitatedFacilityLocationSolution::write( Block * block ) 
 {
  auto CFLB = dynamic_cast< CapacitatedFacilityLocationBlock * >( block );
  if( ! CFLB )
@@ -3655,8 +3654,7 @@ void CapacitatedFacilityLocationSolution::write( Block * const block )
 
  // write x - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( ! v_x.empty() ) {
-  if( ( (v_x.shape())[ 0 ] != CFLB->get_NFacilities() ) ||
-      ( (v_x.shape())[ 1 ] != CFLB->get_NCustomers() ) )
+  if( v_x.size() < CFLB->get_NFacilities() * CFLB->get_NCustomers() )
    throw( std::invalid_argument( "incompatible transportation size" ) );
 
   CFLB->set_transportation_solution( v_x.data().begin() );
@@ -3665,93 +3663,92 @@ void CapacitatedFacilityLocationSolution::write( Block * const block )
 
 /*--------------------------------------------------------------------------*/
 
-void MCFSolution::serialize( netCDF::NcGroup & group )
+void CapacitatedFacilityLocationSolution::serialize( netCDF::NcGroup & group )
 {
- std::vector<size_t> startp = { 0 };
-
- if( ! v_x.empty() ) {
-  netCDF::NcDim na = group.addDim( "NumArcs" , v_x.size() );
-
-  std::vector<size_t> countpa = { v_x.size() };
-
-  ( group.addVar( "FlowSolution" , netCDF::NcDouble() , na ) ).putVar(
-					      startp , countpa , v_x.data() );
+ if( ! v_y.empty() ) {
+  auto nf = group.addDim( "NFacilities" , v_y.size() );
+  ::serialize( group , "FacilitySolution" , netCDF::NcDouble() , nf ,
+	       v_y.data() );
   }
 
- if( v_pi.empty() )
-  return;
-
- netCDF::NcDim nn = group.addDim( "NumNodes" ,  v_pi.size() );
- std::vector<size_t> countpn = { v_pi.size() };
- ( group.addVar( "Potentials" , netCDF::NcDouble() , nn ) ).putVar(
-					     startp , countpn , v_pi.data() );
- 
- }  // end( MCFSolution::serialize )
+ if( ! v_x.empty() ) {
+  auto td = group.addDim( "TransportationDim" , v_x.size() );
+  ::serialize( group , "TransportationSolution" , netCDF::NcDouble() , td ,
+	       v_x.data() );
+  }
+ }  // end( CapacitatedFacilityLocationSolution::serialize )
 
 /*--------------------------------------------------------------------------*/
 
-MCFSolution * MCFSolution::scale( double factor ) const
+CapacitatedFacilityLocationSolution *
+            CapacitatedFacilityLocationSolution::scale( double factor ) const
 {
- auto * sol = MCFSolution::clone( true );
+ auto * sol = CapacitatedFacilityLocationSolution::clone( true );
+
+ if( ! v_y.empty() )
+  for( Block::Index i = 0 ; i < v_y.size() ; ++i )
+   sol->v_y[ i ] = v_y[ i ] * factor;
 
  if( ! v_x.empty() )
-  for( CapacitatedFacilityLocationBlock::Index i = 0 ; i < v_x.size() ; ++i )
+  for( Block::Index i = 0 ; i < v_x.size() ; ++i )
    sol->v_x[ i ] = v_x[ i ] * factor;
 
- if( ! v_pi.empty() )
-  for( CapacitatedFacilityLocationBlock::Index i = 0 ; i < v_pi.size() ; ++i )
-   sol->v_pi[ i ] = v_pi[ i ] * factor;
-
  return( sol );
 
- }  // end( MCFSolution::scale )
+ }  // end( CapacitatedFacilityLocationSolution::scale )
 
 /*--------------------------------------------------------------------------*/
 
-void MCFSolution::sum( const Solution * solution , double multiplier )
+void CapacitatedFacilityLocationSolution::sum( const Solution * solution ,
+					       double multiplier )
 {
- auto MCFS = dynamic_cast< const MCFSolution * >( solution );
- if( ! MCFS )
-  throw( std::invalid_argument( "solution is not a MCFSolution" ) );
+ auto CFLS = dynamic_cast< const CapacitatedFacilityLocationSolution * >(
+								  solution );
+ if( ! CFLS )
+  throw( std::invalid_argument(
+		 "solution is not a CapacitatedFacilityLocationSolution" ) );
+
+ if( ! v_y.empty() ) {
+  if( v_y.size() != CFLS->v_y.size()  )
+   throw( std::invalid_argument( "incompatible facility size" ) );
+
+  auto yit = CFLS->v_y.begin();
+  for( auto & yi : v_y )
+   yi = *(yit++) * multiplier;
+  }
 
  if( ! v_x.empty() ) {
-  if( v_x.size() != MCFS->v_x.size() )
-   throw( std::invalid_argument( "incompatible flow size" ) );
+  if( v_x.size() != CFLS->v_x.size() )
+   throw( std::invalid_argument( "incompatible transportation size" ) );
 
-  for( CapacitatedFacilityLocationBlock::Index i = 0 ; i < v_x.size() ; ++i )
-   v_x[ i ] = MCFS->v_x[ i ] * multiplier;
+  auto xit = CFLS->v_x.begin();
+  for( auto & xi : v_x )
+   xi = *(xit++) * multiplier;
   }
-
- if( ! v_pi.empty() ) {
-  if( v_pi.size() != MCFS->v_pi.size()  )
-   throw( std::invalid_argument( "incompatible potential size" ) );
-
-  for( CapacitatedFacilityLocationBlock::Index i = 0 ; i < v_pi.size() ; ++i )
-   v_pi[ i ] = MCFS->v_pi[ i ] * multiplier;
-  }
- }  // end( MCFSolution::sum )
+ }  // end( CapacitatedFacilityLocationSolution::sum )
 
 /*--------------------------------------------------------------------------*/
 
-MCFSolution * MCFSolution::clone( bool empty ) const
+CapacitatedFacilityLocationSolution *
+               CapacitatedFacilityLocationSolution::clone( bool empty ) const
 {
- auto *sol = new MCFSolution();
+ auto *sol = new CapacitatedFacilityLocationSolution();
 
  if( empty ) {
+  if( ! v_y.empty() )
+   sol->v_y.resize( v_pi.size() );
+
   if( ! v_x.empty() )
    sol->v_x.resize( v_x.size() );
-
-  if( ! v_pi.empty() )
-   sol->v_pi.resize( v_pi.size() );
   }
  else {
+  sol->v_y = v_y;
   sol->v_x = v_x;
-  sol->v_pi = v_pi;
   }
 
  return( sol );
 
- }  // end( MCFSolution::clone )
+ }  // end( CapacitatedFacilityLocationSolution::clone )
 
 /*--------------------------------------------------------------------------*/
 /*------------- End File CapacitatedFacilityLocationBlock.cpp --------------*/

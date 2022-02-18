@@ -1268,7 +1268,7 @@ public:
 /*---- LOADING, PRINTING & SAVING THE CapacitatedFacilityLocationBlock -----*/
 /*--------------------------------------------------------------------------*/
 /** @name Methods for loading, printing & saving the
- * CapacitatedFacilityLocationBlock
+ *        CapacitatedFacilityLocationBlock
  *  @{ */
 
  /// extends Block::serialize( netCDF::NcGroup )
@@ -1282,7 +1282,7 @@ public:
 /** @} ---------------------------------------------------------------------*/
 /*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
 /*--------------------------------------------------------------------------*/
-/** @name Changing the data of the MCF instabnce
+/** @name Changing the data of the Capacitated Facility Location instabnce
  *
  * All the methods in this section have two parameters issueMod and issueAMod
  * which control if and how the, respectively, "physical Modification" and
@@ -1963,7 +1963,7 @@ class CapacitatedFacilityLocationBlockSbstMod
  };  // end( class( CapacitatedFacilityLocationBlockSbstMod ) )
 
 /*--------------------------------------------------------------------------*/
-/*-------------------------- CLASS MCFSolution -----------------------------*/
+/*------------- CLASS CapacitatedFacilityLocationSolution ------------------*/
 /*--------------------------------------------------------------------------*/
 /*--------------------------- GENERAL NOTES --------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -1971,40 +1971,11 @@ class CapacitatedFacilityLocationBlockSbstMod
 /** The CapacitatedFacilityLocationSolution class, derived from Solution,
  * represents a solution of a CapacitatedFacilityLocationBlock, i.e.:
  *
- * - an m-vector of FNumber for the arc flow values;
+ * - an m-vector of double for the facility solution
  *
- * - an n-vector of CNumber for the node potentials;
+ * - an  (m * n)-vector of double for the transportation solution
  *
- * where m is the number of arcs and n is the number of nodes in the graph.
- * This means that
- *
- *       THE REDUCED COSTS ARE NOT EXPLICITLY SAVED
- *
- * This is OK for feasible dual solutions, as the dual variables of the bound
- * constraints (a.k.a. Reduced Costs) can be cheapily computed out of the
- * potentials. This may not be appropriate in all cases, as one may want to
- * deal with unfeasible dual solutions; if this will ever be the case, the
- * MCFSolution class will have to be changed accordingly.
- *
- * It is useful to remark that some special cases of MCF would actually have
- * "special" solutions ("less general" ones in the parlance of Solution). In
- * particular:
- *
- * - if all capacities are Inf<FNumber>() and there is only one source or sink
- *   node, then the MCF problem is in fact a Shortest Path (sub-)Tree one, and
- *   its solutions can be represented by means of a predecessor function;
- *
- * - if all (finite) capacities and node deficits are integer, then there
- *   always exist optimal flow solutions of MCF that are integer;
- *
- * - if all arc costs are integer, then there always exist optimal potential
- *   solutions of MCF that are integer.
- *
- * Thus, CapacitatedFacilityLocationBlock would have scope for different kinds of Solution objects.
- * The currently implemented one is the "most general" one, so that the
- * Solution::scale() and Solution::sum() operations are always possible;
- * specialized Solution for the specific cases are left for future
- * development. */
+ * where m is the number of facilities and n is the number of customers. */
 
 class CapacitatedFacilityLocationSolution : public Solution {
 
@@ -2035,32 +2006,34 @@ class CapacitatedFacilityLocationSolution : public Solution {
 
 /* METHODS DESCRIBING THE BEHAVIOR OF A CapacitatedFacilityLocationSolution */
 
- void read( const Block * const block ) override final;
+ void read( const Block * block ) override final;
 
- void write( Block * const block ) override final;
+ void write( Block * block ) override final;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// serialize a CapacitatedFacilityLocationSolution into a netCDF::NcGroup
  /** Serialize a CapacitatedFacilityLocationSolution into a netCDF::NcGroup,
   * with the following format:
   *
-  * - The dimension "NumNodes" containing the number of nodes. The dimension
-  *   is optional, if it is not specified then the corresponding variable
-  *   "Potentials" is not read (the MCFSolution object does not contain any
-  *   node potentials).
+  * - The dimension "NFacilities" containing the number of facilities. The
+  *   dimension is optional and it is only necessary if the facility
+  *   solution is present.
   *
-  * - The dimension "NumArcs" containing the number of arcs. The dimension
-  *   is optional, if it is not specified then the corresponding variable
-  *   "Potentials" is not read (the MCFSolution object does not contain any
-  *   flow solution).
+  * - The dimension "TransportationDim" containing the total number of
+  *   elements in a transportation solution ( facilities x customers ).
+  *   The dimension is optional and it is only necessary if the
+  *   transportation solution is present.
   *
-  * - The variable "FlowSolution", of type double and indexed over the
-  *   dimension NumArcs. The variable is optional, if it is not specified
-  *   then the MCFSolution object does not contain any flow solution.
+  * - The variable "FacilitySolution", of type double and indexed over the
+  *   dimension NFacilities. The variable is optional, if it is not specified
+  *   then the CapacitatedFacilityLocationSolution object does not contain
+  *   any facility solution.
   *
-  * - The variable "Potentials", of type double and indexed over the
-  *   dimension NumNodes. The variable is optional, if it is not specified
-  *   then the MCFSolution object does not contain any node potentials. */
+  * - The variable "TransportationSolution", of type double and indexed over
+  *   both the dimension NFacilities and NCustomers. The variable is
+  *   optional, if it is not specified then the
+  *   CapacitatedFacilityLocationSolution object does not contain any
+  *   transportation solution. */
  
  void serialize( netCDF::NcGroup & group )  override final;
 
@@ -2081,9 +2054,12 @@ class CapacitatedFacilityLocationSolution : public Solution {
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 
  void print( std::ostream &output ) const override final {
-  output << "CapacitatedFacilityLocationSolution [" << this << "]: "
-	 << v_x.size() << " flows and " << v_pi.size() << " potentials"
-	 << std::endl;
+  output << "CapacitatedFacilityLocationSolution [" << this << "]: ";
+  if( ! v_y.empty() )
+   output  << "F";
+  if( ! v_x.empty() )
+   output  << "T";
+  output << std::endl;
   }
 
 /*---------------------- PRIVATE PART OF THE CLASS -------------------------*/
@@ -2092,9 +2068,11 @@ class CapacitatedFacilityLocationSolution : public Solution {
 
 /*---------------------------- PRIVATE FIELDS ------------------------------*/
 
- CapacitatedFacilityLocationBlock::Vec_FNumber v_x;   ///< the arc flows
+ CapacitatedFacilityLocationBlock::CntSolution v_y;
+ ///< the facility solution
 
- CapacitatedFacilityLocationBlock::Vec_CNumber v_pi;  ///< the node potentials
+ CapacitatedFacilityLocationBlock::CntSolution v_x;
+ ///< the transportation solution
 
 /*--------------------------------------------------------------------------*/
 
