@@ -112,6 +112,12 @@ static MCFBlock * MCFB( Block * b ) {
  return( static_cast< MCFBlock * >( b ) );
  }
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+static LinearFunction * LF( Function * f ) {
+ return( static_cast< LinearFunction * >( f ) );
+ }
+
 /*----------------------------------------------------------------------------
 
 // returns the number of elements where two vectors differ
@@ -127,13 +133,13 @@ static Index countdiff( T beg , T end , T cmp )
  return( ndiff );
  }
 
-------------------------------------------------------------------------------
+ ----------------------------------------------------------------------------*/
 // returns true if two vectors differ, one of them being given as a base
 // vector and a subset of indices
 
 template< typename T >
 static bool is_equal( std::vector<T> & vec , c_Subset & nms ,
-		      typename std::vector<T>::const_iterator cmp ,
+		      typename std::vector< T >::const_iterator cmp ,
 		      Index n_max )
 {
  for( auto nm : nms ) {
@@ -170,8 +176,8 @@ static Index countdiff( std::vector<T> & vec , c_Subset & nms ,
 // copys one vector to a given subset of another
 
 template< typename T >
-static void copyidx( std::vector<T> & vec , c_Subset & nms ,
-		     typename std::vector<T>::const_iterator cpy )
+static void copyidx( std::vector< T > & vec , c_Subset & nms ,
+		     typename std::vector< T >::const_iterator cpy )
 {
  for( auto nm : nms )
   vec[ nm ] = *(cpy++);
@@ -238,9 +244,9 @@ void CapacitatedFacilityLocationBlock::load( Index n , Index m ,
  f_n_customers = n;
 
  v_capacity = std::move( Q );
- v_fixed_cost = std::move( F );
+ v_f_cost = std::move( F );
  v_demand = std::move( D );
- v_transp_cost = std::move( C );
+ v_t_cost = std::move( C );
 
  f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
 
@@ -280,7 +286,7 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input )
   throw( std::invalid_argument( _prfx + "number of customers too small" ) );
 
  v_capacity.resize( f_n_facilities );
- v_fixed_cost.resize( f_n_facilities );
+ v_f_cost.resize( f_n_facilities );
 
  for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // for( each facility )
   input >> eatcomments >> v_capacity[ i ];
@@ -289,14 +295,14 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input )
   if( v_capacity[ i ] <= 0 )
    throw( std::invalid_argument( _prfx + "non-positive capacity" ) );
 
-  input >> eatcomments >> v_fixed_cost[ i ];
+  input >> eatcomments >> v_f_cost[ i ];
   if( input.fail() )
    goto( input_failure );
 
   }  // end( for( each facility ) )
 
  v_demand.resize( f_n_customers );
- v_transp_cost.resize( boost::extents[ f_n_facilities ][ f_n_customers ] );
+ v_t_cost.resize( boost::extents[ f_n_facilities ][ f_n_customers ] );
 
  for( Index j = 0 ; j < f_n_customers ; ++j ) {  // for( each customer )
   input >> eatcomments >> v_demand[ j ];
@@ -306,7 +312,7 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input )
    throw( std::invalid_argument( _prfx + "non-positive demand" ) );
 
   for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // for( each facility )
-   input >> eatcomments >> v_transp_cost[ i ][ j ];
+   input >> eatcomments >> v_t_cost[ i ][ j ];
    if( input.fail() )
     goto( input_failure );
   
@@ -378,8 +384,8 @@ void CapacitatedFacilityLocationBlock::deserialize(
  if( ( fcs.size() != 1 ) || ( fcs[ 0 ] != f_n_facilities ) )
   throw( std::logic_error( _prfx + "FacilityCost has wrong size" ) );
  
- v_fixed_cost.resize( f_n_facilities );
- fq.getVar( v_fixed_cost.data() );
+ v_f_cost.resize( f_n_facilities );
+ fq.getVar( v_f_cost.data() );
 
  auto cd = group.getVar( "CustomerDemand" );
  if( cd.isNull() )
@@ -402,9 +408,9 @@ void CapacitatedFacilityLocationBlock::deserialize(
      ( tcs[ 0 ] != f_n_facilities ) || ( tcs[ 1 ] != f_n_customers ) )
   throw( std::logic_error( _prfx + "TransportationCost has wrong size" ) );
 
- v_transp_cost.resize( tcs );
+ v_t_cost.resize( tcs );
  tc.getVar( std::vector< std::size_t >( 2 , 0 ) , tcs ,
-	    v_transp_cost.data() );
+	    v_t_cost.data() );
 
  f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
 
@@ -476,13 +482,14 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   for( Index i = 0 ; i < f_n_facilities ; ++i ) {
    for( Index j = 0 ; j < f_n_customers ; ++j ) {
     W[ j ] = v_demand[ j ];
-    C[ j ] = v_transp_cost[ i ][ j ];
+    C[ j ] = v_t_cost[ i ][ j ];
     }
    W[ f_n_customers ] = - v_capacity[ i ];
-   C[ f_n_customers ] = v_fixed_cost[ i ];
+   C[ f_n_customers ] = v_f_cost[ i ];
 
    auto ki = new BinaryKnapsackBlock( this );
    ki->load( f_n_customers + 1 , 0 , W , P , I );
+   ki->set_objective_sense( false , eNoMod , eNoMod );
    ki->generate_abstract_variables();
    v_Block[ i ] = ki;
    }
@@ -685,15 +692,15 @@ void CapacitatedFacilityLocationBlock::generate_objective(
 
   // first the Y[ i ] variables
   for( Index i = 0 ; i < f_n_facilities ; ++i )
-   *(pi++) = std::make_pair( & v_y[ i ] , v_fixed_cost[ i ] );
+   *(pi++) = std::make_pair( & v_y[ i ] , v_f_cost[ i ] );
 
   // then the X[ j ][ i ] ones
    for( Index i = 0 ; i < f_n_facilities ; ++i )
     for( Index j = 0 ; j < f_n_customers ; ++j )
-     *(pi++) = std::make_pair( & v_x[ i ][ j ] , v_transp_cost[ i ][ j ] );
+     *(pi++) = std::make_pair( & v_x[ i ][ j ] , v_t_cost[ i ][ j ] );
 
-  c.set_function( new LinearFunction( std::move( p ) , 0 ) , eNoMod );
-  set_objective( & c , eNoMod );
+  f_obj.set_function( new LinearFunction( std::move( p ) , 0 ) , eNoMod );
+  set_objective( & f_obj , eNoMod );
   return;
   }
 
@@ -712,10 +719,10 @@ void CapacitatedFacilityLocationBlock::generate_objective(
 
  v_coeff_pair p( f_n_facilities );
  for( Index i = 0 ; i < f_n_facilities ; ++i )
-  p[ i ] = std::make_pair( & v_y[ i ] , v_fixed_cost[ i ] );
+  p[ i ] = std::make_pair( & v_y[ i ] , v_f_cost[ i ] );
 
- c.set_function( new LinearFunction( std::move( p ) , 0 ) , eNoMod );
- AB( v_Block[ 0 ] )->set_objective( & c , eNoMod );
+ f_obj.set_function( new LinearFunction( std::move( p ) , 0 ) , eNoMod );
+ AB( v_Block[ 0 ] )->set_objective( & f_obj , eNoMod );
 
  // generate the objective in the MCFBlock
  MCFB( v_Block[ 1 ] )->generate_objective();
@@ -888,8 +895,8 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
   else
    CFLB = new CapacitatedFacilityLocationBlock( father );
 
-  CFLB->load( f_n_facilities , f_n_customers , v_capacity , v_fixed_cost ,
-	      v_demand , v_transp_cost );
+  CFLB->load( f_n_facilities , f_n_customers , v_capacity , v_f_cost ,
+	      v_demand , v_t_cost );
  
   return( CFLB );
   }
@@ -934,7 +941,7 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
   SN[ a ] = 1;
   EN[ a ] = i + 2;
   U[ a ] = v_capacity[ i ];
-  C[ a++ ] = v_fixed_cost[ i ] / v_capacity[ i ];
+  C[ a++ ] = v_f_cost[ i ] / v_capacity[ i ];
   }
 
  // now the facility -> customers arcs
@@ -943,7 +950,7 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
     SN[ a ] = i + 2;
     EN[ a ] = f_n_facilities + 2 + j;
     U[ a ] = Inf< MCFClass::FNumber >();
-    C[ a++ ] = v_transp_cost[ i ][ j ] / v_demand[ j ];
+    C[ a++ ] = v_t_cost[ i ][ j ] / v_demand[ j ];
     }
 
  if( wR3B > 1 ) {
@@ -957,7 +964,7 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
    // compute an upper bound on the worst-case transportation cost
    MCFClass::CNumber maxc = 0;
    for( i = 0 ; i < f_n_facilities ; ++i , ++a )
-    if( auto tci = C[ i ] + v_transp_cost[ i ][ j ] / v_demand[ j ] ;
+    if( auto tci = C[ i ] + v_t_cost[ i ][ j ] / v_demand[ j ] ;
 	maxc < tci )
      maxc = tci;
    maxc += 1;    // ! +1
@@ -1264,7 +1271,11 @@ void CapacitatedFacilityLocationBlock::add_Modification( sp_Mod mod ,
 
  if( mod->concerns_Block() ) {
   mod->concerns_Block( false );
-  guts_of_add_Modification( mod.get() , chnl );
+  switch( AR & FormMsk ) {
+   case( StdForm ): guts_of_add_ModificationSF( mod.get() , chnl ); break;
+   case( KskForm ): guts_of_add_ModificationKF( mod.get() , chnl ); break;
+   default:         guts_of_add_ModificationFF( mod.get() , chnl );
+   }
   }
 
  Block::add_Modification( mod , chnl );
@@ -1292,13 +1303,13 @@ void CapacitatedFacilityLocationBlock::serialize( netCDF::NcGroup & group )
    ).putVar( v_capacity.data() );
 
  ( group.addVar( "FacilityCost" , netCDF::NcUint64() , nf )
-   ).putVar( v_fixed_cost.data() );
+   ).putVar( v_f_cost.data() );
 
  ( group.addVar( "CustomerDemand" , netCDF::NcUint64() , nc )
    ).putVar( v_demand.data() );
 
  ::serialize( group , "TransportationCost" , netCDF::NcDouble() ,
-              { nc , nf } , v_transp_cost );
+              { nc , nf } , v_t_cost );
 
  }  // end( CapacitatedFacilityLocationBlock::serialize )
 
@@ -1306,104 +1317,97 @@ void CapacitatedFacilityLocationBlock::serialize( netCDF::NcGroup & group )
 /*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::chg_costs( c_Vec_CNumber_it NCost ,
-						  Range rng ,
-						  ModParam issueMod ,
-						  ModParam issueAMod )
+void CapacitatedFacilityLocationBlock::chg_facility_costs(
+				     c_CV_it NCost , Range rng ,
+				     ModParam issueMod , ModParam issueAMod )
 {
- rng.second = std::min( rng.second , get_NArcs() );
+ rng.second = std::min( rng.second , f_n_facilities );
  if( rng.second <= rng.first )  // nothing to change
   return;                       // cowardly (and silently) return
 
- if( C.empty() ) {
-  if( std::all_of( NCost , NCost + ( rng.second - rng.first ) ,
-		   []( c_CNumber cst ) { return( cst == 0 ); } ) )
-   return;
-
-  C.assign( get_MaxNArcs() , 0 );
-  }
-
- if( std::equal( NCost , NCost + ( rng.second - rng.first ) ,
-		 C.begin() + rng.first ) )
+ const Index num = rng.second - rng.first;
+ // TODO: if some changes are "fake", rather restrict the range
+ if( std::equal( NCost , NCost + num , v_f_cost.begin() + rng.first ) )
   return;  // actually nothing changes, avoid issuing the Modification
 
  if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
   // change abstract and physical representation together - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-  std::copy( NCost , NCost + ( rng.second - rng.first ) ,
-	     C.begin() + rng.first );
+  std::copy( NCost , NCost + num , v_f_cost.begin() + rng.first );
 
-  // note that modify_coefficients owns the vector, so a copy has to be made
-  get_lfo()->modify_coefficients( Vec_CNumber( NCost , NCost +
-					       ( rng.second - rng.first ) ) ,
-				  rng , issueAMod );
+  if( ( AR & FormMsk ) != KskForm )
+   // since modify_coefficients owns the vector, a copy has to be made
+   get_lfo()->modify_coefficients( CVector( NCost , NCost + num ) , rng ,
+				   issueAMod );
+  else
+   for( Index i = rng.first ; i < rng.second ; ++i )
+    KB( v_Block[ i ] )->chg_weight( *(NCost++) , f_n_customers , issueMod ,
+				    issueAMod );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
   if( not_dry_run( issueMod ) )
-   std::copy( NCost , NCost + ( rng.second - rng.first ) ,
-	      C.begin() + rng.first );
+   std::copy( NCost , NCost + num , v_f_cost.begin() + rng.first );
 
  f_cond_lower = NAN;  // reset conditional bounds
+ f_cond_upper = NAN;
  
- // TODO: if some changes are "fake", restrict the range
-
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockRngdMod>( this ,
-					      CapacitatedFacilityLocationBlockMod::eChgCost , rng ) ,
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockRngdMod >( this ,
+			    CapacitatedFacilityLocationBlockMod::eChgDCost ,
+			    rng ) ,
 			   Observer::par2chnl( issueMod ) );
  #if CHECK_DS
   CheckAbsVSPhys();
  #endif
 
- }  // end( CapacitatedFacilityLocationBlock::chg_costs( range ) )
+ }  // end( CapacitatedFacilityLocationBlock::chg_facility_costs( range ) )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::chg_costs( c_Vec_CNumber_it NCost , Subset && nms ,
-			  const bool ordered  ,
-			  c_ModParam issueMod , c_ModParam issueAMod )
+void CapacitatedFacilityLocationBlock::chg_facility_costs(
+		               c_CV_it NCost , Subset && nms , bool ordered ,
+			       ModParam issueMod , ModParam issueAMod )
 {
  if( nms.empty() )  // nothing to change
   return;           // cowardly (and silently) return
 
- if( C.empty() ) {
-  if( std::all_of( NCost , NCost + nms.size() ,
-		   []( c_CNumber cst ) { return( cst == 0 ); } ) )
-   return;
-
-  C.assign( get_MaxNArcs() , 0 );
-  }
-
- if( is_equal( C , nms , NCost , get_NArcs() ) )
+ // TODO: eliminate from nms the "fake" changes
+ if( is_equal( v_f_cost , nms , NCost , f_n_facilities ) )
   return;  // actually nothing changes, avoid issuing the Modification
 
  if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
   // change abstract and physical representation together - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-  copyidx( C , nms , NCost );
+  copyidx( v_f_cost , nms , NCost );
 
-  // note that modify_coefficients owns both vectors, so two copies have
-  // to be made
-  get_lfo()->modify_coefficients( Vec_CNumber( NCost , NCost + nms.size() ) ,
-				  Subset( nms ) , ordered , issueAMod );
+  if( ( AR & FormMsk ) != KskForm )
+   // since modify_coefficients owns both vectors, two copies are made
+   get_lfo()->modify_coefficients( CVector( NCost , NCost + nms.size() ) ,
+				   Subset( nms ) , ordered , issueAMod );
+  else
+   for( Index i = rng.first ; i < rng.second ; ++i )
+    KB( v_Block[ i ] )->chg_weight( *(NCost++) , f_n_customers , issueMod ,
+				    issueAMod );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
   if( not_dry_run( issueMod ) )
-   copyidx( C , nms , NCost );
+   copyidx( v_f_cost , nms , NCost );
 
  f_cond_lower = NAN;  // reset conditional bounds
-
- // TODO: eliminate from nms the "fake" changes
+ f_cond_upper = NAN;
 
  if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
   // ensure the names are ordered even if they were not so originally
   if( ! ordered )
    std::sort( nms.begin() , nms.end() );
 
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockSbstMod>( this ,
-                                  CapacitatedFacilityLocationBlockMod::eChgCost , std::move( nms ) ) ,
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockSbstMod >( this ,
+                            CapacitatedFacilityLocationBlockMod::eChgFCost ,
+			    std::move( nms ) ) ,
 			   Observer::par2chnl( issueMod ) );
   }
 
@@ -1411,510 +1415,700 @@ void CapacitatedFacilityLocationBlock::chg_costs( c_Vec_CNumber_it NCost , Subse
   CheckAbsVSPhys();
  #endif
 
- }  // end( CapacitatedFacilityLocationBlock::chg_costs( subset ) )
+ }  // end( CapacitatedFacilityLocationBlock::chg_facility_costs( subset ) )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::chg_cost( c_CNumber NCost , c_Index arc , 
-			 c_ModParam issueMod , c_ModParam issueAMod )
+void CapacitatedFacilityLocationBlock::chg_facility_cost( Cost NCost ,
+			   Index i , ModParam issueMod , ModParam issueAMod )
 {
- if( arc >= get_NArcs() )
-  throw( std::invalid_argument( "invalid arc name" ) );
+ if( i >= f_n_facilities )
+  throw( std::invalid_argument( "invalid facility name" ) );
 
- if( C.empty() && NCost )
-  C.assign( get_MaxNArcs() , 0 );
-
- if( C[ arc ] == NCost )
+ if( v_f_cost[ i ] == NCost )
   return;
 
  f_cond_lower = NAN;  // reset conditional bounds
+ f_cond_upper = NAN;
 
  if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
   // change abstract and physical representation together - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-  C[ arc ] = NCost;
+  v_f_cost[ i ] = NCost;
 
-  get_lfo()->modify_coefficient( arc , NCost , issueAMod );
+  if( ( AR & FormMsk ) != KskForm )
+   get_lfo()->modify_coefficient( i , NCost , issueAMod );
+  else
+   KB( v_Block[ i ] )->chg_weight( NCost , f_n_customers , issueMod ,
+				   issueAMod );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
   if( not_dry_run( issueMod ) )
-   C[ arc ] = NCost;
+   v_f_cost[ i ] = NCost;
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockRngdMod>( this ,
-			   CapacitatedFacilityLocationBlockMod::eChgCost , Range( arc , arc + 1 ) ) ,
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockRngdMod >( this ,
+			    CapacitatedFacilityLocationBlockMod::eChgFCost ,
+			    Range( i , i + 1 ) ) ,
 			   Observer::par2chnl( issueMod ) );
  #if CHECK_DS
   CheckAbsVSPhys();
  #endif
 
- }  // end( CapacitatedFacilityLocationBlock::chg_cost )
+ }  // end( CapacitatedFacilityLocationBlock::chg_facility_cost )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::chg_ucaps( c_Vec_FNumber_it NCap , Range rng ,
-			  c_ModParam issueMod , c_ModParam issueAMod )
+void CapacitatedFacilityLocationBlock::chg_transportation_costs(
+				     c_CV_it NCost , Range rng ,
+				     ModParam issueMod , ModParam issueAMod )
 {
- rng.second = std::min( rng.second , get_NArcs() );
+ const Index maxn = f_n_facilities * f_n_customers;
+ rng.second = std::min( rng.second , maxn );
  if( rng.second <= rng.first )  // nothing to change
   return;                       // cowardly (and silently) return
 
- if( U.empty() ) {
-  if( std::all_of( NCap , NCap + ( rng.second - rng.first ) ,
-		   []( c_FNumber cap ) { return( cap >= Inf<FNumber>() ); }
-		   ) )
-   return;
+ const Index num = rng.second - rng.first;
+ // TODO: if some changes are "fake", rather restrict the range
+ if( std::equal( NCost , NCost + num , v_t_cost.data() + rng.first ) )
+  return;  // actually nothing changes, avoid issuing the Modification
 
-  U.assign( get_MaxNArcs() , Inf<FNumber>() );
+ if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
+  // change abstract and physical representation together - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // in the meantime, if so instructed also issue abstract Modification
+  std::copy( NCost , NCost + num , v_t_cost.data() + rng.first );
+
+  switch( AR & FormMsk ) {
+   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // since modify_coefficients owns the vector, a copy has to be made
+    CVector NC( NCost , NCost + num );
+    get_lfo()->modify_coefficients( std::move( NC ) ,
+				    Range( rng.first + f_n_facilities ,
+					   rng.second + f_n_facilities ) ,
+				    issueAMod );
+    break;
+    }
+   case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Index f = rng.first;
+    Index i = f / f_n_customers;
+    Index l = f % f_n_customers;
+    if( ( ( rng.second - 1 ) / f_n_customers ) == i ) {
+     // the range is all inside a single facility
+     KB( v_Block[ i ] )->chg_weighs( NCost , Range( l , l + num ) ,
+				     issueMod , issueAMod );
+     break;
+     }
+
+    // the range of the first facility does not necessarily start from 0
+    // but it surely ends at f_n_customers
+    KB( v_Block[ i++ ] )->chg_weighs( NCost , Range( l , f_n_customers ) ,
+				      issueMod , issueAMod );
+    NCost += ( f_n_customers - l );
+    f += ( f_n_customers - l );
+ 
+    // the range of all other facilities starts from 0 but it does not
+    // necessarily end at f_n_customers
+    for( ; ; ++i , NCost += f_n_customers ) {
+     Index nf = f + f_n_customers;
+     if( nf >= rng.second ) {  // last facility
+      KB( v_Block[ i ] )->chg_weighs( NCost , Range( 0 , rng.second - f ) ,
+				      issueMod , issueAMod );
+      break;
+      }
+     else {
+      KB( v_Block[ i ] )->chg_profits( NCost , Range( 0 , f_n_customers ) ,
+				       issueMod , issueAMod );
+      f = nf;
+      }
+     }
+    break;
+    }
+   default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    MCFB( v_Block[ 1 ] )->chg_costs( NCost ,
+				     Range( rng.first + f_n_facilities ,
+					    rng.second + f_n_facilities ) ,
+				     issueMod , issueAMod );
+   }
   }
-
- c_Index ndiff = countdiff( NCap , NCap + ( rng.second - rng.first ) ,
-			    U.cbegin() + rng.first );
- if( ! ndiff )
-  return;
+ else
+  // only change the physical representation- - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  if( not_dry_run( issueMod ) )
+   std::copy( NCost , NCost + num , v_t_cost.data() + rng.first );
 
  f_cond_lower = NAN;  // reset conditional bounds
-
- if( not_dry_run( issueAMod ) && ( AR & HasFlw ) ) {
-  // change abstract and physical representation together - - - - - - - - - -
-  // in the meantime, if so instructed also issue abstract Modification
-
-  if( ! ( AR & HasBnd ) )
-   throw( std::logic_error(
-		"bound constraints not defined, cannot change capacity" ) );
-
-  c_ModParam ampar = make_amod_param( issueAMod , ndiff );
-
-  Index i = rng.first;
-
-  // static part
-  for( ; i < std::min( rng.second , get_NStaticArcs() ) ;  ++i , ++NCap )
-   if( U[ i ] != *NCap ) {
-    U[ i ] = *NCap;
-    UB[ i ].set_rhs( *NCap , ampar );
-    }
-
-  // dynamic part
-  for( auto dubi = std::next( dUB.begin() ,
-			      rng.first >= get_NStaticArcs() ?
-			      i - get_NStaticArcs() : 0 ) ;
-       i < rng.second ; ++i , ++NCap , ++dubi )
-   if( U[ i ] != *NCap ) {
-    U[ i ] = *NCap;
-    dubi->set_rhs( *NCap , ampar );
-    }
-
-  unmake_amod_param( issueAMod , ampar , ndiff );
-  }
- else
-  // only change the physical representation- - - - - - - - - - - - - - - - -
-  if( not_dry_run( issueMod ) )
-   std::copy( NCap , NCap + ( rng.second - rng.first ) ,
-	      U.begin() + rng.first );
-
- // TODO: if some changes are "fake", restrict the range
-
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockRngdMod>( this ,
-				              CapacitatedFacilityLocationBlockMod::eChgCaps , rng ) ,
-			   Observer::par2chnl( issueMod ) );
- #if CHECK_DS
-  CheckAbsVSPhys();
- #endif
-
- }  // end( CapacitatedFacilityLocationBlock::chg_ucaps( range ) )
-
-/*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::chg_ucaps( c_Vec_FNumber_it NCap , Subset && nms ,
-			  const bool ordered  ,
-			  c_ModParam issueMod , c_ModParam issueAMod )
-{
- if( U.empty() ) {
-  if( std::all_of( NCap , NCap + nms.size() ,
-		   []( c_FNumber cap ) { return( cap >= Inf<FNumber>() ); }
-		   ) )
-   return;
-
-  U.assign( get_MaxNArcs() , Inf<FNumber>() );
-  }
-
- Index ndiff = countdiff( U , nms , NCap , get_NArcs() );
- if( ! ndiff )
-  return;
-
- f_cond_lower = NAN;  // reset conditional bounds
-
- if( not_dry_run( issueAMod ) && ( AR & HasFlw ) ) {
-  // change abstract and physical representation together - - - - - - - - - -
-  // in the meantime, if so instructed also issue abstract Modification
-
-  if( ! ( AR & HasBnd ) )
-   throw( std::logic_error(
-		"bound constraints not defined, cannot change capacity" ) );
-
-  c_ModParam ampar = make_amod_param( issueAMod , ndiff );
-
-  if( HasDynamicX() )
-   if( ordered ) {
-    // static part
-    auto nit = nms.begin();
-    for( ; ( nit != nms.end() ) && ( *nit < get_NStaticArcs() ) ;
-	 ++NCap , ++nit ) {
-     if( U[ *nit ] != *NCap ) {
-      U[ *nit ] = *NCap;
-      UB[ *nit ].set_rhs( *NCap , ampar );
-      }
-     }
-
-    // dynamic part
-    auto dubi = dUB.begin();
-    for( Index i = get_NStaticArcs() ; nit != nms.end() ; ++i , ++dubi )
-     if( *nit == i ) {
-      if( U[ i ] != *NCap ) {
-       U[ i ] = *NCap;
-       dubi->set_rhs( *NCap , ampar );
-       }
-      nit++;
-      NCap++;
-      }
-    }
-   else {
-    // make a vector of pairs < arc index , new capacity >
-    typedef std::pair< Index , FNumber > index_pair;
-    std::vector< index_pair > pairs( nms.size() );
-    for( Index i = 0 ; i < nms.size() ; ++i )
-     pairs[ i ] = std::make_pair( nms[ i ] , *(NCap++) );
-
-    // sort the vector for increasing index
-    std::sort( pairs.begin() , pairs.end() ,
-	       []( index_pair i , index_pair j )
-	       { return( i.first < j.first ); } );
-
-    // static part
-    auto pit = pairs.begin();
-    for( ; ( pit != pairs.end() ) && ( pit->first < get_NStaticArcs() ) ;
-	 ++pit )
-     if( U[ pit->first ] != pit->second ) {
-      U[ pit->first ] = pit->second;
-      UB[ pit->first ].set_rhs( *NCap , ampar );
-      }
-
-    // dynamic part
-    auto dubi = dUB.begin();
-    for( Index i = get_NStaticArcs() ; pit != pairs.end() ; ++i , ++dubi )
-     if( pit->first == i ) {
-      if( U[ i ] != pit->second ) {
-       U[ i ] = pit->second;
-       dubi->set_rhs( pit->second , ampar );
-       }
-      pit++;
-      }
-    }
-  else
-   for( auto nit = nms.begin() ; nit != nms.end() ; ++NCap , ++nit ) {
-    if( U[ *nit ] != *NCap ) {
-     U[ *nit ] = *NCap;
-     UB[ *nit ].set_rhs( *NCap , ampar );
-     }
-    }
-
-  unmake_amod_param( issueAMod , ampar , ndiff );
-  }
- else
-  // only change the physical representation- - - - - - - - - - - - - - - - -
-  if( not_dry_run( issueMod ) )
-   copyidx( U , nms , NCap );
-
- // TODO: eliminate from nms the "fake" changes
-
- if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
-  // ensure the names are ordered even if they were not so originally
-  if( ! ordered )
-   std::sort( nms.begin() , nms.end() );
-
-  auto mod = std::make_shared<CapacitatedFacilityLocationBlockSbstMod>( this ,
-                                  CapacitatedFacilityLocationBlockMod::eChgCaps , std::move( nms ) );
-
-  Block::add_Modification( mod , Observer::par2chnl( issueMod ) );
-  }
-
- #if CHECK_DS
-  CheckAbsVSPhys();
- #endif
-
- }  // end( CapacitatedFacilityLocationBlock::chg_ucaps( subset ) )
-
-/*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::chg_ucap( c_FNumber NCap , c_Index arc ,
-			 c_ModParam issueMod , c_ModParam issueAMod )
-{
- if( arc >= get_NArcs() )
-  throw( std::invalid_argument( "invalid arc name" ) );
-
- if( U.empty() && ( NCap < Inf<FNumber>() ) )
-  U.assign( get_MaxNArcs() , Inf<FNumber>() );
-
- if( U[ arc ] == NCap )
-  return;
-
- f_cond_lower = NAN;  // reset conditional bounds
-
- if( not_dry_run( issueMod ) )
-  U[ arc ] = NCap;  // only change the physical representation - - - - - - -
-
- if( not_dry_run( issueAMod ) && ( AR & HasFlw ) ) {
-  // change the abstract representation - - - - - - - - - - - - - - - - - - -
-  // in the meantime, if so instructed also issue abstract Modification
-
-  if( ! ( AR & HasBnd ) )
-   throw( std::logic_error(
-		"bound constraints not defined, cannot change capacity" ) );
-
-  if( arc < get_NStaticArcs() )
-   UB[ arc ].set_rhs( NCap , issueAMod );
-  else
-   std::next( dUB.begin() , arc - get_NStaticArcs() )->set_rhs( NCap ,
-								issueAMod );
-  }
-
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockRngdMod>( this ,
-			   CapacitatedFacilityLocationBlockMod::eChgCaps , Range( arc , arc + 1 )  ) ,
-			   Observer::par2chnl( issueMod ) );
- #if CHECK_DS
-  CheckAbsVSPhys();
- #endif
-
- }  // end( CapacitatedFacilityLocationBlock::chg_ucap )
-
-/*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::chg_dfcts( c_Vec_CNumber_it NDfct , Range rng ,
-			  c_ModParam issueMod , c_ModParam issueAMod )
-{
- rng.second = std::min( rng.second , get_NNodes() );
- if( rng.second <= rng.first )  // nothing to change
-  return;                 // cowardly (and silently) return
-
- if( B.empty() ) {
-  if( std::all_of( NDfct , NDfct + ( rng.second - rng.first ) ,
-		   []( c_FNumber dfct ) { return( dfct == 0 ); } ) )
-   return;
-
-  B.assign( get_MaxNNodes() , 0 );
-  }
-
- c_Index ndiff = countdiff( NDfct , NDfct + ( rng.second - rng.first ) ,
-			    B.cbegin() + rng.first );
- if( ! ndiff )
-  return;
-
- if( not_dry_run( issueAMod ) && ( AR & HasFlw ) ) {
-  // change abstract and physical representation together - - - - - - - - - -
-  // in the meantime, if so instructed also issue abstract Modification
-
-  c_ModParam ampar = make_amod_param( issueAMod , ndiff );
-
-  Index i = rng.first;
-
-  // static part
-  for( ; i < std::min( rng.second , get_NStaticNodes() ) ;  ++i , ++NDfct )
-   if( B[ i ] != *NDfct ) {
-    B[ i ] = *NDfct;
-    E[ i ].set_both( *NDfct , ampar );
-    }
-
-  // dynamic part
-  for( auto dei = std::next( dE.begin() ,
-			     rng.first >= get_NStaticNodes() ?
-			     i - get_NStaticNodes() : 0 ) ;
-       i < rng.second ; ++i , ++NDfct , ++dei )
-   if( B[ i ] != *NDfct ) {
-    B[ i ] = *NDfct;
-    dei->set_both( *NDfct , ampar );
-    }
-
-  unmake_amod_param( issueAMod , ampar , ndiff );
-  }
- else
-  // only change the physical representation- - - - - - - - - - - - - - - - -
-  if( not_dry_run( issueMod ) )
-   std::copy( NDfct , NDfct + ( rng.second - rng.first ) ,
-	      B.begin() + rng.first );
-
- // TODO: if some changes are "fake", restrict the range
-
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockRngdMod>( this ,
-				              CapacitatedFacilityLocationBlockMod::eChgDfct , rng ) ,
-			   Observer::par2chnl( issueMod ) );
- #if CHECK_DS
-  CheckAbsVSPhys();
- #endif
-
- }  // end( CapacitatedFacilityLocationBlock::chg_dfcts( range ) )
-
-/*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::chg_dfcts( c_Vec_CNumber_it NDfct , Subset && nms ,
-			  const bool ordered ,
-			  c_ModParam issueMod , c_ModParam issueAMod )
-{
- if( B.empty() ) {
-  if( std::all_of( NDfct , NDfct + nms.size() ,
-		   []( c_FNumber dfct ) { return( dfct == 0 ); } ) )
-   return;
-
-  B.assign( get_MaxNNodes() , 0 );
-  }
-
- Index ndiff = countdiff( B , nms , NDfct , get_NNodes() );
- if( ! ndiff )
-  return;
-
- if( not_dry_run( issueAMod ) && ( AR & HasFlw ) ) {
-  // change abstract and physical representation together - - - - - - - - - -
-  // in the meantime, if so instructed also issue abstract Modification
-
-  c_ModParam ampar = make_amod_param( issueAMod , ndiff );
-
-  if( HasDynamicE() )
-   if( ordered ) {
-    // static part
-    auto nit = nms.begin();
-    for( ; ( nit != nms.end() ) && ( *nit < get_NStaticNodes() ) ;
-	 ++NDfct , ++nit ) {
-     if( B[ *nit ] != *NDfct ) {
-      B[ *nit ] = *NDfct;
-      E[ *nit ].set_both( *NDfct , ampar );
-      }
-     }
-
-    // dynamic part
-    auto dei = dE.begin();
-    for( Index i = get_NStaticNodes() ; nit != nms.end() ; ++i , ++dei )
-     if( *nit == i ) {
-      if( B[ i ] != *NDfct ) {
-       B[ i ] = *NDfct;
-       dei->set_both( *NDfct , ampar );
-       }
-      nit++;
-      NDfct++;
-      }
-    }
-   else {
-    // make a vector of pairs < arc index , new capacity >
-    typedef std::pair< Index , FNumber > index_pair;
-    std::vector< index_pair > pairs( nms.size() );
-    for( Index i = 0 ; i < nms.size() ; ++i )
-     pairs[ i ] = std::make_pair( nms[ i ] , *(NDfct++) );
-
-    // sort the vector for increasing index
-    std::sort( pairs.begin() , pairs.end() ,
-	       []( index_pair i , index_pair j )
-	       { return( i.first < j.first ); } );
-
-    // static part
-    auto pit = pairs.begin();
-    for( ; ( pit != pairs.end() ) && ( pit->first < get_NStaticArcs() ) ;
-	 ++pit )
-     if( B[ pit->first ] != pit->second ) {
-      B[ pit->first ] = pit->second;
-      E[ pit->first ].set_both( pit->second , ampar );
-      }
-
-    // dynamic part
-    auto dei = dE.begin();
-    for( Index i = get_NStaticNodes() ; pit != pairs.end() ; ++i , ++dei )
-     if( pit->first == i ) {
-      if( B[ i ] != pit->second ) {
-       B[ i ] = pit->second;
-       dei->set_both( pit->second , ampar );
-       }
-      pit++;
-      }
-    }
-  else
-   for( auto nit = nms.begin() ; nit != nms.end() ; ++NDfct , ++nit ) {
-    if( B[ *nit ] != *NDfct ) {
-     B[ *nit ] = *NDfct;
-     E[ *nit ].set_both( *NDfct , ampar );
-     }
-    }
-
-  unmake_amod_param( issueAMod , ampar , ndiff );
-  }
- else
-  // only change the physical representation- - - - - - - - - - - - - - - - -
-  if( not_dry_run( issueMod ) )
-   copyidx( B , nms , NDfct );
-
- // TODO: eliminate from nms the "fake" changes
-
- if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
-  // ensure the names are ordered even if they were not so originally
-  if( ! ordered )
-   std::sort( nms.begin() , nms.end() );
-
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockSbstMod>( this ,
-                                 CapacitatedFacilityLocationBlockMod::eChgDfct , std::move( nms ) ) ,
-			   Observer::par2chnl( issueMod ) );
-  }
-
- #if CHECK_DS
-  CheckAbsVSPhys();
- #endif
-
- }  // end( CapacitatedFacilityLocationBlock::chg_dfcts( subset ) )
-
-/*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::chg_dfct( c_CNumber NDfct , c_Index nde ,
-			 c_ModParam issueMod , c_ModParam issueAMod )
-{
- if( nde >= get_NNodes() )
-  throw( std::invalid_argument( "invalid node name" ) );
-
- if( B.empty() && NDfct )
-  B.assign( get_NNodes() , 0 );
-
- if( B[ nde ] == NDfct )
-  return;
-
- if( not_dry_run( issueMod ) )
-  B[ nde ] = NDfct;  // change the physical representation- - - - - - - - - -
-
- if( not_dry_run( issueAMod ) && ( AR & HasFlw ) ) {
-  // change the abstract representation - - - - - - - - - - - - - - - - - - -
-  // in the meantime, if so instructed also issue abstract Modification
-  if( nde < get_NStaticNodes() )
-   E[ nde ].set_both( NDfct , issueAMod );
-  else
-   std::next( dE.begin() , nde - get_NStaticNodes() )->set_both( NDfct ,
-								 issueAMod );
-  }
+ f_cond_upper = NAN;
  
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockRngdMod>( this ,
-			   CapacitatedFacilityLocationBlockMod::eChgDfct , Range( nde , nde + 1 ) ) ,
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockRngdMod >( this ,
+			    CapacitatedFacilityLocationBlockMod::eChgTCost ,
+			    rng ) ,
 			   Observer::par2chnl( issueMod ) );
  #if CHECK_DS
   CheckAbsVSPhys();
  #endif
 
- }  // end( CapacitatedFacilityLocationBlock::chg_dfct )
+ }  // end CapacitatedFacilityLocationBlock::chg_transportation_costs( range )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::close_arcs( Range rng ,
-			   c_ModParam issueMod , c_ModParam issueAMod )
+void CapacitatedFacilityLocationBlock::chg_transportation_costs(
+			        c_CV_it NCost , Subset && nms , bool ordered
+				ModParam issueMod , ModParam issueAMod )
 {
- rng.second = std::min( rng.second , get_NArcs() );
+ if( nms.empty() )  // nothing to change
+  return;           // cowardly (and silently) return
+
+ // ensure the names are ordered even if they were not so originally
+ if( ! ordered )
+  std::sort( nms.begin() , nms.end() );
+
+ // TODO: eliminate from nms the "fake" changes
+ const Index maxn = f_n_facilities * f_n_customers;
+ if( is_equal( v_f_cost , nms , NCost , maxn ) )
+  return;  // actually nothing changes, avoid issuing the Modification
+
+ if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
+  // change abstract and physical representation together - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // in the meantime, if so instructed also issue abstract Modification
+  copyidx( v_t_cost , nms , NCost );
+
+  switch( AR & FormMsk ) {
+   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Subset nnms( nms );     // copy and translate names
+    for( auto & el : nnms )
+     el += f_n_facilities;
+
+    // since modify_coefficients owns both vectors, copies has to be made
+    CVector NC( NCost , NCost + num );
+    get_lfo()->modify_coefficients( std::move( NC ) , std::move( nnms ) ,
+				    true , issueAMod );
+    break;
+    }
+   case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Index f = nms.front();
+    Index i = f / f_n_customers;
+    Index l = f % f_n_customers;
+    if( ( nms.back() / f_n_customers ) == i ) {
+     // the subset is all inside a single facility
+     Subset nnms( nms );     // copy and translate names
+     for( auto & el : nnms )
+      el %= f_n_customers;
+     KB( v_Block[ i ] )->chg_weighs( NCost , std::move( nnms ) , true ,
+				     issueMod , issueAMod );
+     break;
+     }
+
+    for( auto bit = nms.begin() ; ; ++i ) {
+     auto eit = bit;
+     while( ( eit != nms.end() ) && ( *eit / f_n_customers ) == i )
+      ++eit;
+
+     Subset nnms( bit , eit );     // copy and translate names
+     for( auto & el : nnms )
+      el %= f_n_customers;
+
+     KB( v_Block[ i ] )->chg_profits( NCost , std::move( nnms ) , true ,
+				      issueMod , issueAMod );
+     if( eit == nms.end() )
+      break;
+
+     NCost += std::distance( bit , eit );
+     }
+    break;
+    }
+   default: {  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Subset nnms( nms );     // copy and translate names
+    for( auto & el : nnms )
+     el += f_n_facilities;
+
+    MCFB( v_Block[ 1 ] )->chg_costs( NCost , nnms , true ,
+				     issueMod , issueAMod );
+    }
+   }
+  }
+ else
+  // only change the physical representation- - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  if( not_dry_run( issueMod ) )
+   copyidx( v_t_cost , nms , NCost );
+
+ f_cond_lower = NAN;  // reset conditional bounds
+ f_cond_upper = NAN;
+ 
+ if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockSnstMod >( this ,
+			    CapacitatedFacilityLocationBlockMod::eChgTCost ,
+			    std::move( nms ) ) ,
+			   Observer::par2chnl( issueMod ) );
+ #if CHECK_DS
+  CheckAbsVSPhys();
+ #endif
+
+ }  // end CapacitatedFacilityLocationBlock::chg_transportation_costs( range )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::chg_transportation_cost(
+				     CNumber NCost , Index p ,
+				     ModParam issueMod , ModParam issueAMod )
+{
+ const Index maxn = f_n_facilities * f_n_customers;
+ if( p >= maxn )
+  throw( std::invalid_argument( "invalid name of ( facility , customer ) pair"
+				) );
+
+ const Index i = p / f_n_customers;
+ const Index j = p % f_n_customers;
+ if( v_t_cost[ i ][ j ] == NCost )
+  return;
+
+ if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
+  // change abstract and physical representation together - - - - - - - - - -
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // in the meantime, if so instructed also issue abstract Modification
+  v_t_cost[ i ][ j ] = NCost;
+
+  switch( AR & FormMsk ) {
+   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    get_lfo()->modify_coefficient( NCost , p + f_n_facilities , issueAMod );
+    break;
+    }
+   case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
+    KB( v_Block[ i ] )->chg_profit( NCost , j , issueMod , issueAMod );
+    break;
+    }
+   default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    MCFB( v_Block[ 1 ] )->chg_cost( NCost , p + f_n_facilities ,
+				     issueMod , issueAMod );
+   }
+  }
+ else
+  // only change the physical representation- - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  if( not_dry_run( issueMod ) )
+   v_t_cost[ i ][ j ] = NCost;
+
+ f_cond_lower = NAN;  // reset conditional bounds
+ f_cond_upper = NAN;
+ 
+ if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockRngdMod >( this ,
+			     CapacitatedFacilityLocationBlockMod::eChgTCost ,
+			     Range( p , p + 1 ) ) ,
+			   Observer::par2chnl( issueMod ) );
+ #if CHECK_DS
+  CheckAbsVSPhys();
+ #endif
+
+ }  // end( CapacitatedFacilityLocationBlock::chg_transportation_cost )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::chg_facility_capacities(
+				     c_DV_it NCap , Range rng ,
+				     ModParam issueMod , ModParam issueAMod )
+{
+ rng.second = std::min( rng.second , f_n_facilities );
+ if( rng.second <= rng.first )  // nothing to change
+  return;                       // cowardly (and silently) return
+
+ const Index num = rng.second - rng.first;
+ // TODO: if some changes are "fake", rather restrict the range
+ if( std::equal( NCap , NCap + num , v_capacity.begin() + rng.first ) )
+  return;  // actually nothing changes, avoid issuing the Modification
+
+ if( not_dry_run( issueAMod ) && ( AR & HasCapCns ) ) {
+  // change abstract and physical representation together - - - - - - - - - -
+  // in the meantime, if so instructed also issue abstract Modification
+  std::copy( NCap , NCap + num , v_capacity.begin() + rng.first );
+
+  // if appropriate, open a new channel to bunch up all abstract Modification
+  auto iAM = make_amod_param( issueAMod ,
+			      ( AR & FormMsk ) != FlwForm ? num : 0 );
+  switch( AR & FormMsk ) {
+   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    for( Index i = rng.first ; i < rng.second ; ++i )
+     LF( v_cap[ i ].set_function() )->modify_coefficient( *(NCap++) ,
+							  f_n_customers ,
+							  iAM );
+    break;
+    }
+   case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
+    for( Index i = rng.first ; i < rng.second ; ++i )
+     KB( v_Block[ i ] )->chg_capacity( *(NCap++) , issueMod , iAM );
+    break;
+    }
+   default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    MCFB( v_Block[ 1 ] )->chg_ucaps( NCap , rng , issueMod , iAM );
+   }
+
+  // if a new channel had been opened, close it
+  unmake_amod_param( issueAMod , iAM , num );
+  }
+ else
+  // only change the physical representation- - - - - - - - - - - - - - - - -
+  if( not_dry_run( issueMod ) )
+   std::copy( NCap , NCap + num , v_capacity.begin() + rng.first );
+
+ f_cond_lower = NAN;  // reset conditional bounds
+ f_cond_upper = NAN;
+ 
+ if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockRngdMod >( this ,
+			    CapacitatedFacilityLocationBlockMod::eChgCap ,
+			    rng ) ,
+			   Observer::par2chnl( issueMod ) );
+ #if CHECK_DS
+  CheckAbsVSPhys();
+ #endif
+
+ }  // end CapacitatedFacilityLocationBlock::chg_facility_capacities( range )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::chg_facility_capacities(
+				  c_DV_it NCap , Subset && nms , bool ordered
+				  ModParam issueMod , ModParam issueAMod )
+{
+ if( nms.empty() )  // nothing to change
+  return;           // cowardly (and silently) return
+
+ // TODO: eliminate from nms the "fake" changes
+ if( is_equal( v_capacity , nms , NCap , f_n_facilities ) )
+  return;  // actually nothing changes, avoid issuing the Modification
+
+ if( not_dry_run( issueAMod ) && ( AR & HasCapCns ) ) {
+  // change abstract and physical representation together - - - - - - - - - -
+  // in the meantime, if so instructed also issue abstract Modification
+  copyidx( v_capacity , nms , NCap );
+
+  // if appropriate, open a new channel to bunch up all abstract Modification
+  auto iAM = make_amod_param( issueAMod ,
+			      ( AR & FormMsk ) != FlwForm ? num : 0 );
+  switch( AR & FormMsk ) {
+   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    for( auto i : nms )
+     LF( v_cap[ i ].set_function() )->modify_coefficient( *(NCap++) ,
+							  f_n_customers ,
+							  iAM );
+    break;
+    }
+   case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
+    for( auto i : nms )
+     KB( v_Block[ i ] )->chg_capacity( *(NCap++) , issueMod , iAM );
+    break;
+    }
+   default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    MCFB( v_Block[ 1 ] )->chg_ucaps( NCap , nms , ordered , issueMod , iAM );
+   }
+
+  // if a new channel had been opened, close it
+  unmake_amod_param( issueAMod , iAM , num );
+  }
+ else
+  // only change the physical representation- - - - - - - - - - - - - - - - -
+  if( not_dry_run( issueMod ) )
+   copyidx( v_capacity , nms , NCap );
+
+ f_cond_lower = NAN;  // reset conditional bounds
+ f_cond_upper = NAN;
+ 
+ if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
+  // ensure the names are ordered even if they were not so originally
+  if( ! ordered )
+   std::sort( nms.begin() , nms.end() );
+
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockSbstMod >( this ,
+			    CapacitatedFacilityLocationBlockMod::eChgCap ,
+			    std::move( nms ) ) ,
+			   Observer::par2chnl( issueMod ) );
+  }
+ }  // end CapacitatedFacilityLocationBlock::chg_facility_capacities( sbst )
+
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::chg_facility_capacity( Demand NCap ,
+			   Index i , ModParam issueMod , ModParam issueAMod )
+{
+ if( i >= f_n_facilities )
+  throw( std::invalid_argument( "invalid facility name" ) );
+
+ if( v_capacity[ i ] == NCap )
+  return;
+
+ f_cond_lower = NAN;  // reset conditional bounds
+ f_cond_upper = NAN;
+
+ if( not_dry_run( issueAMod ) && ( AR & HasCapCns ) ) {
+  // change abstract and physical representation together - - - - - - - - - -
+  // in the meantime, if so instructed also issue abstract Modification
+  v_capacity[ i ] = NCap;
+
+  switch( AR & FormMsk ) {
+   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    LF( v_cap[ i ].set_function() )->modify_coefficient( NCap , f_n_customers ,
+							 issueAMod );
+    break;
+    }
+   case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
+    KB( v_Block[ i ] )->chg_capacity( NCap , issueMod , issueAMod );
+    break;
+    }
+   default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    MCFB( v_Block[ 1 ] )->chg_ucap( NCap , i , issueMod , issueAMod );
+   }
+  }
+ else
+  // only change the physical representation- - - - - - - - - - - - - - - - -
+  if( not_dry_run( issueMod ) )
+   v_capacity[ i ] = NCap;
+
+ if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockRngdMod >( this ,
+			    CapacitatedFacilityLocationBlockMod::eChgCap ,
+			    Range( i , i + 1 ) ) ,
+			   Observer::par2chnl( issueMod ) );
+ #if CHECK_DS
+  CheckAbsVSPhys();
+ #endif
+ 
+ }  // end( CapacitatedFacilityLocationBlock::chg_facility_capacity )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::chg_customers_demands( c_DV_it NDem ,
+			 Range rng , ModParam issueMod , ModParam issueAMod )
+{
+ rng.second = std::min( rng.second , f_n_customers );
+ if( rng.second <= rng.first )  // nothing to change
+  return;                       // cowardly (and silently) return
+
+ const Index num = rng.second - rng.first;
+ // TODO: if some changes are "fake", rather restrict the range
+ if( std::equal( NDem , NDem + num , v_demand.begin() + rng.first ) )
+  return;  // actually nothing changes, avoid issuing the Modification
+
+ if( not_dry_run( issueAMod ) && ( AR & HasSatCns ) ) {
+  // change abstract and physical representation together - - - - - - - - - -
+  // in the meantime, if so instructed also issue abstract Modification
+  std::copy( NDem , NDem + num , v_demand.begin() + rng.first );
+
+  // if appropriate, open a new channel to bunch up all abstract Modification
+  auto iAM = make_amod_param( issueAMod ,
+			      ( AR & FormMsk ) != FlwForm ? num : 0 );
+  switch( AR & FormMsk ) {
+   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // if appropriate, open a new channel to bunch up all abstract Modification
+    auto iAM = make_amod_param( issueAMod , num );
+
+    for( Index i = rng.first ; i < rng.second ; ++i )
+     v_sat[ i ].set_both( *(NCap++) , iAM );
+
+    // if a new channel had been opened, close it
+    unmake_amod_param( issueAMod , iAM , num );
+    break;
+    }
+   case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // open a new channel to bunch up all abstract Modification
+    auto iAM = make_amod_param( issueAMod , f_n_facilities );
+
+    for( auto bi : v_Block )
+     KB( vi )->chg_weights( NCap , rng , issueMod , iAM );
+
+    // close the new channel
+    unmake_amod_param( issueAMod , iAM , f_n_facilities );
+    break;
+    }
+   default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    MCFB( v_Block[ 1 ] )->chg_dfcts( NCap ,
+				     Range( rng.first + f_n_facilities + 1 ,
+					    rng.second + f_n_facilities + 1 ) ,
+				     issueMod , issueAMod );
+   }
+  }
+ else
+  // only change the physical representation- - - - - - - - - - - - - - - - -
+  if( not_dry_run( issueMod ) )
+   std::copy( NDem , NDem + num , v_demand.begin() + rng.first );
+
+ f_cond_lower = NAN;  // reset conditional bounds
+ f_cond_upper = NAN;
+ 
+ if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockRngdMod >( this ,
+			    CapacitatedFacilityLocationBlockMod::eChgDem ,
+			    rng ) ,
+			   Observer::par2chnl( issueMod ) );
+ #if CHECK_DS
+  CheckAbsVSPhys();
+ #endif
+
+ }  // end( CapacitatedFacilityLocationBlock::chg_customers_demands( rng ) )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::chg_customers_demands( c_DV_it NDem ,
+			            Subset && nms , bool ordered ,
+				    ModParam issueMod , ModParam issueAMod )
+{
+ if( nms.empty() )  // nothing to change
+  return;           // cowardly (and silently) return
+
+ // ensure the names are ordered even if they were not so originally
+ if( ! ordered )
+  std::sort( nms.begin() , nms.end() );
+
+ // TODO: eliminate from nms the "fake" changes
+ if( is_equal( v_demand , nms , NDem , f_n_customers ) )
+  return;  // actually nothing changes, avoid issuing the Modification
+
+ if( not_dry_run( issueAMod ) && ( AR & HasSatCns ) ) {
+  // change abstract and physical representation together - - - - - - - - - -
+  // in the meantime, if so instructed also issue abstract Modification
+  copyidx( v_demand , nms , NDem );
+
+  switch( AR & FormMsk ) {
+   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // if appropriate, open a new channel to bunch up all abstract Modification
+    auto iAM = make_amod_param( issueAMod , nms.size() );
+
+    for( auto i : nms )
+     v_sat[ i ].set_both( *(NDem++) , iAM );
+ 
+    // if a new channel had been opened, close it
+    unmake_amod_param( issueAMod , iAM , num );
+    break;
+   }
+   case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // open a new channel to bunch up all abstract Modification
+    auto iAM = make_amod_param( issueAMod , f_n_facilities );
+
+    // note that chg_weights() acquire the vector, so copies must be made
+    for( auto bi : v_Block )
+     KB( vi )->chg_weights( NDem , Subset( nms ) , true , issueMod , iAM );
+
+    // close the new channel
+    unmake_amod_param( issueAMod , iAM , f_n_facilities );
+    break;
+    }
+   default: {  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Subset nnms( nms.begin() , nms.end() );  // copy and translate nms
+    for( auto & el : nnms )
+     el+= f_n_facilities + 1;
+    MCFB( v_Block[ 1 ] )->chg_dfcts( NDem , nnms , true ,
+				     issueMod , issueAMod );
+    }
+   }
+
+  // if a new channel had been opened, close it
+  unmake_amod_param( issueAMod , iAM , num );
+  }
+ else
+  // only change the physical representation- - - - - - - - - - - - - - - - -
+  if( not_dry_run( issueMod ) )
+   copyidx( v_demand , nms , NCap );
+
+ f_cond_lower = NAN;  // reset conditional bounds
+ f_cond_upper = NAN;
+ 
+ if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockSbstMod >( this ,
+			    CapacitatedFacilityLocationBlockMod::eChgDem ,
+			    std::move( nms ) ) ,
+			   Observer::par2chnl( issueMod ) );
+ #if CHECK_DS
+  CheckAbsVSPhys();
+ #endif
+
+ }  // end( CapacitatedFacilityLocationBlock::chg_customers_demands( sbst ) )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::chg_customers_demand( Demand NDem ,
+			  Index j  , ModParam issueMod , ModParam issueAMod )
+{
+ if( j >= f_n_customers )
+  throw( std::invalid_argument( "invalid customer name" ) );
+
+ if( v_demand[ j ] == NDem )
+  return;
+
+ f_cond_lower = NAN;  // reset conditional bounds
+ f_cond_upper = NAN;
+
+ if( not_dry_run( issueAMod ) && ( AR & HasSatCns ) ) {
+  // change abstract and physical representation together - - - - - - - - - -
+  // in the meantime, if so instructed also issue abstract Modification
+   v_demand[ j ] = NDem;
+
+  switch( AR & FormMsk ) {
+   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    v_sat[ j ].set_both( NDem , issueAMod );
+    break;
+    }
+   case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // open a new channel to bunch up all abstract Modification
+    auto iAM = make_amod_param( issueAMod , f_n_facilities );
+
+    for( auto bi : v_Block )
+     KB( vi )->chg_weights( NDem , j , issueMod , iAM );
+
+    // close the new channel
+    unmake_amod_param( issueAMod , iAM , f_n_facilities );
+    break;
+    }
+   default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    MCFB( v_Block[ 1 ] )->chg_dfct( NDem , j + f_n_facilities + 1 ,
+				    issueMod , issueAMod );
+   }
+  }
+ else
+  // only change the physical representation- - - - - - - - - - - - - - - - -
+  if( not_dry_run( issueMod ) )
+   v_demand[ j ] = NDem;
+
+ f_cond_lower = NAN;  // reset conditional bounds
+ f_cond_upper = NAN;
+ 
+ if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockRngdMod >( this ,
+			    CapacitatedFacilityLocationBlockMod::eChgDem ,
+			    Range( i , j + 1 ) ) ,
+			   Observer::par2chnl( issueMod ) );
+ #if CHECK_DS
+  CheckAbsVSPhys();
+ #endif
+
+ }  // end( CapacitatedFacilityLocationBlock::chg_customers_demand )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::close_facilities( Range rng ,
+			             ModParam issueMod , ModParam issueAMod )
+{
+ rng.second = std::min( rng.second , f_n_facilities );
  if( rng.second <= rng.first )  // nothing to change
   return;                 // cowardly (and silently) return
+
+
+
+
+
 
  // since the physical and abstract representation are the same, anything
  // that has to do with the abstract representation is skipped in the
@@ -2265,265 +2459,6 @@ void CapacitatedFacilityLocationBlock::open_arc( c_Index arc ,
 
  }  // end( CapacitatedFacilityLocationBlock::open_arc )
 
-/*--------------------------------------------------------------------------*/
-
-CapacitatedFacilityLocationBlock::Index CapacitatedFacilityLocationBlock::add_arc( c_Index sn , c_Index en ,
-				   c_CNumber cst , c_FNumber cap ,
-				   c_ModParam issueMod ,
-				   c_ModParam issueAMod )
-{
- if( ( sn < 1 ) || ( sn > get_NNodes() ) )
-  throw( std::invalid_argument( "invalid starting node name" ) );
- 
- if( ( en < 1 ) || ( en > get_NNodes() ) )
-  throw( std::invalid_argument( "invalid ending node name" ) );
-
- Index arc = get_NStaticArcs();
- while( ( arc < get_NArcs() ) && ( ! is_deleted( arc ) ) )
-  ++arc;
-
- if( arc >= get_MaxNArcs() )
-  return( Inf<Index>() );
-
- // change the physical representation- - - - - - - - - - - - - - - - - - - -
- if( not_dry_run( issueMod ) ) {
-  // set new arc cost
-  if( C.empty() && cst )
-   C.assign( get_MaxNArcs() , 0 );
-
-  if( ! C.empty() )
-   C[ arc ] = cst;
-
-  // set new arc capacity
-  if( U.empty() && ( cap < Inf<FNumber>() ) )
-   U.assign( get_MaxNArcs() , Inf<FNumber>() );
-
-  if( ! U.empty() )
-   U[ arc ] = cap;
-
-  // set contribution to flow constraint
-  SN[ arc ] = sn;
-  EN[ arc ] = en;
-  }
-
- // change the abstract representation- - - - - - - - - - - - - - - - - - - -
- // in the meantime, if so instructed also issue abstract Modification(s)
- // note that this is *always* done, unless issueAMod says this is a dry
- // run, because at least the BlockModAdd corresponding to adding the
- // Variable, or unfixing it, is always issued since the Variable are
- // always present
-
- if( not_dry_run( issueAMod ) ) {
-
-  c_ModParam ampar = make_amod_param( issueAMod ,
-				      AR & ( HasFlw | HasObj ) ? 4 : 1 );
-  ColVariable * nx;
-  LB0Constraint * nUB;
-  if( arc == get_NArcs() ) {
-   // the new arc is physically constructed
-
-   // create the new variable
-   std::list< ColVariable > na;
-   na.emplace_back( this , ColVariable::kNonNegative );
-   nx = &(na.back());
-
-   // now add it
-   Block::add_dynamic_variables( dx , na , ampar );
-
-   // add the new coefficient in the objective
-   if( AR & HasObj )
-    get_lfo()->add_variable( nx , cst , ampar );
-
-   if( ( cap < Inf<FNumber>() ) && ( AR & HasFlw ) && ( ! ( AR & HasBnd ) ) )
-    throw( std::logic_error( "cannot set finite capacity" ) );
-
-   if( AR & HasBnd ) {
-    // construct new arc capacity constraint
-    std::list< LB0Constraint > nub;
-    nub.emplace_back( this , nx );
-    nUB = &(nub.back());
-
-    // now add it
-    Block::add_dynamic_constraints( dUB , nub , ampar );
-    }
-   }
-  else {
-   // the arc is just inserted in a previously deleted slot
-
-   // recover pointer to the flow Variable
-   nx = const_cast< ColVariable * >(
-		   &( *std::next( dx.begin() , arc - get_NStaticArcs() ) ) );
-
-   // un-fix the Variable
-   nx->is_fixed( false , ampar );
-
-   // recover pointer to the bound Constraint (if any)
-   if( AR & HasBnd )
-    nUB = const_cast< LB0Constraint * >(
-		  &( *std::next( dUB.begin() , arc - get_NStaticArcs() ) ) );
-
-   // change the cost coefficient in the objective
-   if( AR & HasObj )
-    get_lfo()->modify_coefficient( arc , cst , ampar );
-   }
-
-  // set new arc capacity: abstract part
-  if( AR & HasBnd )
-   nUB->set_rhs( cap , ampar );
-
-  // set contribution to flow constraint: abstract part
-  if( AR & HasFlw ) {
-   get_lfc( i2p_e( sn - 1 ) )->add_variable( nx , -1 , ampar );
-   get_lfc( i2p_e( en - 1 ) )->add_variable( nx ,  1 , ampar );
-   }
-
-  unmake_amod_param( issueAMod , ampar , AR & ( HasFlw | HasObj ) ? 4 : 1 );
-  }
-
- if( arc == get_NArcs() )
-  ++NArcs;  // increase arc count
-
- f_cond_lower = NAN;  // reset conditional bounds
-
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockRngdMod>( this ,
-			    CapacitatedFacilityLocationBlockMod::eAddArc , Range( arc , arc + 1 ) ) ,
-			   Observer::par2chnl( issueMod ) );
- #if CHECK_DS
-  CheckAbsVSPhys();
- #endif
-
- return( arc );
-
- }  // end( CapacitatedFacilityLocationBlock::add_arc )
-
-/*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::remove_arc( c_Index arc , c_ModParam issueMod ,
-		                         c_ModParam issueAMod )
-{
- if( ( arc < get_NStaticArcs() ) || ( arc >= get_NArcs() ) )
-  throw( std::invalid_argument( "invalid arc name" ) );
-
- if( is_deleted( arc ) )  // arc deleted already
-  return;                 // nothing to do
-
- auto sn = SN[ arc ]; sn--;
- auto en = EN[ arc ]; en--;
-
- Index rmvdarcs = 1;  // how many arcs are removed in the end
-
- // change the physical representation- - - - - - - - - - - - - - - - - - - -
- if( not_dry_run( issueMod ) )
-  SN[ arc ] = EN[ arc ] = Inf<Index>();
-
- // change the abstract representation- - - - - - - - - - - - - - - - - - - -
- // in the meantime, if so instructed also issue abstract Modification(s)
- // note that this is *always* done, unless issueAMod says this is a dry
- // run, because at least the BlockModAD corresponding to deleting the
- // Variable(s), or fixing them, is always issued since the Variable are
- // always present
-
- if( not_dry_run( issueAMod ) ) {
-  c_ModParam ampar = make_amod_param( issueAMod ,
-				      AR & ( HasFlw | HasObj ) ? 4 : 1 );
-  if( arc == get_NArcs() - 1 ) {
-   // removing the last arc (and possibly more)
-
-   // reverse iterator into dx
-   auto ritdx = dx.rbegin();
-
-   // pointer to LinearFunction in the objective (if any)
-   LinearFunction * lfo;
-   if( AR & HasObj )
-    lfo = get_lfo();
-
-   // scan from the end backwards, eliminate all deleted arcs
-   for( Index ai = arc ; ritdx != dx.rend() ; ++rmvdarcs , --ai ) {
-    auto rxi = &(*(ritdx++));
-
-    // delete contribution to objective (if any)
-    if( AR & HasObj )
-     lfo->remove_variable( ai , ampar );
-
-    // delete contribution to flow constraint (if any)
-    if( AR & HasFlw ) {
-     auto snc = get_lfc( i2p_e( sn ) );
-     auto sni = snc->is_active( rxi );
-     if( sni >= snc->get_num_active_var() )
-      throw( std::logic_error( "x variable not active in flow constraint" ) );
-     snc->remove_variable( sni , ampar );
-     auto enc = get_lfc( i2p_e( en ) );
-     auto eni = enc->is_active( rxi );
-     if( eni >= enc->get_num_active_var() )
-      throw( std::logic_error( "x variable not active in flow constraint" ) );
-     enc->remove_variable( eni , ampar );
-     }
-
-    if( rmvdarcs >= get_NArcs() - get_NStaticArcs() )
-     break;
-
-    if( ! is_deleted( get_NArcs() - rmvdarcs - 1 ) )
-     break;
-    }
-
-   // define the range of removed stuff
-   Range range( get_NArcs() - get_NStaticArcs() - rmvdarcs ,
-		get_NArcs() - get_NStaticArcs() );
-   
-   // now actually remove and clear the UB Constraint(s) (if any)
-   // do this before removing the flow Variable(s), so that if they are
-   // processed in FIFO order it is seen before
-   if( AR & HasBnd )
-    Block::remove_dynamic_constraints( dUB , range , ampar );
-
-   // now actually remove the flow Variable(s) (if any)
-   Block::remove_dynamic_variables( dx , range , ampar );
-   }
-  else {
-   // deleting one arc in the middle
-
-   auto rx = const_cast< ColVariable * >(
-		  &( *std::next( dx.begin() , arc - get_NStaticArcs() ) ) );
-
-   rx->set_value( 0 );            // set the Variable to 0
-   rx->is_fixed( true , ampar );  // fix it
-
-   // delete contribution to flow constraint (if any)
-   if( AR & HasFlw ) {
-    auto snc = get_lfc( i2p_e( sn ) );
-    auto sni = snc->is_active( rx );
-    if( sni >= snc->get_num_active_var() )
-     throw( std::logic_error( "x variable not active in flow constraint" ) );
-    snc->remove_variable( sni , ampar );
-    auto enc = get_lfc( i2p_e( en ) );
-    auto eni = enc->is_active( rx );
-    if( eni >= enc->get_num_active_var() )
-     throw( std::logic_error( "x variable not active in flow constraint" ) );
-    enc->remove_variable( eni , ampar );
-    }
-   }
-
-  unmake_amod_param( issueAMod , ampar , AR & ( HasFlw | HasObj ) ? 4 : 1 );
-  }
- else  // at the very least ensure the value is 0
-  std::next( dx.begin() , arc - get_NStaticArcs() )->set_value( 0 );
-
- if( arc == get_NArcs() - 1 )
-  NArcs -= rmvdarcs;  // decrease arc count
-
- f_cond_lower = NAN;  // reset conditional bounds
-
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockRngdMod>( this ,
-				     CapacitatedFacilityLocationBlockMod::eRmvArc ,
-				     Range( arc - rmvdarcs + 1 , arc + 1 ) ) ,
-			   Observer::par2chnl( issueMod ) );
- #if CHECK_DS
-  CheckAbsVSPhys();
- #endif
-
- }  // end( CapacitatedFacilityLocationBlock::remove_arc )
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED METHODS -----------------------------*/
@@ -3150,20 +3085,20 @@ void CapacitatedFacilityLocationBlock::compute_conditional_bounds( void )
  f_cond_lower = f_cond_upper = 0;
 
  for( Index i = 0 ; i < f_n_facilities ; ++i )
-  if( v_fixed_cost[ i ] >= 0 )
-   f_cond_upper += v_fixed_cost[ i ];
+  if( v_f_cost[ i ] >= 0 )
+   f_cond_upper += v_f_cost[ i ];
   else
-   f_cond_lower += v_fixed_cost[ i ];
+   f_cond_lower += v_f_cost[ i ];
 
  for( Index j = 0 ; j < f_n_customers ; ++j ) {
   auto minj = Inf< TCost >();
   auto maxj = - Inf< TCost >();
 
   for( Index i = 0 ; i < f_n_facilities ; ++i ) {
-   if( minj > v_transp_cost[ j ][ i ] )
-    minj = v_transp_cost[ j ][ i ];
-   if( maxj < v_transp_cost[ j ][ i ] )
-    maxj = v_transp_cost[ j ][ i ];
+   if( minj > v_t_cost[ j ][ i ] )
+    minj = v_t_cost[ j ][ i ];
+   if( maxj < v_t_cost[ j ][ i ] )
+    maxj = v_t_cost[ j ][ i ];
    }
 
   f_cond_lower += minj;
@@ -3525,6 +3460,9 @@ void CapacitatedFacilityLocationBlock::set_x(
 ModParam CapacitatedFacilityLocationBlock::make_amod_param(
 					     ModParam issueAMod , Index num )
 {
+ if( ! num )
+  return( issueAMod );
+
  if( issue_mod( issueAMod ) ) {
   ChnlName chnl = par2chnl( issueAMod );
   if( num > 1 ) {            // more than one Modification have to be issued
@@ -3549,7 +3487,7 @@ ModParam CapacitatedFacilityLocationBlock::make_amod_param(
 void CapacitatedFacilityLocationBlock::unmake_amod_param( ModParam oldiAM ,
 						ModParam newiAM , Index num )
 {
- if( newiAM == eNoMod )
+ if( ( newiAM == eNoMod ) || ( ! num ) )
   return;
 
  ChnlName chnl = par2chnl( newiAM );

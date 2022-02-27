@@ -585,12 +585,12 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the vector of facility fixed costs
 
- c_CVector & get_Fixed_Costs( void ) const { return( v_fixed_cost ); }
+ c_CVector & get_Fixed_Costs( void ) const { return( v_f_cost ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the fixed cost of facility i (0 <= i < get_NFacilities())
 
- Cost get_Fixed_Cost( Index i ) const { return( v_fixed_cost[ i ] ); }
+ Cost get_Fixed_Cost( Index i ) const { return( v_f_cost[ i ] ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the vector of customers' demands
@@ -609,14 +609,14 @@ public:
   * i and customer j. */
 
  c_CMatrix & get_Transportation_Costs( void ) const {
-  return( v_transp_cost );
+  return( v_t_cost );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the transportation cost for a given pair ( facility , customer )
 
  Cost get_Transportation_Cost( Index facility , Index customer ) const {
-  return( v_transp_cost[ facility ][ customer ] );
+  return( v_t_cost[ facility ][ customer ] );
   }
 
 /** @} ---------------------------------------------------------------------*/
@@ -1295,16 +1295,6 @@ public:
  * CapacitatedFacilityLocationBlock have surely been done already, and this
  * is just not possible for a "physical" Modification.
  *
- * IMPORTANT NOTE: the current implementation of all these methods issues (at
- * most) *two separate* Modification, a "physical" and an "abstract" one. The
- * latter may be a GroupModification bunching together related abstract
- * Modification, but the two Modification are nonetheless separate. A
- * different approach could be to issue a single GroupModification with inside
- * both the "physical" and the "abstract" one (the latter possibly itself a
- * GroupModification). This may allow a more efficient handling of
- * Modification by ensuring that the two are always received together, but at
- * the cost of a more intricate code that is best avoided for now.
- *
  * Note: the methods accept the eDryRun value for the issueAMod parameter for
  * the "abstract" representation. This allows to re-use them within
  * CapacitatedFacilityLocationBlock itself when reacting to abstract
@@ -1313,192 +1303,228 @@ public:
  * the issuePMod parameter for the "physical" representation, as there is no
  * reasonable use for this. Basically, this makes eDryRun equivalent to
  * eNoMod.
- *  @{ */
+ * @{ */
 
- /// change the costs of a contiguous interval of arcs
- /** Method to change the costs of a subset of arcs with "contiguous names".
-  * That is, *( NCost + i - strt ) becomes the new cost of the i-th arc in
-  * \p rng. Note that if the right extreme of the range is >= get_NArcs() it 
-  * is ignored.
+ /// change the facility_costs of a contiguous interval
+ /** Method to change the costs of a subset of facility with "contiguous
+  * names". That is, *( NCost + h ) becomes the new cost of the facility
+  * rng.first + h, for all 0 <= h < rmg.second - rng.first. Note that any 
+  * rng.second >= get_NFacilities() means "up until the end".
   *
-  * Note that, if the Objective is a "sparse" LinearFunction (see
-  * compute_objective()), then changing the costs can issue up to three
-  * different Modification; in particular a LinearFunctionMod for adding a
-  * Variable (setting to nonzero a previously zero coefficient), one for
-  * removing Variable (vice-versa), and one C05FunctionModLin for modifying
-  * the coefficients.
-  *
-  * If more than one Modification is actually issued and issueAMod specifies
-  * an open channel, then the channel is nested so that the three Modification
-  * are grouped into a single GroupModification. Similarly, if instead
-  * issueAMod specifies the default channel, then a new channel is opened to
-  * group the multiple Modification and immediately closed when the last one
-  * is issued. If, instead, the Objective is a "dense" LinearFunction, then
-  * at most one LinearFunctionMod for modifying the coefficients is issued.
-  * Of course this only applies if issueAMod specifies that abstract
-  * Modification have to be issued *and* the abstract Objective has been
-  * constructed.
-  *
-  * Also, if issueMod says so then a "physical" CapacitatedFacilityLocationBlockRngdMod is issued. */
+  * If issueMod says so then a "physical"
+  * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
- void chg_costs( c_Vec_CNumber_it NCost ,
-		 Range rng = Range( 0 , Inf<Index>() ) ,
-		 c_ModParam issueMod = eNoBlck ,
-		 c_ModParam issueAMod = eNoBlck );
+ void chg_facility_costs( c_CV_it NCost ,
+			  Range rng = Range( 0 , Inf<Index>() ) ,
+			  ModParam issueMod = eNoBlck ,
+			  ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the costs of an arbitrary subset of arcs
- /** Method to change the costs of an arbitrary subset of arc. That is,
-  * *( NCost + i ) becomes the new cost of arc nms[ i ] for all 0 <= i <
-  * NCost.size(), (which means that nms.size() == NCost.size()). The
-  * parameter ordered tells if the nms vector is ordered for increasing
-  * index of the arc. As the the && tells, nms is "consumed" by the method,
-  * typically being shipped to an appropriate
-  * CapacitatedFacilityLocationBlockSbstMod object.
-  *
-  * See chg_costs( range ) for Modification issued (except that, of course,
-  * the "physical" one is a CapacitatedFacilityLocationBlockSbstMod). */
+ /// change the facility_costs of an arbitrary subset of facilities
+ /** Method to change the costs of an arbitrary subset of facilities. That is,
+  * *( NCost + h ) becomes the new cost of facility nms[ h ] for all 0 <= h <
+  * NCost.size(). \p ordered tells if \p nms is already ordered in increasing
+  * sense. As the the && tells, \p nms is "consumed" by the method, typically
+  * being shipped to the appropriate CapacitatedFacilityLocationBlockSbstMod
+  * that is issued. */
 
- void chg_costs( c_Vec_CNumber_it NCost , Subset && nms ,
-		 const bool ordered = false , c_ModParam issueMod = eNoBlck ,
-		 c_ModParam issueAMod = eNoBlck );
+ void chg_facility_costs( c_CV_it NCost , Subset && nms ,
+			  bool ordered = false ,
+			  ModParam issueMod = eNoBlck ,
+			  ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// changes the cost of the given arc
- /** Changes the cost of the given arc.
-  *
-  * Note that this can issue only one Modification of each type; the
-  * "physical" one is a CapacitatedFacilityLocationBlockRngdMod with rng = [ arc ). */
+ /// changes the cost of the given facility
 
- void chg_cost( c_CNumber NCost , c_Index arc ,
-		c_ModParam issueMod = eNoBlck ,
-		c_ModParam issueAMod = eNoBlck );
+ void chg_facility_cost( CNumber NCost , Index i ,
+			 ModParam issueMod = eNoBlck ,
+			 ModParam issueAMod = eNoBlck );
 
 /*--------------------------------------------------------------------------*/
- /// change the capacities of a contiguous interval of arcs
- /** Method to change the capacities of a subset of arcs with "contiguous
-  * names". That is, *( NCap + i - strt ) becomes the new capacity of the i-th
-  * arc in \p rng. Note that if the right extreme of the range is
-  * >= get_NArcs() it is ignored. Note that, according to the Configuration of
-  * the static Constraint, the capacity of the arcs cannot be changed: trying
-  * to do that will result in an exception being thrown.
+ /// change the transportation costs of a contiguous interval
+ /** Method to change the transportation costs for a subset of the pairs
+  * ( facility , customer ) with "contiguous names". The matrix of
+  * transportation costs is considered "flattened" into a vector in row-major
+  * format, i.e., first all costs for the first facility, then all costs for
+  * the second facility, ...; in other words, the pair ( i , j ) is mapped in
+  * the element k = i * get_NCustomers() + j of the vector. Given this, 
+  * *( NCost + h ) becomes the new  transportation cost of the pair with
+  * "name" k = rng.first + h, for all 0 <= h < rmg.second - rng.first. Note
+  * that any  rng.second >= get_NFacilities() * get_NCustomers() means "up
+  * until the end".
   *
-  * Note that changing the capacities can issue as many Modification as there
-  * are arcs in the range, in particular OneVarConstraintMod with type
-  * RowConstraintMod::eChgRHS. If more than one Modification is actually
-  * issued and issueAMod specifies an open channel, then the channel is
-  * nested so that all the Modification are grouped into a single
-  * GroupModification. Similarly, if instead issueAMod specifies the default
-  * channel, then a new channel is opened to group the multiple Modification
-  * and immediately closed when the last one is issued. Of course this only
-  * applies if issueAMod specifies that abstract Modification have to be
-  * issued, *and* the abstract Constraint have been constructed.
-  *
-  * Note that, according to the Configuration of the static Constraint, the
-  * capacity of the arcs cannot be changed: trying to do that will result in
-  * an exception being thrown.
-  *
-  * Also, if issueMod says so then a "physical" CapacitatedFacilityLocationBlockRngdMod is issued. */
+  * If issueMod says so then a "physical"
+  * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
- void chg_ucaps( c_Vec_FNumber_it NCap ,
-		 Range rng = Range( 0 , Inf<Index>() ) ,
-		 c_ModParam issueMod = eNoBlck ,
-		 c_ModParam issueAMod = eNoBlck );
+ void chg_transportation_costs( c_CV_it NCost ,
+				Range rng = Range( 0 , Inf<Index>() ) ,
+				ModParam issueMod = eNoBlck ,
+				ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the capacities of an arbitrary subset of arcs
- /** Method to change the capacities of an arbitrary subset of arc. That is,
-  * *( NCap + i ) becomes the new capacity of arc nms[ i ] for all 0 <= i <
-  * NCap.size() (which means that nms.size() == NCap.size()). The parameter
-  * ordered tells if the nms vector is ordered for increasing index of the
-  * arc. As the the && tells, nms is "consumed" by the method, typically
-  * being shipped to an appropriate CapacitatedFacilityLocationBlockSbstMod object.
-  *
-  * Note that, according to the Configuration of the static Constraint, the
-  * capacity of the arcs cannot be changed: trying to do that will result in
-  * an exception being thrown.
-  *
-  * See chg_ucaps( range ) for Modification issued (except that, of course,
-  * the "physical" one is a CapacitatedFacilityLocationBlockSbstMod). */
+ /// change the transportation costs of an arbitrary subset
+ /** Method to change the transportation costs for an arbitrary subset of the
+  * pairs ( facility , customer ). The matrix of transportation costs is
+  * considered "flattened" into a vector in row-major format; see the comments
+  * to the Range version for details.
+  * As the the && tells, \p nms is "consumed" by the method, typically being
+  * shipped to the appropriate CapacitatedFacilityLocationBlockSbstMod that
+  * is issued. \p order tells if \p nms is already ordered in increasing
+  * sense. */
 
- void chg_ucaps( c_Vec_FNumber_it NCap , Subset && nms ,
-		 const bool ordered = false ,
-		 c_ModParam issueMod = eNoBlck ,
-		 c_ModParam issueAMod = eNoBlck );
+ void chg_transportation_costs( c_CV_it NCost , Subset && nms ,
+				bool ordered = false ,
+				ModParam issueMod = eNoBlck ,
+				ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the capacity of the given arc
- /** Method to change the capacity of a given arc: NCap becomes the new
-  * capacity of arc arc. Note that, according to the Configuration of the
-  * static Constraint, the capacity of the arcs cannot be changed: trying to
-  * do that will result in an exception being thrown.
-  *
-  * Note that this can issue only one Modification; the "physical" one is a
-  * CapacitatedFacilityLocationBlockRngdMod with rng = [ arc ). */
+ /// changes the transportation of the given pair ( facility , customer )
+ /** Method to change the transportation costs for the given pair
+  * ( facility , customer ) \p, i.e., facility = p / get_NCustomers() and
+  * customer = p % get_NCustomers(). */
 
- void chg_ucap( c_FNumber NCap , c_Index arc ,
-		c_ModParam issueMod = eNoBlck ,
-		c_ModParam issueAMod = eNoBlck );
+ void chg_transportation_cost( CNumber NCost , Index p ,
+			       ModParam issueMod = eNoBlck ,
+			       ModParam issueAMod = eNoBlck );
 
 /*--------------------------------------------------------------------------*/
- /// change the deficits of a contiguous interval of nodes
- /** Method to change the deficits of a subset of nodes with "contiguous
-  * names". That is, *( NDfct + i - strt ) becomes the new deficit of the i-th
-  * node in \p rng. Note that if the right extreme of the range is
-  * >= get_NNodes() it is ignored. Note that "node names" here go from 0 to
-  * get_NNodes() - 1, despite the fact that get_SN() and get_EN() report node
-  * "names" between 1 and get_NNodes().
+ /// change the capacities of a contiguous interval of facilities
+ /** Method to change the capacities of a subset of facility with "contiguous
+  * names". That is, *( NCap + h ) becomes the new capacity of the facility
+  * rng.first + h, for all 0 <= h < rmg.second - rng.first. Note that any 
+  * rng.second >= get_NFacilities() means "up until the end".
   *
-  * Note that changing the capacities can issue as many Modification as there
-  * are nodes in the range, in particular FRowConstraintMod with type
-  * RowConstraintMod::eChgBTS. If more than one Modification is actually
-  * issued and issueAMod specifies an open channel, then the channel is
-  * nested so that all the Modification are grouped into a single
-  * GroupModification. Similarly, if instead issueAMod specifies the default
-  * channel, then a new channel is opened to group the multiple Modification
-  * and immediately closed when the last one is issued. Of course this only
-  * applies if issueAMod specifies that abstract Modification have to be
-  * issued *and* the abstract Constraint have been constructed.
-  *
-  * Also, if issueMod says so then a "physical" CapacitatedFacilityLocationBlockRngdMod is issued. */
+  * If issueMod says so then a "physical"
+  * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
- void chg_dfcts( c_Vec_FNumber_it NDfct ,
-		 Range rng = Range( 0 , Inf<Index>() ) ,
-		 c_ModParam issueMod = eNoBlck ,
-		 c_ModParam issueAMod = eNoBlck );
+ void chg_facility_capacities( c_DV_it NCap ,
+			       Range rng = Range( 0 , Inf<Index>() ) ,
+			       ModParam issueMod = eNoBlck ,
+			       ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the deficits of an arbitrary subset of nodes
- /** Method to change the deficits of an arbitrary subset of nodes. That is,
-  * *( NDfct + i ) becomes the new deficit of node nms[ i ] for all 0 <= i <
-  * NDfct.size(), (which means that nms.size() == NDfct.size()). The
-  * parameter ordered tells if the nms vector is ordered for increasing index
-  * of the node. Note that "node names" here go from 0 to get_NNodes() - 1,
-  * despite the fact that get_SN() and get_EN() report node "names" between
-  * 1 and get_NNodes(). As the the && tells, nms is "consumed" by the method,
-  * typically being shipped to an appropriate CapacitatedFacilityLocationBlockSbstMod object.
-  *
-  * See chg_dfcts( range ) for Modification issued (except that, of course,
-  * the "physical" one is a CapacitatedFacilityLocationBlockSbstMod). */
+ /// change the capacities of an arbitrary subset of facilities
+ /** Method to change the capacities of an arbitrary subset of facilities.
+  * That is, *( NCop + h ) becomes the capacity of facility nms[ h ] for all
+  * 0 <= h < NCap.size(). \p ordered tells if \p nms is already ordered in
+  * increasing sense. As the the && tells, \p nms is "consumed" by the method,
+  * typically being shipped to the appropriate
+  * CapacitatedFacilityLocationBlockSbstMod that is issued. */
 
- void chg_dfcts( c_Vec_FNumber_it NDfct , Subset && nms ,
-		 const bool ordered = false ,
-		 c_ModParam issueMod = eNoBlck ,
-		 c_ModParam issueAMod = eNoBlck );
+ void chg_facility_capacities( c_DV_it NCap , Subset && nms ,
+			       bool ordered = false ,
+			       ModParam issueMod = eNoBlck ,
+			       ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// changes the deficit of the given node
- /** Method to change the deficit of a given node: NDfct becomes the new
-  * deficit of node nde. Note that "node names" here go from 0 to
-  * get_NNodes() - 1, despite the fact that get_SN() and get_EN() report node
-  * "names" between 1 and get_NNodes().
-  *
-  * Note that this can issue only one Modification; the "physical" one is a
-  * CapacitatedFacilityLocationBlockRngdMod with rng = [ arc ). */
+ /// changes the capacity of the given facility
 
- void chg_dfct( c_FNumber NDfct , c_Index nde ,
-		c_ModParam issueMod = eNoBlck ,
-		c_ModParam issueAMod = eNoBlck );
+ void chg_facility_capacity( Demand NCap , Index i ,
+			     ModParam issueMod = eNoBlck ,
+			     ModParam issueAMod = eNoBlck );
+
+/*--------------------------------------------------------------------------*/
+ /// change the demands of a contiguous interval of customers
+ /** Method to change the demands of a subset of customers with "contiguous
+  * names". That is, *( NDem + h ) becomes the new demand of the customer
+  * rng.first + h, for all 0 <= h < rmg.second - rng.first. Note that any 
+  * rng.second >= get_NCustomers() means "up until the end".
+  *
+  * If issueMod says so then a "physical"
+  * CapacitatedFacilityLocationBlockRngdMod is issued. */
+
+ void chg_customers_demands( c_DV_it NDem ,
+			     Range rng = Range( 0 , Inf<Index>() ) ,
+			     ModParam issueMod = eNoBlck ,
+			     ModParam issueAMod = eNoBlck );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// change the demands of an arbitrary subset of customers
+ /** Method to change the demands of an arbitrary subset of customers. That
+  * is, *( NDem + h ) becomes the demand of customer nms[ h ] for all 0 <= h
+  * < NDem.size(). \p ordered tells if \p nms is already ordered in increasing
+  * sense. As the the && tells, \p nms is "consumed" by the method, typically
+  * being shipped to the appropriate
+  * CapacitatedFacilityLocationBlockSbstMod that is issued. */
+
+ void chg_customers_demands( c_DV_it NDem , Subset && nms ,
+			     bool ordered = false ,
+			     ModParam issueMod = eNoBlck ,
+			     ModParam issueAMod = eNoBlck );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// changes the demand of the given customer
+
+ void chg_customer_demand( Demand NDem , Index j ,
+			   ModParam issueMod = eNoBlck ,
+			   ModParam issueAMod = eNoBlck );
+
+/*--------------------------------------------------------------------------*/
+ /// closes a contiguous interval of facilities
+ /** Method to close a subset of facility with "contiguous names", i.e., all
+  * facilities rng.first <= i < rmg.second - rng.first. Note that any
+  * rng.second >= get_NFacilities() means "up until the end". Closing an
+  * already closed facility does nothing. 
+  *
+  * If issueMod says so then a "physical"
+  * CapacitatedFacilityLocationBlockRngdMod is issued. */
+
+ void close_facilities( Range rng = Range( 0 , Inf<Index>() ) ,
+			ModParam issueMod = eNoBlck ,
+			ModParam issueAMod = eNoBlck );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// closes an arbitrary subset of facilities
+ /** Method to close an arbitrary subset of facilities, i.e., all those whose
+  * names are found in \p nms.  Closing an already closed facility does
+  * nothing. \p ordered tells if \p nms is already ordered in increasing
+  * sense. As the && tells, \p nms is "consumed" by the method, typically
+  * being shipped to an appropriate
+  * CapacitatedFacilityLocationBlockSbstMod object. */
+
+ void close_facilities( Subset && nms , bool ordered = false ,
+			ModParam issueMod = eNoBlck ,
+			ModParam issueAMod = eNoBlck );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// closes the given facility
+
+ void close_facility( Index i , ModParam issueMod = eNoBlck ,
+		                ModParam issueAMod = eNoBlck );
+
+/*--------------------------------------------------------------------------*/
+ /// re-opens a contiguous interval of facilities
+ /** Method to re-open a subset of facility with "contiguous names", i.e.,
+  * all facilities rng.first <= i < rmg.second - rng.first that had
+  * previously been closed are now open again. Note that any  rng.second >=
+  * get_NFacilities() means "up until the end". Re-opening a facility that
+  * had not been previously closed does nothing.
+  *
+  * If issueMod says so then a "physical"
+  * CapacitatedFacilityLocationBlockRngdMod is issued. */
+
+ void open_facilities( Range rng = Range( 0 , Inf<Index>() ) ,
+		       ModParam issueMod = eNoBlck ,
+		       ModParam issueAMod = eNoBlck );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// re-opens an arbitrary subset of facilities
+ /** Method to re-opens an arbitrary subset of facilities, i.e., all those
+  * whose names are found in \p nms. Re-opening a facility that had not been
+  * previously closed does nothing. \p ordered tells if \p nms is already
+  * ordered in increasing  sense. As the && tells, \p nms is "consumed" by
+  * the method, typically being shipped to an appropriate
+  * CapacitatedFacilityLocationBlockSbstMod object. */
+
+ void open_facilities( Subset && nms , bool ordered = false ,
+			ModParam issueMod = eNoBlck ,
+			ModParam issueAMod = eNoBlck );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// re-opens the given facility
+
+ void open_facility( Index i , ModParam issueMod = eNoBlck ,
+		               ModParam issueAMod = eNoBlck );
 
 /**@} ----------------------------------------------------------------------*/
 /*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
@@ -1557,17 +1583,16 @@ public:
 
  // problem data- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- Index f_n_facilities;    ///< the number of facilities
- Index f_n_customers;    ///< the number of customers
+ Index f_n_facilities;  ///< the number of facilities
+ Index f_n_customers;   ///< the number of customers
 
- DVector v_capacity;     ///< vector of facility capacities
- CVector v_fixed_cost;   ///< vector of facility fixed costs
- DVector v_demand;       ///< vector of customers demands
- CMatrix v_transp_cost;  ///< matrix of transportation costs
-                         /**< The matrix of transportation costs is
-			  * arranged customer-wise, i.e.,
-  * v_transp_cost[ j ][ i ] is the *unitary* transportation cost between
-  * customer i and facility j. */
+ DVector v_capacity;    ///< vector of facility capacities
+ CVector v_f_cost;      ///< vector of facility fixed costs
+ DVector v_demand;      ///< vector of customers demands
+ CMatrix v_t_cost;      ///< matrix of transportation costs
+                        /**< The matrix of transportation costs is arranged
+			 * facility-wise, i.e., v_t_cost[ i ][ j ] is the
+  * *total* transportation cost between facility i and customer j. */
 
  // abstract representation stuff - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1617,7 +1642,7 @@ public:
 
  std::list< FRowConstraint > v_sfc;   ///< the strong forcing constraints
 
- FRealObjective c;                    ///< the (linear) objective function
+ FRealObjective f_obj;                ///< the (linear) objective function
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
@@ -1693,10 +1718,26 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
+
+ LinearFunction * get_lfo( void ) {
+  #ifdef NDEBUG
+   return( static_cast< LinearFunction * >( f_obj.get_function() ) );
+  #else
+   auto lfo = dynamic_cast< LinearFunction * >( f_obj.get_function() );
+   assert( lfo );
+   return( lfo );
+  #endif
+  }
+
+/*--------------------------------------------------------------------------*/
  
  void guts_of_destructor( void );
 
- void guts_of_add_Modification( c_p_Mod mod , ChnlName chnl );
+ void guts_of_add_ModificationSF( c_p_Mod mod , ChnlName chnl );
+
+ void guts_of_add_ModificationKF( c_p_Mod mod , ChnlName chnl );
+
+ void guts_of_add_ModificationFF( c_p_Mod mod , ChnlName chnl );
 
  bool guts_of_map_f_Mod_copy(
 			CapacitatedFacilityLocationBlock * R3B , c_p_Mod mod ,
@@ -1752,7 +1793,7 @@ public:
 /*--------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-};  // end( class( CapacitatedFacilityLocationBlock ) )
+ };  // end( class( CapacitatedFacilityLocationBlock ) )
 
 /*--------------------------------------------------------------------------*/
 /*-------------- CLASS CapacitatedFacilityLocationBlockMod -----------------*/
