@@ -118,22 +118,7 @@ static LinearFunction * LF( Function * f ) {
  return( static_cast< LinearFunction * >( f ) );
  }
 
-/*----------------------------------------------------------------------------
-
-// returns the number of elements where two vectors differ
-
-template< typename T >
-static Index countdiff( T beg , T end , T cmp )
-{
- Index ndiff = 0;
- for( ; beg != end ; )
-  if( *(beg++) != *(cmp++) )
-   ndiff++;
-
- return( ndiff );
- }
-
- ----------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------*/
 // returns true if two vectors differ, one of them being given as a base
 // vector and a subset of indices
 
@@ -152,28 +137,19 @@ static bool is_equal( std::vector<T> & vec , c_Subset & nms ,
  return( true );
  }
 
-------------------------------------------------------------------------------
-// returns the number of elements where two vectors differ, one of them
-// being given as a base vector and a subset of indices
+/*--------------------------------------------------------------------------*/
+// copies one vector to a given subset of another
 
 template< typename T >
-static Index countdiff( std::vector<T> & vec , c_Subset & nms ,
-			typename std::vector<T>::const_iterator cmp ,
-			Index n_max )
+static void copyidx( std::vector< T > & vec , c_Subset & nms ,
+		     typename std::vector< T >::const_iterator cpy )
 {
- Index ndiff = 0;
- for( auto nm : nms ) {
-  if( nm >= n_max )
-   throw( std::invalid_argument( "invalid name in nms" ) );
-  if( vec[ nm ] != *(cmp++) )
-   ndiff++;
-  }
-
- return( ndiff );
+ for( auto nm : nms )
+  vec[ nm ] = *(cpy++);
  }
 
-------------------------------------------------------------------------------
-// copys one vector to a given subset of another
+/*----------------------------------------------------------------------------
+// re-order the parallel vec and nms in increasing order of nms
 
 template< typename T >
 static void copyidx( std::vector< T > & vec , c_Subset & nms ,
@@ -466,6 +442,14 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   // construct one knapsack problem for each facility
   v_Block.resize( f_n_facilities );
 
+  // first construct the vector and sort it, so that the pointers are
+  // increasing with the facility index i, which speeds up some operations
+  for( auto & bi : v_Block )
+   bi = new BinaryKnapsackBlock( this );
+
+  std::sort( v_Block.begin() , v_Block.end() );
+
+  // now load the appropriate data into each BinaryKnapsackBlock
   BinaryKnapsackBlock::doubleVec W( f_n_customers + 1 );
   BinaryKnapsackBlock::doubleVec C( f_n_customers + 1 );
   BinaryKnapsackBlock::boolVec I;
@@ -487,11 +471,9 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
    W[ f_n_customers ] = - v_capacity[ i ];
    C[ f_n_customers ] = v_f_cost[ i ];
 
-   auto ki = new BinaryKnapsackBlock( this );
-   ki->load( f_n_customers + 1 , 0 , W , P , I );
-   ki->set_objective_sense( false , eNoMod , eNoMod );
-   ki->generate_abstract_variables();
-   v_Block[ i ] = ki;
+   v_Block[ i ]->load( f_n_customers + 1 , 0 , W , P , I );
+   v_Block[ i ]->set_objective_sense( false , eNoMod , eNoMod );
+   v_Block[ i ]->generate_abstract_variables();
    }
 
   return:
@@ -925,21 +907,25 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
 
  // construct deficits vector
  Index i = 0;
- while( i <= f_n_facilities )
+ while( i < f_n_facilities )  // facilities nodes
   B[ i++ ] = 0;
 
- for( Index j = 0 ; j < f_n_customers ; j++ ) {
-  B[ 0 ] -= v_demand[ j ];
+ FNumber todD = 0;
+ for( Index j = 0 ; j < f_n_customers ; j++ ) {  // customers nodes
+  todD -= v_demand[ j ];
   B[ i++ ] = v_demand[ j ];
   }
 
+ B[ i ] = todD;  // super-source
+
  // construct arcs SN, EN, U, C: "common part" of the graph
  Index a = 0;
+ const Index ss = f_n_facilities + f_n_customers + 1;
 
  // first the source -> facility arcs
  for( i = 0 ; i < f_n_facilities ; ++i ) {
-  SN[ a ] = 1;
-  EN[ a ] = i + 2;
+  SN[ a ] = 22;
+  EN[ a ] = i + 1;
   U[ a ] = v_capacity[ i ];
   C[ a++ ] = v_f_cost[ i ] / v_capacity[ i ];
   }
@@ -947,8 +933,8 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
  // now the facility -> customers arcs
   for( i = 0 ; i < f_n_facilities ; ++i )
    for( Index j = 0 ; j < f_n_customers ; ++j ) {
-    SN[ a ] = i + 2;
-    EN[ a ] = f_n_facilities + 2 + j;
+    SN[ a ] = i + 1;
+    EN[ a ] = f_n_facilities + 1 + j;
     U[ a ] = Inf< MCFClass::FNumber >();
     C[ a++ ] = v_t_cost[ i ][ j ] / v_demand[ j ];
     }
@@ -957,8 +943,8 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
   // now the artificial arcs to ensure feasibility
 
   for( Index j = 0 ; j < f_n_customers ; ++j ) {
-   SN[ a ] = 1;
-   EN[ a ] = f_n_facilities + 2 + j;
+   SN[ a ] = ss;
+   EN[ a ] = f_n_facilities + 1 + j;
    U[ a ] = Inf< MCFClass::FNumber >();
 
    // compute an upper bound on the worst-case transportation cost
@@ -1385,7 +1371,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
   if( ( AR & FormMsk ) != KskForm )
    // since modify_coefficients owns both vectors, two copies are made
    get_lfo()->modify_coefficients( CVector( NCost , NCost + nms.size() ) ,
-				   Subset( nms ) , ordered , issueAMod );
+				   Subset( nms ) , true , issueAMod );
   else
    for( Index i = rng.first ; i < rng.second ; ++i )
     KB( v_Block[ i ] )->chg_weight( *(NCost++) , f_n_customers , issueMod ,
@@ -1399,18 +1385,12 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
 
- if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
-  // ensure the names are ordered even if they were not so originally
-  if( ! ordered )
-   std::sort( nms.begin() , nms.end() );
-
+ if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockSbstMod >( this ,
                             CapacitatedFacilityLocationBlockMod::eChgFCost ,
 			    std::move( nms ) ) ,
 			   Observer::par2chnl( issueMod ) );
-  }
-
  #if CHECK_DS
   CheckAbsVSPhys();
  #endif
@@ -1933,8 +1913,8 @@ void CapacitatedFacilityLocationBlock::chg_customers_demands( c_DV_it NDem ,
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
     MCFB( v_Block[ 1 ] )->chg_dfcts( NCap ,
-				     Range( rng.first + f_n_facilities + 1 ,
-					    rng.second + f_n_facilities + 1 ) ,
+				     Range( rng.first + f_n_facilities ,
+					    rng.second + f_n_facilities ) ,
 				     issueMod , issueAMod );
    }
   }
@@ -2007,7 +1987,7 @@ void CapacitatedFacilityLocationBlock::chg_customers_demands( c_DV_it NDem ,
    default: {  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
     Subset nnms( nms.begin() , nms.end() );  // copy and translate nms
     for( auto & el : nnms )
-     el+= f_n_facilities + 1;
+     el+= f_n_facilities;
     MCFB( v_Block[ 1 ] )->chg_dfcts( NDem , nnms , true ,
 				     issueMod , issueAMod );
     }
@@ -2072,7 +2052,7 @@ void CapacitatedFacilityLocationBlock::chg_customers_demand( Demand NDem ,
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    MCFB( v_Block[ 1 ] )->chg_dfct( NDem , j + f_n_facilities + 1 ,
+    MCFB( v_Block[ 1 ] )->chg_dfct( NDem , j + f_n_facilities ,
 				    issueMod , issueAMod );
    }
   }
@@ -2103,456 +2083,528 @@ void CapacitatedFacilityLocationBlock::close_facilities( Range rng ,
 {
  rng.second = std::min( rng.second , f_n_facilities );
  if( rng.second <= rng.first )  // nothing to change
-  return;                 // cowardly (and silently) return
+  return;                       // cowardly (and silently) return
 
+ if( ! ( AR & HasVar ) )
+  throw( std::logic_error(
+	       "close_facilities unavailable if Variable not generated" ) );
 
+ // TODO: if some changes are "fake", restrict the range
+ Index cnt = 0;
+ for( Index i = rng.first ; i < rng.second ; ++i )
+  if( ( ! get_y( i ).is_fixed() ) || ( get_y( i ).get_value() != 0 ) )
+   ++cnt;
 
-
-
+ if( ! cnt )  // all facilities are fixed already
+  return;     // nothing to do
 
  // since the physical and abstract representation are the same, anything
  // that has to do with the abstract representation is skipped in the
  // "dry run" case; but the "phisical Modification" is issued anyway
-
  if( not_dry_run( issueAMod ) ) {
-  Index ndiff = 0;
-  Index i = rng.first;
 
-  // static part
-  for( ; i < std::min( rng.second , get_NStaticArcs() ) ; ++i )
-   if( ! x[ i ].is_fixed() )
-    ndiff++;
+  // if appropriate, open a new channel to bunch up all abstract Modification
+  auto iAM = make_amod_param( issueAMod , cnt );
 
-  // dynamic part
-  for( auto dxi = dx.begin() ; i++ < rng.second ; )
-   if( ! (dxi++)->is_fixed() )
-    ndiff++;
-
-  if( ! ndiff )
-   return;
-
-  // the physical and abstract representation are the same- - - - - - - - - -
-  // change both (doh!), and if so instructed also issue abstract Modification
-
-  c_ModParam ampar = make_amod_param( issueAMod , ndiff );
-
-  // static part
-  for( i = rng.first ; i < std::min( rng.second , get_NStaticArcs() ) ; ++i )
-   if( ! x[ i ].is_fixed() ) {
-    x[ i ].set_value( 0 );
-    x[ i ].is_fixed( true , ampar );
+  if( ( AR & FormMsk ) != KskForm )
+   for( Index i = rng.first ; i < rng.second ; ++i ) {
+    v_y[ i ].set_value( 0 );
+    v_y[ i ].is_fixed( true , iAM );
+    }
+  else
+   for( Index i = rng.first ; i < rng.second ; ++i ) {
+    KB( v_Block[ i ] )->get_Var( f_n_customers ).set_value( 0 );
+    KB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , iAM );
     }
 
-  // dynamic part
-  for( auto dxi = dx.begin() ; i++ < rng.second ; ++dxi )
-   if( ! dxi->is_fixed() ) {
-    dxi->set_value( 0 );
-    dxi->is_fixed( true , ampar );
-    }
-
-  unmake_amod_param( issueAMod , ampar , ndiff );
+  // if a new channel had been opened, close it
+  unmake_amod_param( issueAMod , iAM , cnt );
   }
 
- f_cond_lower = NAN;  // reset conditional bounds
-
- // TODO: if some changes are "fake", restrict the range
+ // conditional bounds could be reset if they were computed looking at
+ // facilities fixings, but they are not and therefore they are not (reset)
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockRngdMod>( this ,
-				             CapacitatedFacilityLocationBlockMod::eCloseArc , rng ) ,
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockRngdMod>( this ,
+			     CapacitatedFacilityLocationBlockMod::eCloseF ,
+								     rng ) ,
 			   Observer::par2chnl( issueMod ) );
  #if CHECK_DS
   CheckAbsVSPhys();
  #endif
 
- }  // end( CapacitatedFacilityLocationBlock::close_arcs( range ) )
+ }  // end( CapacitatedFacilityLocationBlock::close_facilities( range ) )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::close_arcs( Subset && nms , const bool ordered  ,
-			   c_ModParam issueMod , c_ModParam issueAMod )
+void CapacitatedFacilityLocationBlock::close_facilities( Subset && nms ,
+		      bool ordered , ModParam issueMod , ModParam issueAMod )
 {
- if( nms.empty() )
-  return;
+ if( nms.empty() )  // nothing to change
+  return;           // cowardly (and silently) return
+
+ if( ! ( AR & HasVar ) )
+  throw( std::logic_error(
+	       "close_facilities unavailable if Variable not generated" ) );
 
  // ensure the names are ordered even if they were not so originally
  if( ! ordered )
   std::sort( nms.begin() , nms.end() );
 
- if( nms.back() >= get_NArcs() )
-  throw( std::invalid_argument( "invalid arc name" ) );
+ if( nms.back() >= get_NFacilities() )
+  throw( std::invalid_argument( "invalid facility name" ) );
+
+ // TODO: if some changes are "fake", restrict the subset
+ Index cnt = 0;
+ for( auto i : nms )
+  if( ( ! get_y( i ).is_fixed() ) || ( get_y( i ).get_value() != 0 ) )
+   ++cnt;
+
+ if( ! cnt )  // all facilities are fixed already
+  return;     // nothing to do
 
  // since the physical and abstract representation are the same, anything
  // that has to do with the abstract representation is skipped in the
  // "dry run" case; but the "phisical Modification" is issued anyway
-
  if( not_dry_run( issueAMod ) ) {
-  Index ndiff = 0;
 
-  // static part
-  auto nit = nms.begin();
-  for( ; ( nit != nms.end() ) && ( *nit < get_NStaticArcs() ) ; ++nit )
-   if( ! x[ *nit ].is_fixed() )
-    ndiff++;
+  // if appropriate, open a new channel to bunch up all abstract Modification
+  auto iAM = make_amod_param( issueAMod , cnt );
 
-  // dynamic part
-  auto dxi = dx.begin();
-  for( Index i = get_NStaticArcs() ; nit != nms.end() ; ++i , ++dxi )
-   if( *nit == i ) {
-    if( ! dxi->is_fixed() )
-     ndiff++;
-    ++nit;
+  if( ( AR & FormMsk ) != KskForm )
+   for( auto i : nms ) {
+    v_y[ i ].set_value( 0 );
+    v_y[ i ].is_fixed( true , iAM );
+    }
+  else
+   for( auto i : nms ) {
+    KB( v_Block[ i ] )->get_Var( f_n_customers ).set_value( 0 );
+    KB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , iAM );
     }
 
-  if( ! ndiff )
-   return;
-
-  // the physical and abstract representation are the same- - - - - - - - - -
-  // change both (doh!), and if so instructed also issue abstract Modification
-
-  c_ModParam ampar = make_amod_param( issueAMod , ndiff );
-
-  // static part
-  for( nit = nms.begin() ; ( nit != nms.end() ) &&
-	                   ( *nit < get_NStaticArcs() ) ; ++nit )
-   if( ! x[ *nit ].is_fixed() ) {
-    x[ *nit ].set_value( 0 );
-    x[ *nit ].is_fixed( true , ampar );
-    }
-
-  // dynamic part
-  dxi = dx.begin();
-  for( Index i = get_NStaticArcs() ; nit != nms.end() ; ++i , ++dxi )
-   if( *nit == i ) {
-    if( ! dxi->is_fixed() ) {
-     dxi->set_value( 0 );
-     dxi->is_fixed( true , ampar );
-     }
-    ++nit;
-    }
-
-  unmake_amod_param( issueAMod , ampar , ndiff );
+  // if a new channel had been opened, close it
+  unmake_amod_param( issueAMod , iAM , cnt );
   }
 
- f_cond_lower = NAN;  // reset conditional bounds
+ // conditional bounds could be reset if they were computed looking at
+ // facilities fixings, but they are not and therefore they are not (reset)
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockSbstMod>( this ,
-                                 CapacitatedFacilityLocationBlockMod::eCloseArc , std::move( nms ) ) ,
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockSbstMod>( this ,
+			     CapacitatedFacilityLocationBlockMod::eCloseF ,
+			     std::move( nms ) ) ,
 			   Observer::par2chnl( issueMod ) );
  #if CHECK_DS
   CheckAbsVSPhys();
  #endif
 
- }  // end( CapacitatedFacilityLocationBlock::close_arcs( subset ) )
+ }  // end( CapacitatedFacilityLocationBlock::close_facilities( subset ) )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::close_arc( c_Index arc ,
-			  c_ModParam issueMod , c_ModParam issueAMod )
+void CapacitatedFacilityLocationBlock::close_facility( Index i ,
+			             ModParam issueMod , ModParam issueAMod )
 {
- if( arc >= get_NArcs() )
-  throw( std::invalid_argument( "invalid arc name" ) );
+ if( i >= f_n_facilities )
+ throw( std::invalid_argument( "invalid facility name" ) );
+
+ if( ! ( AR & HasVar ) )
+  throw( std::logic_error(
+	       "close_facilities unavailable if Variable not generated" ) );
+
+ if( get_y( i ).is_fixed() && ( get_y( i ).get_value() == 0 ) )  // fixed
+  return;     // nothing to do
 
  // since the physical and abstract representation are the same, anything
  // that has to do with the abstract representation is skipped in the
  // "dry run" case; but the "phisical Modification" is issued anyway
-
  if( not_dry_run( issueAMod ) ) {
-  auto xa = i2p_x( arc );
 
-  if( xa->is_fixed() )
-   return;
-
-  xa->set_value( 0 );
-
-  // the physical and abstract representation are the same- - - - - - - - - -
-  // change both (doh!), and if so instructed also issue abstract Modification
-
-  xa->is_fixed( true , issueAMod );
+  if( ( AR & FormMsk ) != KskForm ) {
+   v_y[ i ].set_value( 0 );
+   v_y[ i ].is_fixed( true , issueAMod );
+   }
+  else {
+   KB( v_Block[ i ] )->get_Var( f_n_customers ).set_value( 0 );
+   KB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , issueAMod );
+   }
   }
 
- f_cond_lower = NAN;  // reset conditional bounds
+ // conditional bounds could be reset if they were computed looking at
+ // facilities fixings, but they are not and therefore they are not (reset)
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockRngdMod>( this ,
-			   CapacitatedFacilityLocationBlockMod::eCloseArc , Range( arc , arc + 1 ) ) ,
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockRngdMod>( this ,
+			     CapacitatedFacilityLocationBlockMod::eCloseF ,
+			     Range( i , i + 1 ) ) ,
 			   Observer::par2chnl( issueMod ) );
  #if CHECK_DS
   CheckAbsVSPhys();
  #endif
 
- }  // end( CapacitatedFacilityLocationBlock::close_arc )
+ }  // end( CapacitatedFacilityLocationBlock::close_facility )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::open_arcs( Range rng ,
-			  c_ModParam issueMod , c_ModParam issueAMod )
+void CapacitatedFacilityLocationBlock::open_facilities( Range rng ,
+			             ModParam issueMod , ModParam issueAMod )
 {
- rng.second = std::min( rng.second , get_NArcs() );
+ rng.second = std::min( rng.second , f_n_facilities );
  if( rng.second <= rng.first )  // nothing to change
   return;                       // cowardly (and silently) return
 
+ if( ! ( AR & HasVar ) )
+  throw( std::logic_error(
+	       "open_facilities unavailable if Variable not generated" ) );
+
+ // TODO: if some changes are "fake", restrict the range
+ Index cnt = 0;
+ for( Index i = rng.first ; i < rng.second ; ++i )
+  if( get_y( i ).is_fixed() )
+   ++cnt;
+
+ if( ! cnt )  // all facilities are open already
+  return;     // nothing to do
+
  // since the physical and abstract representation are the same, anything
  // that has to do with the abstract representation is skipped in the
  // "dry run" case; but the "phisical Modification" is issued anyway
-
  if( not_dry_run( issueAMod ) ) {
-  Index ndiff = 0;
-  Index i = rng.first;
 
-  // static part
-  for( ; i < std::min( rng.second , get_NStaticArcs() ) ; ++i )
-   if( x[ i ].is_fixed() )
-    ndiff++;
+  // if appropriate, open a new channel to bunch up all abstract Modification
+  auto iAM = make_amod_param( issueAMod , cnt );
 
-  // dynamic part
-  for( auto dxi = dx.begin() ; i++ < rng.second ; )
-   if( (dxi++)->is_fixed() )
-    ndiff++;
+  if( ( AR & FormMsk ) != KskForm )
+   for( Index i = rng.first ; i < rng.second ; ++i )
+    v_y[ i ].is_fixed( false , iAM );
+  else
+   for( Index i = rng.first ; i < rng.second ; ++i )
+    KB( v_Block[ i ] )->fix_x( false , f_n_customers , issueMod , iAM );
 
-  if( ! ndiff )
-   return;
-
-  // the physical and abstract representation are the same- - - - - - - - - -
-  // change both (doh!), and if so instructed also issue abstract Modification
-
-  c_ModParam ampar = make_amod_param( issueAMod , ndiff );
-
-  // static part
-  for( i = rng.first ; i < std::min( rng.second , get_NStaticArcs() ) ; ++i )
-   if( x[ i ].is_fixed() )
-    x[ i ].is_fixed( false , ampar );
-
-  // dynamic part
-  for( auto dxi = dx.begin() ; i++ < rng.second ; ++dxi )
-   if( dxi->is_fixed() )
-    dxi->is_fixed( false , ampar );
-
-  unmake_amod_param( issueAMod , ampar , ndiff );
+  // if a new channel had been opened, close it
+  unmake_amod_param( issueAMod , iAM , cnt );
   }
 
- f_cond_lower = NAN;  // reset conditional bounds
-
- // TODO: if some changes are "fake", restrict the range
+ // conditional bounds could be reset if they were computed looking at
+ // facilities fixings, but they are not and therefore they are not (reset)
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockRngdMod>( this ,
-				             CapacitatedFacilityLocationBlockMod::eOpenArc , rng ) ,
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockRngdMod>( this ,
+			     CapacitatedFacilityLocationBlockMod::eOpenF ,
+								     rng ) ,
 			   Observer::par2chnl( issueMod ) );
  #if CHECK_DS
   CheckAbsVSPhys();
  #endif
 
- }  // end( CapacitatedFacilityLocationBlock::open_arcs( range ) )
+ }  // end( CapacitatedFacilityLocationBlock::open_facilities( range ) )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::open_arcs( Subset && nms , const bool ordered  ,
-			  c_ModParam issueMod , c_ModParam issueAMod )
+void CapacitatedFacilityLocationBlock::open_facilities( Subset && nms ,
+		      bool ordered , ModParam issueMod , ModParam issueAMod )
 {
- if( nms.empty() )
-  return;
+ if( nms.empty() )  // nothing to change
+  return;           // cowardly (and silently) return
+
+ if( ! ( AR & HasVar ) )
+  throw( std::logic_error(
+	        "open_facilities unavailable if Variable not generated" ) );
 
  // ensure the names are ordered even if they were not so originally
  if( ! ordered )
   std::sort( nms.begin() , nms.end() );
 
- if( nms.back() >= get_NArcs() )
-  throw( std::invalid_argument( "invalid arc name" ) );
+ if( nms.back() >= get_NFacilities() )
+  throw( std::invalid_argument( "invalid facility name" ) );
+
+ // TODO: if some changes are "fake", restrict the subset
+ Index cnt = 0;
+ for( auto i : nms )
+  if( get_y( i ).is_fixed() )
+   ++cnt;
+
+ if( ! cnt )  // all facilities are open already
+  return;     // nothing to do
 
  // since the physical and abstract representation are the same, anything
  // that has to do with the abstract representation is skipped in the
  // "dry run" case; but the "phisical Modification" is issued anyway
-
  if( not_dry_run( issueAMod ) ) {
-  Index ndiff = 0;
 
-  // static part
-  auto nit = nms.begin();
-  for( ; ( nit != nms.end() ) && ( *nit < get_NStaticArcs() ) ; ++nit )
-   if( x[ *nit ].is_fixed() )
-    ndiff++;
+  // if appropriate, open a new channel to bunch up all abstract Modification
+  auto iAM = make_amod_param( issueAMod , cnt );
 
-  // dynamic part
-  auto dxi = dx.begin();
-  for( Index i = get_NStaticArcs() ; nit != nms.end() ; ++i , ++dxi )
-   if( *nit == i ) {
-    if( dxi->is_fixed() )
-     ndiff++;
-    ++nit;
-    }
+  if( ( AR & FormMsk ) != KskForm )
+   for( auto i : nms )
+    v_y[ i ].is_fixed( true , iAM );
+  else
+   for( auto i : nms )
+    KB( v_Block[ i ] )->fix_x( false , f_n_customers , issueMod , iAM );
 
-  if( ! ndiff )
-   return;
-
-  // the physical and abstract representation are the same- - - - - - - - - -
-  // change both (doh!), and if so instructed also issue abstract Modification
-
-  c_ModParam ampar = make_amod_param( issueAMod , ndiff );
-
-  // static part
-  for( nit = nms.begin() ; ( nit != nms.end() ) &&
-	                   ( *nit < get_NStaticArcs() ) ; ++nit )
-   if( x[ *nit ].is_fixed() )
-    x[ *nit ].is_fixed( false , ampar );
-
-  // dynamic part
-  dxi = dx.begin();
-  for( Index i = get_NStaticArcs() ; nit != nms.end() ; ++i , ++dxi )
-   if( *nit == i ) {
-    if( dxi->is_fixed() )
-     dxi->is_fixed( false , ampar );
-    ++nit;
-    }
-
-  unmake_amod_param( issueAMod , ampar , ndiff );
+  // if a new channel had been opened, close it
+  unmake_amod_param( issueAMod , iAM , cnt );
   }
 
- f_cond_lower = NAN;  // reset conditional bounds
-
- // TODO: eliminate from nms the "fake" changes
+ // conditional bounds could be reset if they were computed looking at
+ // facilities fixings, but they are not and therefore they are not (reset)
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockSbstMod>( this ,
-                                  CapacitatedFacilityLocationBlockMod::eOpenArc , std::move( nms ) ) ,
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockSbstMod>( this ,
+			     CapacitatedFacilityLocationBlockMod::eOpenF ,
+			     std::move( nms ) ) ,
 			   Observer::par2chnl( issueMod ) );
  #if CHECK_DS
   CheckAbsVSPhys();
  #endif
 
- }  // end( CapacitatedFacilityLocationBlock::open_arcs( subset ) )
+ }  // end( CapacitatedFacilityLocationBlock::open_facilities( subset ) )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::open_arc( c_Index arc ,
-			 c_ModParam issueMod , c_ModParam issueAMod )
+void CapacitatedFacilityLocationBlock::open_facility( Index i ,
+			             ModParam issueMod , ModParam issueAMod )
 {
- if( arc >= get_NArcs() )
-  throw( std::invalid_argument( "invalid arc name" ) );
+ if( i >= f_n_facilities )
+ throw( std::invalid_argument( "invalid facility name" ) );
+
+ if( ! ( AR & HasVar ) )
+  throw( std::logic_error(
+	       "open_facilities unavailable if Variable not generated" ) );
+
+ if( ! get_y( i ).is_fixed() )  // fixed already
+  return;                       // nothing to do
 
  // since the physical and abstract representation are the same, anything
  // that has to do with the abstract representation is skipped in the
  // "dry run" case; but the "phisical Modification" is issued anyway
-
  if( not_dry_run( issueAMod ) ) {
-  auto xa = i2p_x( arc );
 
-  if( ! xa->is_fixed() )
-   return;
-
-  // the physical and abstract representation are the same- - - - - - - - - -
-  // change both (doh!), and if so instructed also issue abstract Modification
-
-  xa->is_fixed( false , issueAMod );
+  if( ( AR & FormMsk ) != KskForm )
+   v_y[ i ].is_fixed( false , issueAMod );
+  else
+   KB( v_Block[ i ] )->fix_x( false , f_n_customers , issueMod , issueAMod );
   }
 
- f_cond_lower = NAN;  // reset conditional bounds
+ // conditional bounds could be reset if they were computed looking at
+ // facilities fixings, but they are not and therefore they are not (reset)
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
-  Block::add_Modification( std::make_shared<CapacitatedFacilityLocationBlockRngdMod>( this ,
-			   CapacitatedFacilityLocationBlockMod::eOpenArc , Range( arc , arc + 1 ) ) ,
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockRngdMod >( this ,
+			     CapacitatedFacilityLocationBlockMod::eCloseF ,
+			     Range( i , i + 1 ) ) ,
 			   Observer::par2chnl( issueMod ) );
  #if CHECK_DS
   CheckAbsVSPhys();
  #endif
 
- }  // end( CapacitatedFacilityLocationBlock::open_arc )
+ }  // end( CapacitatedFacilityLocationBlock::open_facility )
 
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::fix_open_facilities( Range rng ,
+			             ModParam issueMod , ModParam issueAMod )
+{
+ rng.second = std::min( rng.second , f_n_facilities );
+ if( rng.second <= rng.first )  // nothing to change
+  return;                       // cowardly (and silently) return
+
+ if( ! ( AR & HasVar ) )
+  throw( std::logic_error(
+	     "fix_open_facilities unavailable if Variable not generated" ) );
+
+ // TODO: if some changes are "fake", restrict the range
+ Index cnt = 0;
+ for( Index i = rng.first ; i < rng.second ; ++i )
+  if( ( ! get_y( i ).is_fixed() ) || ( get_y( i ).get_value() != 1 ) )
+   ++cnt;
+
+ if( ! cnt )  // all facilities are fixed open already
+  return;     // nothing to do
+
+ // since the physical and abstract representation are the same, anything
+ // that has to do with the abstract representation is skipped in the
+ // "dry run" case; but the "phisical Modification" is issued anyway
+ if( not_dry_run( issueAMod ) ) {
+
+  // if appropriate, open a new channel to bunch up all abstract Modification
+  auto iAM = make_amod_param( issueAMod , cnt );
+
+  if( ( AR & FormMsk ) != KskForm )
+   for( Index i = rng.first ; i < rng.second ; ++i ) {
+    v_y[ i ].set_value( 1 );
+    v_y[ i ].is_fixed( true , iAM );
+    }
+  else
+   for( Index i = rng.first ; i < rng.second ; ++i ) {
+    KB( v_Block[ i ] )->get_Var( f_n_customers ).set_value( 1 );
+    KB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , iAM );
+    }
+
+  // if a new channel had been opened, close it
+  unmake_amod_param( issueAMod , iAM , cnt );
+  }
+
+ // conditional bounds could be reset if they were computed looking at
+ // facilities fixings, but they are not and therefore they are not (reset)
+
+ if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockRngdMod >( this ,
+			     CapacitatedFacilityLocationBlockMod::eBuyF ,
+								     rng ) ,
+			   Observer::par2chnl( issueMod ) );
+ #if CHECK_DS
+  CheckAbsVSPhys();
+ #endif
+
+ }  // end( CapacitatedFacilityLocationBlock::fix_open_facilities( range ) )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::fix_open_facilities( Subset && nms ,
+		      bool ordered , ModParam issueMod , ModParam issueAMod )
+{
+ if( nms.empty() )  // nothing to change
+  return;           // cowardly (and silently) return
+
+ if( ! ( AR & HasVar ) )
+  throw( std::logic_error(
+	     "fix_open_facilities unavailable if Variable not generated" ) );
+
+ // ensure the names are ordered even if they were not so originally
+ if( ! ordered )
+  std::sort( nms.begin() , nms.end() );
+
+ if( nms.back() >= get_NFacilities() )
+  throw( std::invalid_argument( "invalid facility name" ) );
+
+ // TODO: if some changes are "fake", restrict the subset
+ Index cnt = 0;
+ for( auto i : nms )
+  if( ( ! get_y( i ).is_fixed() ) || ( get_y( i ).get_value() != 0 ) )
+   ++cnt;
+
+ if( ! cnt )  // all facilities are fixed already
+  return;     // nothing to do
+
+ // since the physical and abstract representation are the same, anything
+ // that has to do with the abstract representation is skipped in the
+ // "dry run" case; but the "phisical Modification" is issued anyway
+ if( not_dry_run( issueAMod ) ) {
+
+  // if appropriate, open a new channel to bunch up all abstract Modification
+  auto iAM = make_amod_param( issueAMod , cnt );
+
+  if( ( AR & FormMsk ) != KskForm )
+   for( auto i : nms ) {
+    v_y[ i ].set_value( 1 );
+    v_y[ i ].is_fixed( true , iAM );
+    }
+  else
+   for( auto i : nms ) {
+    KB( v_Block[ i ] )->get_Var( f_n_customers ).set_value( 1 );
+    KB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , iAM );
+    }
+
+  // if a new channel had been opened, close it
+  unmake_amod_param( issueAMod , iAM , cnt );
+  }
+
+ // conditional bounds could be reset if they were computed looking at
+ // facilities fixings, but they are not and therefore they are not (reset)
+
+ if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockSbstMod >( this ,
+			     CapacitatedFacilityLocationBlockMod::eBuyF ,
+			     std::move( nms ) ) ,
+			   Observer::par2chnl( issueMod ) );
+ #if CHECK_DS
+  CheckAbsVSPhys();
+ #endif
+
+ }  // end( CapacitatedFacilityLocationBlock::fix_open_facilities( subset ) )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::fix_open_facility( Index i ,
+			             ModParam issueMod , ModParam issueAMod )
+{
+ if( i >= f_n_facilities )
+ throw( std::invalid_argument( "invalid facility name" ) );
+
+ if( ! ( AR & HasVar ) )
+  throw( std::logic_error(
+	       "close_facilities unavailable if Variable not generated" ) );
+
+ if( get_y( i ).is_fixed() && ( get_y( i ).get_value() ==  ) )  // fixed open
+  return;     // nothing to do
+
+ // since the physical and abstract representation are the same, anything
+ // that has to do with the abstract representation is skipped in the
+ // "dry run" case; but the "phisical Modification" is issued anyway
+ if( not_dry_run( issueAMod ) ) {
+
+  if( ( AR & FormMsk ) != KskForm ) {
+   v_y[ i ].set_value( 1 );
+   v_y[ i ].is_fixed( true , issueAMod );
+   }
+  else {
+   KB( v_Block[ i ] )->get_Var( f_n_customers ).set_value( 1 );
+   KB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , issueAMod );
+   }
+  }
+
+ // conditional bounds could be reset if they were computed looking at
+ // facilities fixings, but they are not and therefore they are not (reset)
+
+ if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockRngdMod >( this ,
+			     CapacitatedFacilityLocationBlockMod::eBuyF ,
+			     Range( i , i + 1 ) ) ,
+			   Observer::par2chnl( issueMod ) );
+ #if CHECK_DS
+  CheckAbsVSPhys();
+ #endif
+
+ }  // end( CapacitatedFacilityLocationBlock::fix_open_facility )
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::print( std::ostream &output ) const
+void CapacitatedFacilityLocationBlock::print( std::ostream & output ) const
 {
  if( verbosity_lvl != Block::complete ) {  // non-complete version
   // only basic information 
-  output << "CapacitatedFacilityLocationBlock with: " << NNodes << " nodes and " << SN.size()
-	 << " arcs" << std::endl;
-
-  if( verbosity_lvl == Block::high ) {     // print the graph
-   for( Index i = 0 ; i < get_NNodes() ; ++i )
-    if( B[ i ] != 0 )
-     output << "B[ " << i + 1 << " ] = " << B[ i ] << std::endl;
-
-   if( C.empty() )
-    if( U.empty() )
-     output << "all arcs have 0 cost and +Inf upper bound" << std::endl;
-    else {
-     for( Index i = 0 ; i < get_NArcs() ; ++i )
-      if( ! is_deleted( i ) ) {
-       output << "( " << SN[ i ] << " , " << EN[ i ] << " ): U = ";
-       print_UB( output , U[ i ] );
-       output << std::endl;
-       }
-     }
-   else
-    if( U.empty() )
-     for( Index i = 0 ; i < get_NArcs() ; ++i ) {
-      if( ! is_deleted( i ) )
-       output << "( " << SN[ i ] << " , " << EN[ i ] << " ): C = " << C[ i ]
-	      << std::endl;
-      }
-    else
-     for( Index i = 0 ; i < get_NArcs() ; ++i )
-      if( ! is_deleted( i ) ) {
-       output << "( " << SN[ i ] << " , " << EN[ i ] << " ): C = " << C[ i ]
-	      << ", U = ";
-       print_UB( output , U[ i ] );
-       output << std::endl;
-       }
-   }
+  output << "CapacitatedFacilityLocationBlock with: " << f_n_facilities
+	 << " facilities and " << f_n_cistomers() << " customers"
+	 << std::endl;
   }
  else  {
-  // print header in DIMACS standard format
-  output << std::endl << "p min " << get_NNodes() << " ";
-  if( HasDynamicX() ) {
-   Index narcs = get_NStaticArcs();
-   for( Index i = narcs ; i < get_NArcs() ; )
-    if( ! is_deleted( i++ ) )
-     ++narcs;
-   
-   output << narcs << std::endl;
+  // complete version: file in standard ORLib format
+  output << f_n_facilities << std::endl;
+  output << f_n_customers << std::endl << std::endl;
+
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   output << v_capacity[ i ] << "\t" << v_f_cost[ i ] << std::endl;
+  
+  output << std::endl;
+
+  for( Index j = 0 ; i < f_n_customers ; ++i ) {
+   output << v_demand[ j ] << std::endl;
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    output << v_t_cost[ i ][ j ] << "\t";
+   output << std::endl;
    }
-  else
-   output << SN.size() << std::endl;
-
-  // print node descriptors in DIMACS standard format
-  for( Index i = 0 ; i < get_NNodes() ; ++i )
-   if( B[ i ] != 0 )
-    output << "n\t" << i + 1 << "\t" << - B[ i ] << std::endl;
-
-  // print arc descriptors in DIMACS standard format
-  if( C.empty() )
-   if( U.empty() )
-    for( Index i = 0 ; i < get_NArcs() ; ++i ) {
-     if( ! is_deleted( i ) )
-      output << "a\t" << SN[ i ] + 1 << "\t" << EN[ i ] + 1 << "\t0\t+Inf\t0"
-	     << std::endl;
-     }
-   else {
-    for( Index i = 0 ; i < get_NArcs()  ; ++i )
-     if( ! is_deleted( i ) ) {
-      output << "a\t" << SN[ i ] + 1 << "\t" << EN[ i ] + 1 << "\t0\t";
-      print_UB( output , U[ i ] );
-      output << "\t0" << std::endl;
-      }
-    }
-  else
-   if( U.empty() ) {
-    for( Index i = 0 ; i < get_NArcs() ; ++i )
-     if( ! is_deleted( i ) )
-      output << "a\t" << SN[ i ] << "\t" << EN[ i ] << "\t0\t+Inf\t"
-	     << C[ i ] << std::endl;
-    }
-   else
-    for( Index i = 0 ; i < get_NArcs() ; ++i )
-     if( ! is_deleted( i ) ) {
-      output << "a\t" << SN[ i ] << "\t" << EN[ i ] << "\t0\t";
-      print_UB( output , U[ i ] );
-      output << "\t" << C[ i ] << std::endl;
-      }
   }
  }  // end( CapacitatedFacilityLocationBlock::print )
 
@@ -2586,7 +2638,7 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
  v_sat.clear();
 
  // clear the objective function
- c.clear();
+ f_obj.clear();
 
  // delete all Variable
  x.clear();
@@ -2596,7 +2648,7 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
  for( auto bi : v_Block )
   delete bi;
 
- v_Block.clear();
+ v_Block.clear();  // then clear the vector
 
  // explicitly reset all Constraint and Variable
  // this is done for the case where this method is called prior to re-loading
@@ -2614,7 +2666,7 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::guts_of_add_Modification(
+void CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF(
 						c_p_Mod mod , ChnlName chnl )
 {
  // process abstract Modification - - - - - - - - - - - - - - - - - - - - - -
@@ -2622,128 +2674,556 @@ void CapacitatedFacilityLocationBlock::guts_of_add_Modification(
   * to find what this Modification exactly is and appropriately mirror the
   * changes to the "abstract representation" to the "physical one".
   *
-  * Note that since CapacitatedFacilityLocationBlock is a "leaf" Block (has no sub-Block), this
-  * method does not have to deal with GroupModification since these are
-  * produced by Block::add_Modification(), but this method is called
-  * *before* that one is.
+  * Note that since CapacitatedFacilityLocationBlock in the "Standard
+  * Formulation" is a "leaf" Block (has no sub-Block), this method does not
+  * have to deal with GroupModification since these are produced by
+  * Block::add_Modification(), but this method is called *before* that one is.
   *
   * As an important consequence,
   *
-  *   THE STATE OF THE DATA STRUCTURE IN CapacitatedFacilityLocationBlock WHEN THIS METHOD IS
-  *   EXECUTED IS PRECISELY THE ONE IN WHICH THE Modification WAS ISSUED:
-  *   NO COMPLCATED OPERATIONS (Variable AND/OR Constraint BEING
-  *   ADDED/REMOVED ...) CAN HAVE BEEN PERFORMED IN THE MEANTIME
+  *   THE STATE OF THE DATA STRUCTURE IN CapacitatedFacilityLocationBlock
+  *   WHEN THIS METHOD IS EXECUTED IS PRECISELY THE ONE IN WHICH THE
+  *   Modification WAS ISSUED
   *
-  * This assumption drastically simplifies some of the logic here.*/
+  * This assumption drastically simplifies some of the logic here. */
 
  // C05FunctionModLinRngd - - - - - - - - - - - - - - - - - - - - - - - - - -
- if( const auto tmod = dynamic_cast< C05FunctionModLinRngd * >( mod ) ) {
-  if( ! ( AR & HasObj ) )
-   throw( std::invalid_argument( "Modification to non-constructed Objective"
-				 ) );
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( auto tmod = dynamic_cast< const C05FunctionModLinRngd * >( mod ) ) {
+  Index f = tmod->range().first;
+  const Index s = tmod->range().second;
 
-  auto lfo = static_cast<LinearFunction * const>( tmod->function() );
-  if( static_cast<LinearFunction * const>( c.get_function() ) != lfo )
-   throw( std::invalid_argument( "Modification to non-Objective" ) );
+  auto lfo = LF( tmod->function() );
+  if( LF( f_obj.get_function() ) == lfo ) {
+   // Modification to the Objective - - - - - - - - - - - - - - - - - - - - -
 
-  // note: in the following we can assume that the Range in tmod is
-  //       precisely the one we have to use since no Variable can have
-  //       been added or deleted, which saves *a lot* of trouble
+   if( f < f_n_facilities ) {  // facility costs are modified
+    c_Index end = std::min( s , f_n_facilities );
+    c_Index sz = end - f;
+    if( sz == 1 )              // one facility
+     chg_facility_cost( (lfo->get_v_var())[ f ].second , f ,
+			make_par( eNoBlck , chnl ) , eDryRun );
+    else {                     // many facilities
+     CVector NC( sz );
+     auto NCit = NC.begin();
+     for( Index i = f ; i < end ; )
+      *(NCit++) = (lfo->get_v_var())[ i++ ].second;
+     chg_facility_costs( NC.begin() , Range( f , end ) ,
+			 make_par( eNoBlck , chnl ) , eDryRun );
+     }
 
-  if( tmod->range().second == tmod->range().first + 1 )
-   // changing one cost only
-   chg_cost( lfo->get_coefficient( tmod->range().first ) ,
-	     tmod->range().first , make_par( eNoBlck , chnl ) , eDryRun );
-  else {                            // changing many costs at once
-   Vec_CNumber NC( tmod->range().second - tmod->range().first );
-   auto NCit = NC.begin();
-   for( Index i = tmod->range().first ; i < tmod->range().second ; )
-    *(NCit++) = lfo->get_coefficient( i++ );
+    f = f_n_facilities;  // facilities costs accounted for
+    }
 
-   chg_costs( NC.begin() , tmod->range() ,
-	      make_par( eNoBlck , chnl ) , eDryRun );
+   if( s >= f_n_facilities ) {  // transportation costs are modified
+    c_Index sz = s - f;
+    if( sz == 1 )               // one pair
+     chg_transportation_cost( (lfo->get_v_var())[ f ].second ,
+			      f - f_n_facilities ,
+			      make_par( eNoBlck , chnl ) , eDryRun );
+    else {                      // many pairs
+     CVector NC( sz );
+     auto NCit = NC.begin();
+     for( Index i = f ; i < s ; )
+      *(NCit++) = (lfo->get_v_var())[ i++ ].second;
+     chg_transportation_costs( NC.begin() , Range( f - f_n_facilities ,
+						   s - f_n_facilities ) ,
+			       make_par( eNoBlck , chnl ) , eDryRun );
+     }
+    }
+
+   return;
    }
 
+  auto cnst = dynamic_cast< FRowConstraint * >( lfo->get_observer() );
+  if( ! cnst )
+   throw( std::invalid_argument( "Modification to not FRowConstraint" ) );
+
+  if( ( cnst < & v_cap.front() ) || ( cnst > & v_cap.back() ) )
+   throw( std::invalid_argument(
+	    "        Modification to FRowConstraint not capacity one" ) );
+
+  if( ( f != f_n_customers ) || ( s != f + 1 ) )
+   throw( std::invalid_argument(
+	   "Modification to wrong coefficient in capacity constraint" ) );
+
+  // note that the coefficient of y is the opposite of the capacity
+  chg_facility_capacity( - (lfo->get_v_var())[ f ].second ,
+			 std::distance( & v_cap.front() , cap ) ,
+			 make_par( eNoBlck , chnl ) , eDryRun );
   return;
   }
 
  // C05FunctionModLinSbst - - - - - - - - - - - - - - - - - - - - - - - - - -
- if( const auto tmod = dynamic_cast< C05FunctionModLinSbst * >( mod ) ) {
-  if( ! ( AR & HasObj ) )
-   throw( std::invalid_argument( "Modification to non-constructed Objective"
-				 ) );
+ if( auto tmod = dynamic_cast< const C05FunctionModLinSbst * >( mod ) ) {
+  auto & nms = tmod->subset();
 
-  auto lfo = static_cast<LinearFunction * const>( tmod->function() );
-  if( static_cast< LinearFunction * const >( c.get_function() ) != lfo )
-   throw( std::invalid_argument( "Modification to non-Objective" ) );
+  auto lfo = LF( tmod->function() );
+  if( LF( f_obj.get_function() ) == lfo ) {
+   // Modification to the Objective - - - - - - - - - - - - - - - - - - - - -
 
-  // note: in the following we can assume that the Subset in tmod is
-  //       precisely the one we have to use since no Variable can have
-  //       been added or deleted, which saves *a lot* of trouble
-  // note: chg_costs() owns subset, so a copy has to be made
+   auto nmsit = nms.begin();
 
-  Vec_CNumber NC( tmod->subset().size() );
-  auto NCit = NC.begin();
-  for( auto i : tmod->subset() )
-   *(NCit++) = lfo->get_coefficient( i++ );
+   if( nms.front() < f_n_facilities ) {  // facility costs are modified
+    while( ( nmsit != nms.end() ) && ( *nmsit < f_n_facilities ) )
+     ++nmsit;
 
-  chg_costs( NC.begin() , Subset( tmod->subset() ) , true ,
-	     make_par( eNoBlck , chnl ) , eDryRun );
+    c_Index sz = std::distance( nms.begin() , nmsit );
+    if( sz == 1 ) {            // one facility
+     auto i = *std::prev( nmsit );
+     chg_facility_cost( (lfo->get_v_var())[ i ].second , i ,
+			make_par( eNoBlck , chnl ) , eDryRun );
+     }
+    else {                     // many facilities
+     CVector NC( sz );
+     Subset nnms( sz );
+     auto NCit = NC.begin();
+     auto nnmsit = nnms.begin();
+     for( auto it = nms.begin() ; it != nmsit ; ) {
+      auto i = *(it++);
+      *(nnmsit++) = i;
+      *(NCit++) = (lfo->get_v_var())[ i ].second;
+      }
+     chg_facility_costs( NC.begin() , std::move( nnms ) , true ,
+			 make_par( eNoBlck , chnl ) , eDryRun );
+     }
+    }
+
+   if( nms.back() >= f_n_facilities ) {  // transportation costs are modified
+    c_Index sz = std::distance( nmsit , nms.end() );
+    if( sz == 1 )               // one pair
+     chg_transportation_cost( (lfo->get_v_var())[ *nmsit ].second ,
+			      *nmsit - f_n_facilities ,
+			      make_par( eNoBlck , chnl ) , eDryRun );
+    else {                      // many pairs
+     CVector NC( sz );
+     Subset nnms( sz );
+     auto NCit = NC.begin();
+     auto nnmsit = nnms.begin();
+     for( ; nmsit != nms.end() ; ++nmsit ) {
+      auto h = *(it++);
+      *(nnmsit++) = h - f_n_facilities;
+      *(NCit++) = (lfo->get_v_var())[ h ].second;
+      }
+     chg_transportation_costs( NC.begin() , std::move( nnms ) , true ,
+			       make_par( eNoBlck , chnl ) , eDryRun );
+     }
+    }
+
+   return;
+   }
+
+  auto cnst = dynamic_cast< FRowConstraint * >( lfo->get_observer() );
+  if( ! cnst )
+   throw( std::invalid_argument( "Modification to not FRowConstraint" ) );
+
+  if( ( cnst < & v_cap.front() ) || ( cnst > & v_cap.back() ) )
+   throw( std::invalid_argument(
+	            "Modification to FRowConstraint not capacity one" ) );
+
+  if( ( nms.size() != 1 ) || ( nms.front() != f_n_customers ) )
+   throw( std::invalid_argument(
+	   "Modification to wrong coefficient in capacity constraint" ) );
+
+  // note that the coefficient of y is the opposite of the capacity
+  chg_facility_capacity( - (lfo->get_v_var())[ f_n_customers ].second ,
+			 std::distance( & v_cap.front() , cap ) ,
+			 make_par( eNoBlck , chnl ) , eDryRun );
   return;
   }
 
 
  // RowConstraintMod- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- if( const auto tmod = dynamic_cast< RowConstraintMod * >( mod ) ) {
-  if( ! ( AR & HasFlw ) )
-   throw( std::invalid_argument(
-			    "Modification to non-constructed Constraint" ) );
-
-  if( tmod->type() == RowConstraintMod::eChgRHS ) {
-   auto cp = dynamic_cast< LB0Constraint * const >( tmod->constraint() );
-   if( ! cp )
-    throw( std::invalid_argument( "invalid Modification to Constraint" ) );
-
-   chg_ucap( cp->get_rhs() , p2i_ub( cp ) ,
-	     make_par( eNoBlck , chnl ) , eDryRun );
-   return;
-   }
-
-  if( tmod->type() == RowConstraintMod::eChgBTS ) {
-   auto cp = static_cast<FRowConstraint * const>( tmod->constraint() );
-   if( ! cp )
-    throw( std::invalid_argument( "invalid Modification to Constraint" ) );
-
-   chg_dfct( cp->get_rhs() , p2i_e( cp ) ,
-	     make_par( eNoBlck , chnl ) , eDryRun );
-   return;
-   }
-
-  throw( std::invalid_argument( "illegal Modification to Constraint" ) );
-  }
+ if( dynamic_cast< const RowConstraintMod * >( mod ) )
+   throw( std::invalid_argument( "RowConstraintMod not allowed" ) );
 
  // VariableMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- if( const auto tmod = dynamic_cast< VariableMod * >( mod ) ) {
-  auto xi = dynamic_cast<ColVariable * const>( tmod->variable() );
-  if( ! xi )
-   throw( std::logic_error( "Modification to wrong type of Variable" ) );
-  if( ( xi->get_type() != ColVariable::kNonNegative ) &&
-      ( xi->get_type() != ColVariable::kNatural ) )
-   throw( std::logic_error( "changing type of flow Variable not allowed" ) );
-   
-  auto i = p2i_x( xi );
-  if( xi->is_fixed() )
-   close_arc( i , make_par( eNoBlck , chnl ) , eDryRun );
-  else
-   open_arc( i , make_par( eNoBlck , chnl ) , eDryRun );
-
-  return;
-  }
+ if( dynamic_cast< const VariableMod * >( mod ) )
+  throw( std::invalid_argument( "VariableMod not allowed" ) );
 
  throw( std::invalid_argument(
 	   "unsupported Modification to CapacitatedFacilityLocationBlock" ) );
 
- }  // end( CapacitatedFacilityLocationBlock::guts_of_add_Modification )
+ }  // end( CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKF(
+						c_p_Mod mod , ChnlName chnl )
+{
+ // process abstract Modification - - - - - - - - - - - - - - - - - - - - - -
+ /* This requires to patiently sift through the possible Modification types
+  * to find what this Modification exactly is and appropriately mirror the
+  * changes to the "abstract representation" to the "physical one".
+  *
+  * Note that since CapacitatedFacilityLocationBlock in the "Knapsack
+  * Formulation" is *not* a "leaf" Block, i.e., it has sub-Block, this
+  * method must deal with GroupModification, since these can be produced by
+  * Block::add_Modification() in the sub-Block. In fact, this method only
+  * does that, and then relies on a further guts_of_guts to do the actual
+  * processing. This introduces delay between the moment in which the
+  * Modification is produced and the one in which it is processed, which
+  * would in principle complicate the logic. However
+  *
+  *     CapacitatedFacilityLocationBlock IS A "STATIC" Block IN WHICH THE
+  *     SIZE OF THE STUFF NEVER CHANGES (save if it is re-loaded whole)
+  *
+  * This means that the indices, sanges and subsets found in the Modification
+  * are always still valid, which drastically simplifies some of the logic.
+  */
+
+ // GroupModification - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( auto tmod = dynamic_cast< const GroupModification * >( mod ) ) {
+  for( auto submod : tmod->sub_Modifications() )
+   guts_of_add_ModificationFF( submod , chnl );
+
+  return;
+  }
+ 
+ // C05FunctionModLinRngd - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // the only possible changes are those of the Objective and of the
+ // capacity (opposite of weight of last item) in some BinaryKnapsackBlock,
+ // the only other Function in this formulation are in the customers
+ // satisfaction constraints that cannot be changed
+
+ if( auto tmod = dynamic_cast< const C05FunctionModLinRngd * >( mod ) ) {
+  // must be coming from a BinaryKnapsackBlock
+  auto bkb = dynamic_cast< BinaryKnapsackBlock * >( mod->get_Block() );
+  if( ! bkb )
+   throw( std::invalid_argument( "unsupportd C05FunctionModLinRngd" ) );
+
+  // find which one
+  auto it = std::lower_bound( v_Block.begin() , v_Block.end() , bkb );
+  c_Index i = std::distance( v_Block.begin() , it ); 
+  c_Index f = tmod->range().first;
+  c_Index s = tmod->range().second;
+
+  auto lfo = LF( tmod->function() );
+  if( LF( static_cast< FRealObjective * >( bkb.get_objective()
+					   )->get_function() ) == lfo ) {
+   // Modification to the Objective - - - - - - - - - - - - - - - - - - - - -
+
+   if( f < f_n_customers ) {  // transportation costs are modified
+    c_Index end = std::min( s , f_n_customers )
+    c_Index sz = s - f;
+    c_Index offst = f_n_customers * i;
+    if( sz == 1 )               // one pair
+     chg_transportation_cost( (lfo->get_v_var())[ f ].second , f + offst ,
+			      make_par( eNoBlck , chnl ) , eDryRun );
+    else {                      // many pairs
+     CVector NC( sz );
+     auto NCit = NC.begin();
+     for( Index i = f ; i < end ; )
+      *(NCit++) = (lfo->get_v_var())[ i++ ].second;
+     chg_transportation_costs( NC.begin() ,
+			       Range( f + offst , end + offst ) ,
+			       make_par( eNoBlck , chnl ) , eDryRun );
+     }
+    }
+
+   if( s > f_n_customers )  // the facility cost is modified
+    chg_facility_cost( (lfo->get_v_var())[ f_n_customers ].second , i ,
+		       make_par( eNoBlck , chnl ) , eDryRun );
+
+   return;
+   }
+
+  // the Modificatin can only come from the only FRowConstraint
+  if( ( f != f_n_customers ) || ( s != f + 1 ) )
+   throw( std::invalid_argument(
+	   "Modification to wrong coefficient in capacity constraint" ) );
+
+  // note that the coefficient of y is the opposite of the capacity
+  chg_facility_capacity( (lfo->get_v_var())[ f ].second , i ,
+			 make_par( eNoBlck , chnl ) , eDryRun );
+  return;
+  }
+
+ // C05FunctionModLinSbst - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // the only possible changes are those of the Objective and of the
+ // capacity (opposite of weight of last item) in some BinaryKnapsackBlock,
+ // the only other Function in this formulation are in the customers
+ // satisfaction constraints that cannot be changed
+ if( auto tmod = dynamic_cast< const C05FunctionModLinSbst * >( mod ) ) {
+  // find which one
+  auto it = std::lower_bound( v_Block.begin() , v_Block.end() , bkb );
+  c_Index i = std::distance( v_Block.begin() , it ); 
+  auto & nms = tmod->subset();
+
+  auto lfo = LF( tmod->function() );
+  if( LF( static_cast< FRealObjective * >( bkb.get_objective()
+					   )->get_function() ) == lfo ) {
+   // Modification to the Objective - - - - - - - - - - - - - - - - - - - - -
+
+   if( nms.front() < f_n_customers ) {   // transportation costs are modified
+    c_Index offst = f_n_customers * i;
+    Subset nnms( nms.begin() , nms.back() == f_n_customers ?
+		               std::prev( nms.end ) : nms.end() );
+    if( nms.size() == 1 )               // only one pair
+     chg_transportation_cost( (lfo->get_v_var())[ nms.front() ].second ,
+			      nnms.front() + offst ,
+			      make_par( eNoBlck , chnl ) , eDryRun );
+    else {                      // many pairs
+     CVector NC( nnms.size() );
+     auto NCit = NC.begin();
+     for( auto & j : nnms ) {
+      *(NCit++) = (lfo->get_v_var())[ j ].second;
+      j += offst;
+      }
+     chg_transportation_costs( NC.begin() , Subset( nnms ) , true ,
+			       make_par( eNoBlck , chnl ) , eDryRun );
+     }
+    }
+
+   if( nms.back() == f_n_customers )  // the facility cost is modified
+    chg_facility_cost( (lfo->get_v_var())[ f_n_customers ].second , i ,
+		       make_par( eNoBlck , chnl ) , eDryRun );
+   return;
+   }
+
+  // the Modificatin can only come from the only FRowConstraint
+  if( ( nms.size() != 1 ) || ( nms.front() != f_n_customers ) )
+   throw( std::invalid_argument(
+	   "Modification to wrong coefficient in capacity constraint" ) );
+
+  chg_facility_capacity( (lfo->get_v_var())[ f_n_customers ].second , i ,
+			 make_par( eNoBlck , chnl ) , eDryRun );
+  return;
+  }
+
+ // RowConstraintMod- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( dynamic_cast< const RowConstraintMod * >( mod ) )
+   throw( std::invalid_argument( "RowConstraintMod not allowed" ) );
+
+ // VariableMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( dynamic_cast< const VariableMod * >( mod ) )
+  throw( std::invalid_argument( "VariableMod not allowed" ) );
+
+ throw( std::invalid_argument(
+	   "unsupported Modification to CapacitatedFacilityLocationBlock" ) );
+
+ }  // end( CapacitatedFacilityLocationBlock::guts_of_add_ModificationKF )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFF(
+						c_p_Mod mod , ChnlName chnl )
+{
+ // process abstract Modification - - - - - - - - - - - - - - - - - - - - - -
+ /* This requires to patiently sift through the possible Modification types
+  * to find what this Modification exactly is and appropriately mirror the
+  * changes to the "abstract representation" to the "physical one".
+  *
+  * Note that since CapacitatedFacilityLocationBlock in the "Flow
+  * Formulation" is *not* a "leaf" Block, i.e., it has sub-Block, this
+  * method must deal with GroupModification, since these can be produced by
+  * Block::add_Modification() in the sub-Block. In fact, this method only
+  * does that, and then relies on a further guts_of_guts to do the actual
+  * processing. This introduces delay between the moment in which the
+  * Modification is produced and the one in which it is processed, which
+  * would in principle complicate the logic. However
+  *
+  *     CapacitatedFacilityLocationBlock IS A "STATIC" Block IN WHICH THE
+  *     SIZE OF THE STUFF NEVER CHANGES (save if it is re-loaded whole)
+  *
+  * This means that the indices, sanges and subsets found in the Modification
+  * are always still valid, which drastically simplifies some of the logic.
+  */
+
+ // GroupModification - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( auto tmod = dynamic_cast< const GroupModification * >( mod ) ) {
+  for( auto submod : tmod->sub_Modifications() )
+   guts_of_add_ModificationFF( submod , chnl );
+
+  return;
+  }
+ 
+ // C05FunctionModLinRngd - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( auto tmod = dynamic_cast< const C05FunctionModLinRngd * >( mod ) ) {
+  Index f = tmod->range().first;
+  const Index s = tmod->range().second;
+
+  auto lfo = LF( tmod->function() );
+  if( LF( f_obj.get_function() ) == lfo ) {
+   // Modification to the Objective - - - - - - - - - - - - - - - - - - - - -
+
+   if( f < f_n_facilities ) {  // facility costs are modified
+    c_Index end = std::min( s , f_n_facilities );
+    c_Index sz = end - f;
+    if( sz == 1 )              // one facility
+     chg_facility_cost( (lfo->get_v_var())[ f ].second , f ,
+			make_par( eNoBlck , chnl ) , eDryRun );
+    else {                     // many facilities
+     CVector NC( sz );
+     auto NCit = NC.begin();
+     for( Index i = f ; i < end ; )
+      *(NCit++) = (lfo->get_v_var())[ i++ ].second;
+     chg_facility_costs( NC.begin() , Range( f , end ) ,
+			 make_par( eNoBlck , chnl ) , eDryRun );
+     }
+
+    f = f_n_facilities;  // facilities costs accounted for
+    }
+
+   if( s >= f_n_facilities ) {  // transportation costs are modified
+    c_Index sz = s - f;
+    if( sz == 1 )               // one pair
+     chg_transportation_cost( (lfo->get_v_var())[ f ].second ,
+			      f - f_n_facilities ,
+			      make_par( eNoBlck , chnl ) , eDryRun );
+    else {                      // many pairs
+     CVector NC( sz );
+     auto NCit = NC.begin();
+     for( Index i = f ; i < s ; )
+      *(NCit++) = (lfo->get_v_var())[ i++ ].second;
+     chg_transportation_costs( NC.begin() , Range( f - f_n_facilities ,
+						   s - f_n_facilities ) ,
+			       make_par( eNoBlck , chnl ) , eDryRun );
+     }
+    }
+
+   return;
+   }
+
+  auto cnst = dynamic_cast< FRowConstraint * >( lfo->get_observer() );
+  if( ! cnst )
+   throw( std::invalid_argument( "Modification to not FRowConstraint" ) );
+
+  if( ( cnst < & v_cap.front() ) || ( cnst > & v_cap.back() ) )
+   throw( std::invalid_argument(
+	    "        Modification to FRowConstraint not capacity one" ) );
+
+  if( ( f != f_n_customers ) || ( s != f + 1 ) )
+   throw( std::invalid_argument(
+	   "Modification to wrong coefficient in capacity constraint" ) );
+
+  // note that the coefficient of y is the opposite of the capacity
+  chg_facility_capacity( - (lfo->get_v_var())[ f ].second ,
+			 std::distance( & v_cap.front() , cap ) ,
+			 make_par( eNoBlck , chnl ) , eDryRun );
+  return;
+  }
+
+ // C05FunctionModLinSbst - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( auto tmod = dynamic_cast< const C05FunctionModLinSbst * >( mod ) ) {
+  auto & nms = tmod->subset();
+
+  auto lfo = LF( tmod->function() );
+  if( LF( f_obj.get_function() ) == lfo ) {
+   // Modification to the Objective - - - - - - - - - - - - - - - - - - - - -
+
+   auto nmsit = nms.begin();
+
+   if( nms.front() < f_n_facilities ) {  // facility costs are modified
+    while( ( nmsit != nms.end() ) && ( *nmsit < f_n_facilities ) )
+     ++nmsit;
+
+    c_Index sz = std::distance( nms.begin() , nmsit );
+    if( sz == 1 ) {            // one facility
+     auto i = *std::prev( nmsit );
+     chg_facility_cost( (lfo->get_v_var())[ i ].second , i ,
+			make_par( eNoBlck , chnl ) , eDryRun );
+     }
+    else {                     // many facilities
+     CVector NC( sz );
+     Subset nnms( sz );
+     auto NCit = NC.begin();
+     auto nnmsit = nnms.begin();
+     for( auto it = nms.begin() ; it != nmsit ; ) {
+      auto i = *(it++);
+      *(nnmsit++) = i;
+      *(NCit++) = (lfo->get_v_var())[ i ].second;
+      }
+     chg_facility_costs( NC.begin() , std::move( nnms ) , true ,
+			 make_par( eNoBlck , chnl ) , eDryRun );
+     }
+    }
+
+   if( nms.back() >= f_n_facilities ) {  // transportation costs are modified
+    c_Index sz = std::distance( nmsit , nms.end() );
+    if( sz == 1 )               // one pair
+     chg_transportation_cost( (lfo->get_v_var())[ *nmsit ].second ,
+			      *nmsit - f_n_facilities ,
+			      make_par( eNoBlck , chnl ) , eDryRun );
+    else {                      // many pairs
+     CVector NC( sz );
+     Subset nnms( sz );
+     auto NCit = NC.begin();
+     auto nnmsit = nnms.begin();
+     for( ; nmsit != nms.end() ; ++nmsit ) {
+      auto h = *(it++);
+      *(nnmsit++) = h - f_n_facilities;
+      *(NCit++) = (lfo->get_v_var())[ h ].second;
+      }
+     chg_transportation_costs( NC.begin() , std::move( nnms ) , true ,
+			       make_par( eNoBlck , chnl ) , eDryRun );
+     }
+    }
+
+   return;
+   }
+
+  auto cnst = dynamic_cast< FRowConstraint * >( lfo->get_observer() );
+  if( ! cnst )
+   throw( std::invalid_argument( "Modification to not FRowConstraint" ) );
+
+  if( ( cnst < & v_cap.front() ) || ( cnst > & v_cap.back() ) )
+   throw( std::invalid_argument(
+	            "Modification to FRowConstraint not capacity one" ) );
+
+  if( ( nms.size() != 1 ) || ( nms.front() != f_n_customers ) )
+   throw( std::invalid_argument(
+	   "Modification to wrong coefficient in capacity constraint" ) );
+
+  // note that the coefficient of y is the opposite of the capacity
+  chg_facility_capacity( - (lfo->get_v_var())[ f_n_customers ].second ,
+			 std::distance( & v_cap.front() , cap ) ,
+			 make_par( eNoBlck , chnl ) , eDryRun );
+  return;
+  }
+
+
+ // RowConstraintMod- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( dynamic_cast< const RowConstraintMod * >( mod ) )
+   throw( std::invalid_argument( "RowConstraintMod not allowed" ) );
+
+ /*!!
+ if( tmod->type() == RowConstraintMod::eChgRHS ) {
+  auto cp = dynamic_cast< LB0Constraint * const >( tmod->constraint() );
+  if( ! cp )
+   throw( std::invalid_argument( "invalid Modification to Constraint" ) );
+
+  chg_ucap( cp->get_rhs() , p2i_ub( cp ) ,
+	    make_par( eNoBlck , chnl ) , eDryRun );
+  return;
+  }
+
+ if( tmod->type() == RowConstraintMod::eChgBTS ) {
+  auto cp = static_cast<FRowConstraint * const>( tmod->constraint() );
+  if( ! cp )
+   throw( std::invalid_argument( "invalid Modification to Constraint" ) );
+
+  chg_dfct( cp->get_rhs() , p2i_e( cp ) ,
+	    make_par( eNoBlck , chnl ) , eDryRun );
+  return;
+  }
+
+  throw( std::invalid_argument( "illegal Modification to Constraint" ) );
+  }
+  !!*/
+
+ // VariableMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( dynamic_cast< const VariableMod * >( mod ) )
+  throw( std::invalid_argument( "VariableMod not allowed" ) );
+
+ throw( std::invalid_argument(
+	   "unsupported Modification to CapacitatedFacilityLocationBlock" ) );
+
+ }  // end( CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF )
 
 /*--------------------------------------------------------------------------*/
 

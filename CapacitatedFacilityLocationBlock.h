@@ -134,10 +134,28 @@ namespace SMSpp_di_unipi_it
  * - CapacitatedFacilityLocationBlock supports reformulations/relaxations of
  *   the problem via the "R3Block" mechanism;
  *
- * - .. possibly others.
+ * - ... possibly others.
  *
  * The current implementation of the class is only an initial version, and
- * features are expected to be added along time. */
+ * features are expected to be added along time.
+ *
+ * As such, the class currently only supports only a subset of the possible
+ * operations on the data of the problem. This starts with the fact that
+ *
+ *     THE SIZE OF THE PROBLEM IS STATIC AND CAN NEVER BE CHANGED
+ *     (save if the problem is completely re-loaded)
+ *
+ * which implies that there are no dynamic Variable and Constraint, which in
+ * turn dramatically simplifies a lot of the underlying logic. Furthermore:
+ *
+ * - Changing customers' demands via the abstract representation is not
+ *   allowed in the Standard Formulation and the Knapsack Formulation, since
+ *   the same demand is replicated in multiple constraints; one could ask
+ *   that all the changes happen at the same time and that the corresponding
+ *   Modification are bunched together in a GroupModification, which is
+ *   possible but complex and not implemented yet. The change is instead
+ *   possible in the Flow Formulation where demands are node deficits.
+ */
 
 class CapacitatedFacilityLocationBlock : public Block
 {
@@ -706,12 +724,13 @@ public:
   *   In both cases, the graph has f_n_facilities + f_n_customers + 1 nodes,
   *   with the following arrangement:
   *
-  *   = node 1: super source, deficit == - sum of all demands
+  *   = nodes 1 ... f_n_facilities: facilities, deficit == 0
   *
-  *   = nodes 2 ... f_n_facilities + 1: facilities, deficit == 0
-  *
-  *   = nodes f_n_facilities + 2 ... f_n_facilities + f_n_customers + 1: 
+  *   = nodes f_n_facilities + 1 ... f_n_facilities + f_n_customers: 
   *     customers, deficit == customer demand
+  *
+  *   = node f_n_facilities + f_n_customers + 1: super source,
+  *     deficit == - sum of all demands
   *
   *   and *at least* f_n_facilities * ( f_n_customers + 1 ) with the
   *   following arrangement:
@@ -889,11 +908,11 @@ public:
     throw( std::logic_error( "get_y: invalid facility index" ) );
   #endif
 
-  switch( AR & FormMsk ) {
-   case( StdForm ): return( v_y[ i ] );
-   case( KskForm ): return( * static_cast< BinaryKnapsackBlock * >(
-				  v_Block[ i ] )->get_Var( f_n_customers ) );
-   }
+  if( ( AR & FormMsk ) == KskForm )
+   return( * static_cast< BinaryKnapsackBlock * >(
+				   v_Block[ i ] )->get_Var( f_n_customers ) );
+  else
+   return( v_y[ i ] );
 
   return( * static_cast< MCFBlock * >( v_Block[ 1 ] )->i2p_x( i ) );
   }
@@ -1464,7 +1483,8 @@ public:
  /** Method to close a subset of facility with "contiguous names", i.e., all
   * facilities rng.first <= i < rmg.second - rng.first. Note that any
   * rng.second >= get_NFacilities() means "up until the end". Closing an
-  * already closed facility does nothing. 
+  * already closed facility does nothing, while closong a precedently
+  * fixed-open facility overrides the fixed-open status.
   *
   * If issueMod says so then a "physical"
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
@@ -1477,9 +1497,10 @@ public:
  /// closes an arbitrary subset of facilities
  /** Method to close an arbitrary subset of facilities, i.e., all those whose
   * names are found in \p nms.  Closing an already closed facility does
-  * nothing. \p ordered tells if \p nms is already ordered in increasing
-  * sense. As the && tells, \p nms is "consumed" by the method, typically
-  * being shipped to an appropriate
+  * nothing, while closong a precedently fixed-open facility overrides the
+  * fixed-open status. \p ordered tells if \p nms is already ordered in
+  * increasing sense. As the && tells, \p nms is "consumed" by the method,
+  * typically being shipped to an appropriate
   * CapacitatedFacilityLocationBlockSbstMod object. */
 
  void close_facilities( Subset && nms , bool ordered = false ,
@@ -1498,7 +1519,8 @@ public:
   * all facilities rng.first <= i < rmg.second - rng.first that had
   * previously been closed are now open again. Note that any  rng.second >=
   * get_NFacilities() means "up until the end". Re-opening a facility that
-  * had not been previously closed does nothing.
+  * had not been previously closed does nothing, while re-openomg a precently
+  * fixed-open facility overrides the fixed-open status.
   *
   * If issueMod says so then a "physical"
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
@@ -1511,9 +1533,10 @@ public:
  /// re-opens an arbitrary subset of facilities
  /** Method to re-opens an arbitrary subset of facilities, i.e., all those
   * whose names are found in \p nms. Re-opening a facility that had not been
-  * previously closed does nothing. \p ordered tells if \p nms is already
-  * ordered in increasing  sense. As the && tells, \p nms is "consumed" by
-  * the method, typically being shipped to an appropriate
+  * previously closed does nothing, while re-openomg a precently fixed-open
+  * facility overrides the fixed-open status. \p ordered tells if \p nms is
+  * already ordered in increasing  sense. As the && tells, \p nms is
+  * "consumed" by the method, typically being shipped to an appropriate
   * CapacitatedFacilityLocationBlockSbstMod object. */
 
  void open_facilities( Subset && nms , bool ordered = false ,
@@ -1525,6 +1548,44 @@ public:
 
  void open_facility( Index i , ModParam issueMod = eNoBlck ,
 		               ModParam issueAMod = eNoBlck );
+
+/*--------------------------------------------------------------------------*/
+ /// fix open a contiguous interval of facilities
+ /** Method to fix open a subset of facility with "contiguous names", i.e.,
+  * all facilities rng.first <= i < rmg.second - rng.first are now considered
+  * to be open already. Note that their construction cost is added to the
+  * Objective value, but it is not optimised upon since the decision is taken
+  * already. Note that any  rng.second >= get_NFacilities() means "up until 
+  * the end". Fixing open a previously closed facility overrides the closed
+  * status. 
+  *
+  * If issueMod says so then a "physical"
+  * CapacitatedFacilityLocationBlockRngdMod is issued. */
+
+ void fix_open_facilities( Range rng = Range( 0 , Inf<Index>() ) ,
+			   ModParam issueMod = eNoBlck ,
+			   ModParam issueAMod = eNoBlck );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// fix open an arbitrary subset of facilities
+ /** Method to fix open an arbitrary subset of facilities, i.e., all those
+  * whose names are found in \p nms are now considered to be open already.
+  * Note that their construction cost is added to the Objective value, but it
+  * is not optimised upon since the decision is taken  already. Fixing open a
+  * previously closed facility overrides the closed status. \p ordered tells
+  * if \p nms is already ordered in increasing  sense. As the && tells, \p nms
+  * is "consumed" by the method, typically being shipped to an appropriate
+  * CapacitatedFacilityLocationBlockSbstMod object. */
+
+ void fix_open_facilities( Subset && nms , bool ordered = false ,
+			   ModParam issueMod = eNoBlck ,
+			   ModParam issueAMod = eNoBlck );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// fix opens the given facility
+
+ void fix_open_facility( Index i , ModParam issueMod = eNoBlck ,
+			           ModParam issueAMod = eNoBlck );
 
 /**@} ----------------------------------------------------------------------*/
 /*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
