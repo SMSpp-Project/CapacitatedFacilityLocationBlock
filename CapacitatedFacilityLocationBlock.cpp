@@ -173,7 +173,7 @@ SMSpp_insert_in_factory_cpp_1( CapacitatedFacilityLocationBlock );
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::load( Index n , Index m ,
+void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
 					     DVector && Q , CVector && F ,
 					     DVector && D , CMatrix && C )
 {
@@ -1405,7 +1405,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
-			    CapacitatedFacilityLocationBlockMod::eChgDCost ,
+			    CapacitatedFacilityLocationBlockMod::eChgFCost ,
 			    rng ) ,
 			   Observer::par2chnl( issueMod ) );
  #if CHECK_DS
@@ -3591,23 +3591,41 @@ bool CapacitatedFacilityLocationBlock::guts_of_map_f_Mod_copy(
 		       CapacitatedFacilityLocationBlock * R3B , c_p_Mod mod ,
 		       ModParam issuePMod , ModParam issueAMod )
 {
+ /* The (Solver attached to the) R3Block may require some Modification to be
+  * "neatly packaged" into appropriate GroupModification to work
+  * (efficiently): hence, we make an effort to group the changes produced by
+  * mod, if it's a GroupModification, by opening a new channel if the original
+  * one is the default one or nesting it if it is already a GroupModification
+  * one. Note that this is done independently for "physical Modification" and
+  * "abstract Modification". */
+
  bool ok = true;  // final return value
 
- if( const auto tmod = dynamic_cast< GroupModification * const >( mod ) ) {
-  // if the channels are the default ones, open new ones
-  auto iPM = par2chnl( issuePMod ) ? issuePMod
-           : make_par( par2mod( issuePMod ) , R3B->open_channel() );
-  auto iPA = par2chnl( issueAMod ) ? issueAMod
-           : make_par( par2mod( issueAMod ) , R3B->open_channel() );
+ if( auto tmod = dynamic_cast< const GroupModification * >( mod ) ) {
+  // if the channels are the default ones, open new ones, otherwise nest them
+  auto iPM = issuePMod;
+  if( par2chnl( issuePMod ) )
+   R3B->nest_channel( par2chnl( issuePMod ) );
+  else
+   iPM = make_par( par2mod( issuePMod ) , R3B->open_channel() );
+  auto iPA = issueAMod;
+  if( par2chnl( issueAMod ) )
+   R3B->nest_channel( par2chnl( issueAMod ) );
+  else
+   iPA = make_par( par2mod( issueAMod ) , R3B->open_channel() );
 
   for( const auto & submod : tmod->sub_Modifications() )  // for each sub-Mod
-   if( ! guts_of_guts_of_map_f_Mod_copy( R3B , submod.get() , iPM , iPA ) )
+   if( ! guts_of_map_f_Mod_copy( R3B , submod.get() , iPM , iPA ) )
     ok = false;
 
-  // now close the opened channels, if any
-  if( ! par2chnl( issuePMod ) )
+  // now close the opened channels or un-nest them
+  if( par2chnl( issuePMod ) )
+   R3B->un_nest_channel( par2chnl( issuePMod ) );
+  else
    R3B->close_channel( par2chnl( iPM ) );
-  if( ! par2chnl( issueAMod ) )
+  if( par2chnl( issueAMod ) )
+   R3B->un_nest_channel( par2chnl( issueAMod ) );
+  else
    R3B->close_channel( par2chnl( iPA ) );
   }
  else  // any other Modification: just make the call
@@ -3623,252 +3641,173 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
 		       CapacitatedFacilityLocationBlock * R3B , c_p_Mod mod ,
 		       ModParam issuePMod , ModParam issueAMod )
 {
- /* When a GroupModification is processed, if no channel is provided, then
-    one is opened. This only happens "at root", after which in guts_of_mfM()
-    whenever a GroupModification is processed, then the channel is nested.
-    Indeed, if the "root" Modification is not a GroupModification, then there
-    cannot be any GroupModification in it.
+ // process Modification- - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // this requires to patiently sift through the possible Modification types
+ // to find what this Modification exactly is, and call the appropriate
+ // method of R3B: note that we only consider "physical Modification" since
+ // any change in the "abstract representation" is intercepted by the :Block
+ // and a "physical Modification" is produced, so intercepting "abstract
+ // Modification" is useless and wasteful (besides being more complicated)
 
- ModParam iPM = issuePMod;
- ModParam iPA = make_par( std::min( ModParam( eNoBlck ) ,
-				    par2mod( issueAMod ) ) ,
-			  par2chnl( issueAMod ) );
+ // CapacitatedFacilityLocationBlockRngdMod - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( auto tmod = dynamic_cast<
+                 const CapacitatedFacilityLocationBlockRngdMod * >( mod ) ) {
+  c_Index f = tmod->rng().first;
+  c_Index s = tmod->rng().second;
 
- /* Use a Lambda to define a "guts" of the method that can be called
-    recursively without having to pass "local globals". Note the trick of
-    defining the std::function object and "passing" it to the lambda,
-    which allows recursive calls. Note the need to explicitly capture
-    "this" to use fields/methods of the class.
-
- std::function< bool( c_p_Mod )> guts_of_mfM;
- guts_of_mfM = [ this , & guts_of_mfM , & MCFB , & iPM , & iPA ]( c_p_Mod mod
-								  ) {
-  // process Modification- - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  /* This requires to patiently sift through the possible Modification types
-     to find what this Modification exactly is, and call the appropriate
-     method of either MCFB, for a "physical Modification", or of the "abstract
-     representation" of MCFB for an "abstract Modification".
-
-  //!! std::cout << *mod << std::endl;
-  
-  // GroupModification - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  if( const auto tmod = dynamic_cast< GroupModification * const >( mod ) ) {
-   MCFB->nest_channel( par2chnl( iPM ) );  // nest the channel for PM
-   MCFB->nest_channel( par2chnl( iPA ) );  // nest the channel for PA
-
-   bool ok = true;
-   for( const auto & submod : tmod->sub_Modifications() )
-    if( ! guts_of_mfM( submod.get() ) )
-     ok = false;
-
-   MCFB->un_nest_channel( par2chnl( iPM ) );  // un-nest the channel for PM
-   MCFB->un_nest_channel( par2chnl( iPA ) );  // un-nest the channel for PA
-
-   return( ok );
-   }
-
-  // CapacitatedFacilityLocationBlockRngdMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  /* Note: in the following we can assume that C, B and U are nonempty. This
-     is because they can be empty only if they are so when the object is
-     loaded. But if a Modification has been issued they are no longer empty
-     (a Modification changin nothing from the "empty" state is not issued).
-
-  if( const auto tmod = dynamic_cast< CapacitatedFacilityLocationBlockRngdMod * const >( mod ) ) {
-   switch( tmod->type() ) {
-    case( CapacitatedFacilityLocationBlockMod::eChgCost ):
-     #ifndef NDEBUG
-      if( ( tmod->rng().second > get_NArcs() ) ||
-	  ( tmod->rng().second > MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     if( tmod->rng().second == tmod->rng().first + 1 )
-      MCFB->chg_cost( C[ tmod->rng().first ] , tmod->rng().first ,
-		      iPM , iPA );
-     else
-      MCFB->chg_costs( C.begin() + tmod->rng().first , tmod->rng() ,
-		       iPM , iPA );
-     break;
-    case( CapacitatedFacilityLocationBlockMod::eChgCaps ):
-     #ifndef NDEBUG
-      if( ( tmod->rng().second > get_NArcs() ) ||
-	  ( tmod->rng().second > MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     if( tmod->rng().second == tmod->rng().first + 1 )
-      MCFB->chg_ucap( U[ tmod->rng().first ] , tmod->rng().first ,
-		      iPM , iPA );
-     else
-      MCFB->chg_ucaps( U.begin() + tmod->rng().first , tmod->rng() ,
-		       iPM , iPA );
-     break;
-    case( CapacitatedFacilityLocationBlockMod::eChgDfct ):
-     #ifndef NDEBUG
-      if( ( tmod->rng().second > get_NNodes() ) ||
-	  ( tmod->rng().second > MCFB->get_NNodes() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     if( tmod->rng().second == tmod->rng().first + 1 )
-      MCFB->chg_dfct( B[ tmod->rng().first ] , tmod->rng().first ,
-		      iPM , iPA );
-     else
-      MCFB->chg_dfcts( B.begin() + tmod->rng().first , tmod->rng() ,
-		       iPM , iPA );
-     break;
-    case( CapacitatedFacilityLocationBlockMod::eOpenArc ):
-     #ifndef NDEBUG
-      if( ( tmod->rng().second > get_NArcs() ) ||
-	  ( tmod->rng().second > MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     if( tmod->rng().second == tmod->rng().first + 1 )
-      MCFB->open_arc( tmod->rng().first , iPM , iPA );
-     else
-      MCFB->open_arcs( tmod->rng() , iPM , iPA );
-     break;
-    case( CapacitatedFacilityLocationBlockMod::eCloseArc ):
-     #ifndef NDEBUG
-      if( ( tmod->rng().second > get_NArcs() ) ||
-	  ( tmod->rng().second > MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     if( tmod->rng().second == tmod->rng().first + 1 )
-      MCFB->close_arc( tmod->rng().first , iPM , iPA );
-     else
-      MCFB->close_arcs( tmod->rng() , iPM , iPA );
-     break;
-    case( CapacitatedFacilityLocationBlockMod::eAddArc ):
-     #ifndef NDEBUG
-      if( tmod->rng().first > get_NArcs() )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     if( MCFB->add_arc( get_SN( tmod->rng().first ) ,
-			get_EN( tmod->rng().first ) ,
-			get_C( tmod->rng().first ) ,
-			get_U( tmod->rng().first ) , iPM , iPA )
-	 != tmod->rng().first )
-      throw( std::logic_error( "inconsistency between arc names" ) );       
-     break;
-    case( CapacitatedFacilityLocationBlockMod::eRmvArc ):
-     #ifndef NDEBUG
-      if( tmod->rng().first > MCFB->get_NArcs() )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     MCFB->remove_arc( tmod->rng().second - 1 , iPM , iPA );
-     break;
+  switch( tmod->type() ) {
+   case( CapacitatedFacilityLocationBlockMod::eChgFCost ):  //- - - - - - - -
+    if( s == f + 1 )
+     R3B->chg_facility_costs( v_f_cost[ f ] , f , iPM , iPA );
+    else
+     R3B->chg_facility_costs( v_f_cost.begin() + f , tmod->rng() ,
+			      iPM , iPA );
+    break;
+   case( CapacitatedFacilityLocationBlockMod::eChgTCost ):  //- - - - - - - -
+    if( s == f + 1 )
+     R3B->chg_transportation_cost( (v_t_cost.data())[ f ] , f , iPM , iPA );
+    else
+     R3B->chg_transportation_costs( v_t_cost.data().begin() + f ,
+				    tmod->rng() , iPM , iPA );
+    break;
+   case( CapacitatedFacilityLocationBlockMod::eChgCap ):  //- - - - - - - - -
+    if( s == f + 1 )
+     R3B->chg_facility_capacity( v_capacity[ f ] , f , iPM , iPA );
+    else
+     R3B->chg_facility_capacities( v_capacity.begin() + f , tmod->rng() ,
+				   iPM , iPA );
+    break;
+   case( CapacitatedFacilityLocationBlockMod::eChgDem ):  //- - - - - - - - -
+    if( s == f + 1 )
+     R3B->chg_customers_demand( v_demand[ f ] , f , iPM , iPA );
+    else
+     R3B->chg_customers_demands( v_demand.begin() + f , tmod->rng() ,
+				 iPM , iPA );
+    break;
+   case( CapacitatedFacilityLocationBlockMod::eCloseF ):  //- - - - - - - - -
+    if( s == f + 1 )
+     R3B->close_facility( f , iPM , iPA );
+    else
+     R3b->close_facilities( tmod->rng() , iPM , iPA );
+    break;
+   case( CapacitatedFacilityLocationBlockMod::eOpenF ):  // - - - - - - - - -
+    if( s == f + 1 )
+     R3B->open_facility( f , iPM , iPA );
+    else
+     R3b->open_facilities( tmod->rng() , iPM , iPA );
+    break;
+   case( CapacitatedFacilityLocationBlockMod::eBuyF ):  //- - - - - - - - - -
+    if( s == f + 1 )
+     R3B->fix_open_facility( f , iPM , iPA );
+    else
+     R3b->fix_open_facilities( tmod->rng() , iPM , iPA );
+    break;
     default:
-     throw( std::invalid_argument( "unknown CapacitatedFacilityLocationBlockRngdMod type" ) );
-    }
-   return( true );
-   }
+     throw( std::invalid_argument(
+		   "unknown CapacitatedFacilityLocationBlockRngdMod type" ) );
+    }  // end( switch )
 
-  // CapacitatedFacilityLocationBlockSbstMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  /* Note that tmod->f_nms need be copied, since the chg_*() methods
-   * *in principle* "consume" the names vector. This is actually not true
-   * if MCFB will *not* issue a physical modification, which one may
-   * actually know beforehand, but it has to be done anyway because the
-   * CapacitatedFacilityLocationBlockSbstMod only provides read-only access
- to the vector.
+  return( true );
+  }
 
-  if( const auto tmod = dynamic_cast< CapacitatedFacilityLocationBlockSbstMod * const >( mod ) ) {
-   switch( tmod->type() ) {
-    case( CapacitatedFacilityLocationBlockMod::eChgCost ): {
-     #ifndef NDEBUG
-      if( ( tmod->nms().back() >= get_NArcs() ) ||
-	  ( tmod->nms().back() >= MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     Vec_CNumber NCost( tmod->nms().size() );
-     for( Index i = 0 ; i < NCost.size() ; i++ )
-      NCost[ i ] = C[ tmod->nms()[ i ] ];
+ // CapacitatedFacilityLocationBlockSbstMod - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // note that tmod->nms() need be copied, since the chg_*() methods "consume"
+ // the names vector
+ if( auto tmod = dynamic_cast<
+                 const CapacitatedFacilityLocationBlockSbstMod * >( mod ) ) {
 
-     MCFB->chg_costs( NCost.begin() , Subset( tmod->nms() ) , iPM , iPA );
-     break;
+  switch( tmod->type() ) {
+   case( CapacitatedFacilityLocationBlockMod::eChgFCost ):  //- - - - - - - -
+    if( tmod->nms().size() == 1 )
+     R3B->chg_facility_costs( v_f_cost[ tmod->nms().front() ] ,
+			      tmod->nms().front() , iPM , iPA );
+    else {
+     CVector NC( tmod->nms().size() );
+     auto NCit = NC.begin();
+     for( auto i : tmod->nms() )
+      *(NCit++) = v_f_cost[ i ]; 
+     R3B->chg_facility_costs( NC.begin() , Subset( tmod->nms() ) , true ,
+			      iPM , iPA );
      }
-    case( CapacitatedFacilityLocationBlockMod::eChgCaps ): {
-     #ifndef NDEBUG
-      if( ( tmod->nms().back() >= get_NArcs() ) ||
-	  ( tmod->nms().back() >= MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     Vec_FNumber NCap( tmod->nms().size() );
-     for( Index i = 0 ; i < NCap.size() ; i++ )
-      NCap[ i ] = U[ tmod->nms()[ i ] ];
-
-     MCFB->chg_ucaps( NCap.begin() , Subset( tmod->nms() ) , iPM , iPA );
-     break;
+    break;
+   case( CapacitatedFacilityLocationBlockMod::eChgTCost ):  //- - - - - - - -
+    if( tmod->nms().size() == 1 )
+     R3B->chg_transportation_cost( (v_t_cost.data())[ tmod->nms().front() ] ,
+				   tmod->nms().front() , iPM , iPA );
+    else {
+     CVector NC( tmod->nms().size() );
+     auto NCit = NC.begin();
+     for( auto i : tmod->nms() )
+      *(NCit++) = (v_t_cost.data())[ i ]; 
+     R3B->chg_transportation_costs( NC.begin() , Subset( tmod->nms() ) , true ,
+				    iPM , iPA );
      }
-    case( CapacitatedFacilityLocationBlockMod::eChgDfct ): {
-     #ifndef NDEBUG
-      if( ( tmod->nms().back() >= get_NNodes() ) ||
-	  ( tmod->nms().back() >= MCFB->get_NNodes() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     Vec_FNumber NDfct( tmod->nms().size() );
-     for( Index i = 0 ; i < NDfct.size() ; i++ )
-      NDfct[ i ] = B[ tmod->nms()[ i ] ];
-
-     MCFB->chg_dfcts( NDfct.begin() , Subset( tmod->nms() ) , iPM , iPA );
-     break;
+    break;
+   case( CapacitatedFacilityLocationBlockMod::eChgCap ):  //- - - - - - - - -
+    if( tmod->nms().size() == 1 )
+     R3B->chg_facility_capacity( v_capacity[ tmod->nms().front() ] ,
+				 tmod->nms().front() , iPM , iPA );
+    else {
+     DVector NC( tmod->nms().size() );
+     auto NCit = NC.begin();
+     for( auto i : tmod->nms() )
+      *(NCit++) = v_capacity[ i ]; 
+     R3B->chg_facility_capacities( NC.begin() , Subset( tmod->nms() ) , true ,
+				   iPM , iPA );
      }
-    case( CapacitatedFacilityLocationBlockMod::eOpenArc ):
-     #ifndef NDEBUG
-      if( ( tmod->nms().back() >= get_NArcs() ) ||
-	  ( tmod->nms().back() >= MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     MCFB->open_arcs( Subset( tmod->nms() ) , iPM , iPA );
-     break;
-    case( CapacitatedFacilityLocationBlockMod::eCloseArc ):
-     #ifndef NDEBUG
-      if( ( tmod->nms().back() >= get_NArcs() ) ||
-	  ( tmod->nms().back() >= MCFB->get_NArcs() ) )
-       throw( std::logic_error(
-		     "map_forward_Modification:: incompatible CapacitatedFacilityLocationBlock" ) );
-     #endif
-     MCFB->close_arcs( Subset( tmod->nms() ) , iPM , iPA );
-     break;
-    default:
-     throw( std::invalid_argument( "unknown CapacitatedFacilityLocationBlockSbstMod type" ) );
-    }
-   return( true );
-   }
+    break;
+   case( CapacitatedFacilityLocationBlockMod::eChgDem ):  //- - - - - - - - -
+    if( tmod->nms().size() == 1 )
+     R3B->chg_customers_demand( v_demand[ tmod->nms().front() ] ,
+				tmod->nms().front() , iPM , iPA );
+    else {
+     DVector ND( tmod->nms().size() );
+     auto NDit = ND.begin();
+     for( auto i : tmod->nms() )
+      *(NDit++) = v_demand[ i ]; 
+     R3B->chg_customers_demands( ND.begin() , Subset( tmod->nms() ) , true ,
+				 iPM , iPA );
+     }
+    break;
+   case( CapacitatedFacilityLocationBlockMod::eCloseF ):  //- - - - - - - - -
+    if( tmod->nms().size() == 1 )
+     R3B->close_facility( tmod->nms().front() , iPM , iPA );
+    else
+     R3b->close_facilities( Subset( tmod->nms() ) , true , iPM , iPA );
+    break;
+   case( CapacitatedFacilityLocationBlockMod::eOpenF ):  // - - - - - - - - -
+    if( tmod->nms().size() == 1 )
+     R3B->open_facility( tmod->nms().front() , iPM , iPA );
+    else
+     R3b->open_facilities( Subset( tmod->nms() ) , true , iPM , iPA );
+    break;
+   case( CapacitatedFacilityLocationBlockMod::eBuyF ):  //- - - - - - - - - -
+    if( tmod->nms().size() == 1 )
+     R3B->fix_open_facility( tmod->nms().front() , iPM , iPA );
+    else
+     R3B->fix_open_facilities( Subset( tmod->nms() ) , true , iPM , iPA );
+    break;
+   default:
+     throw( std::invalid_argument(
+		   "unknown CapacitatedFacilityLocationBlockRngdMod type" ) );
+   }  // end( switch )
 
-  // NBModification- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // this is the "nuclear option": the CapacitatedFacilityLocationBlock has been re-loaded
-  // one should check that the Block is this CapacitatedFacilityLocationBlock, but it cannot
-  // be otherwise, can it?
+  return( true );
+  }
 
-  if( const auto tmod = dynamic_cast< NBModification * const >( mod ) ) {
-   MCFB->load( get_NNodes() , get_NArcs() , EN , SN , U , C , B ,
-	       get_NNodes() - get_NStaticNodes() ,
-	       get_NArcs() - get_NStaticArcs() ,
-	       get_MaxNNodes() - get_NStaticNodes() ,
-	       get_MaxNArcs() - get_NStaticArcs() );
-   return( true );
-   }
+ // NBModification- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // this is the "nuclear option": the CapacitatedFacilityLocationBlock has
+ // been re-loaded
 
-  return( false );
-
-  };  // end( guts_of_mfM )- - - - - - - - - - - - - - - - - - - - - - - - - -
-      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- // finally, call the "guts of"- - - - - - - - - - - - - - - - - - - - - - - -
- // this is done differently if mod is a GroupModification, since at the root
- // a channel has to be opened while further down it has to be nested
-
- */
+ if(  auto tmod = dynamic_cast< const NBModification * >( mod ) ) {
+  R3B->load( f_n_facilities , f_n_customers , v_capacity , v_f_cost ,
+	     v_demand , v_t_cost );
+  return( true );
+  }
 
  return( false );  // any other Modification is not mapped
 
@@ -3880,27 +3819,45 @@ bool CapacitatedFacilityLocationBlock::guts_of_map_f_Mod_MCF(
 				    MCFBlock * R3B , c_p_Mod mod ,
 			            ModParam issuePMod , ModParam issueAMod )
 {
+ /* The (Solver attached to the) R3Block may require some Modification to be
+  * "neatly packaged" into appropriate GroupModification to work
+  * (efficiently): hence, we make an effort to group the changes produced by
+  * mod, if it's a GroupModification, by opening a new channel if the original
+  * one is the default one or nesting it if it is already a GroupModification
+  * one. Note that this is done independently for "physical Modification" and
+  * "abstract Modification". */
+
  bool ok = true;  // final return value
 
- if( const auto tmod = dynamic_cast< GroupModification * const >( mod ) ) {
-  // if the channels are the default ones, open new ones
-  auto iPM = par2chnl( issuePMod ) ? issuePMod
-           : make_par( par2mod( issuePMod ) , R3B->open_channel() );
-  auto iPA = par2chnl( issueAMod ) ? issueAMod
-           : make_par( par2mod( issueAMod ) , R3B->open_channel() );
+ if( auto tmod = dynamic_cast< const GroupModification * >( mod ) ) {
+  // if the channels are the default ones, open new ones, otherwise nest them
+  auto iPM = issuePMod;
+  if( par2chnl( issuePMod ) )
+   R3B->nest_channel( par2chnl( issuePMod ) );
+  else
+   iPM = make_par( par2mod( issuePMod ) , R3B->open_channel() );
+  auto iPA = issueAMod;
+  if( par2chnl( issueAMod ) )
+   R3B->nest_channel( par2chnl( issueAMod ) );
+  else
+   iPA = make_par( par2mod( issueAMod ) , R3B->open_channel() );
 
   for( const auto & submod : tmod->sub_Modifications() )  // for each sub-Mod
-   if( ! guts_of_guts_of_map_f_Mod_MCF( R3B , submod.get() , iPM , iPA ) )
+   if( ! guts_of_map_f_Mod_MCF( R3B , submod.get() , iPM , iPA ) )
     ok = false;
 
-  // now close the opened channels, if any
-  if( ! par2chnl( issuePMod ) )
+  // now close the opened channels or un-nest them
+  if( par2chnl( issuePMod ) )
+   R3B->un_nest_channel( par2chnl( issuePMod ) );
+  else
    R3B->close_channel( par2chnl( iPM ) );
-  if( ! par2chnl( issueAMod ) )
+  if( par2chnl( issueAMod ) )
+   R3B->un_nest_channel( par2chnl( issueAMod ) );
+  else
    R3B->close_channel( par2chnl( iPA ) );
   }
  else  // any other Modification: just make the call
-  ok = guts_of_guts_of_map_f_Mod_MCF( R3B , mod , issuePMod , issueAMod );
+  ok = guts_of_guts_of_map_f_Mod_copy( R3B , mod , issuePMod , issueAMod );
 
  return( ok );
 
@@ -3912,7 +3869,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
 				    MCFBlock * R3B , c_p_Mod mod ,
 			            ModParam issuePMod , ModParam issueAMod )
 {
-
+ // TODO: implement
 
  return( false );  // any other Modification is not mapped
  

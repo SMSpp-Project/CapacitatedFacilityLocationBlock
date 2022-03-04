@@ -283,7 +283,7 @@ public:
   * CapacitatedFacilityLocationBlock then a NBModification (the "nuclear
   * option") is issued. */
 
- void load( Index n , Index m , DVector && Q , CVector && F ,
+ void load( Index m , Index n , DVector && Q , CVector && F ,
 	    DVector && D , CMatrix && C );
 
 /*--------------------------------------------------------------------------*/
@@ -292,9 +292,9 @@ public:
   * the other form of load() except that (by being const & rather than &&)
   * the vectors/metrices are copied rather than moved.  */
 
- void load( Index n , Index m , c_DVector & Q , c_CVector & F ,
+ void load( Index m , Index n , c_DVector & Q , c_CVector & F ,
 	    c_DVector & D , c_CMatrix & C ) {
-  load( n , m , DVector( Q ) , CVector( F ) , DVector( D ) , CMatrix( C ) );
+  load( m , n , DVector( Q ) , CVector( F ) , DVector( D ) , CMatrix( C ) );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -1718,64 +1718,78 @@ public:
  * because it does the registration of the following
  * CapacitatedFacilityLocationBlock methods:
  *
- * - chg_costs() (both range and subset version)
+ * - chg_facility_costs() (both range and subset version)
  *
- * - chg_ucaps() (both range and subset version)
+ * - chg_transportation_costs() (both range and subset version)
  *
- * - chg_dfcts() (both range and subset version)
+ * - chg_facility_capacities() (both range and subset version)
  *
- * - close_arcs() (both range and subset version)
+ * - chg_customers_demands() (both range and subset version)
  *
- * - open_arcs() (both range and subset version)
+ * - close_facilities() (both range and subset version)
+ *
+ * - open_facilities() (both range and subset version)
  *
  * into the corresponding method factories.
  */
 
  static void static_initialization( void )
  {
-  /*!!
- * Not all C++ compilers enjoy the template wizardry behing the three-args
- * version of register_method<> with the compact MS_*_*::args(), so we just
- * use the slightly less compact one with the explicit argument and be done
- * with it. !!*/
-  // register_method< CapacitatedFacilityLocationBlock >(
-  //                           "CapacitatedFacilityLocationBlock::chg_costs",
-  //                            &CapacitatedFacilityLocationBlock::chg_costs,
-  //                            MS_dbl_rngd::args() );
-  //
-
-  /*!!
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
-   "CapacitatedFacilityLocationBlock::chg_costs",
-   &CapacitatedFacilityLocationBlock::chg_costs );
+   "CapacitatedFacilityLocationBlock::chg_facility_costs",
+   &CapacitatedFacilityLocationBlock::chg_facility_costs );
 
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
    bool >(
-   "CapacitatedFacilityLocationBlock::chg_costs" ,
-   &CapacitatedFacilityLocationBlock::chg_costs );
+   "CapacitatedFacilityLocationBlock::chg_facility_costs" ,
+   &CapacitatedFacilityLocationBlock::chg_facility_costs );
 
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
-   "CapacitatedFacilityLocationBlock::chg_ucaps" ,
-   &CapacitatedFacilityLocationBlock::chg_ucaps );
+   "CapacitatedFacilityLocationBlock::chg_transportation_costs" ,
+   &CapacitatedFacilityLocationBlock::chg_transportation_costs );
 
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
    bool >(
-   "CapacitatedFacilityLocationBlock::chg_ucaps",
-   &CapacitatedFacilityLocationBlock::chg_ucaps );
+   "CapacitatedFacilityLocationBlock::chg_facility_capacities",
+   &CapacitatedFacilityLocationBlock::chg_facility_capacities );
 
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
-   "CapacitatedFacilityLocationBlock::chg_dfcts",
-   &CapacitatedFacilityLocationBlock::chg_dfcts );
+   "CapacitatedFacilityLocationBlock::chg_facility_capacities",
+   &CapacitatedFacilityLocationBlock::chg_facility_capacities );
 
-  register_method< CapacitatedFacilityLocationBlock , Range >(
-   "CapacitatedFacilityLocationBlock::open_arcs",
-   &CapacitatedFacilityLocationBlock::open_arcs );
+  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
+   bool >(
+   "CapacitatedFacilityLocationBlock::chg_customers_demands",
+   &CapacitatedFacilityLocationBlock::chg_customers_demands );
+
+  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
+   "CapacitatedFacilityLocationBlock::chg_customers_demands",
+   &CapacitatedFacilityLocationBlock::chg_customers_demands );
+
+   register_method< CapacitatedFacilityLocationBlock , Range >(
+   "CapacitatedFacilityLocationBlock::close_facilities",
+   &CapacitatedFacilityLocationBlock::close_facilities );
 
   register_method< CapacitatedFacilityLocationBlock , Subset && , bool >(
-   "CapacitatedFacilityLocationBlock::open_arcs" ,
-   &CapacitatedFacilityLocationBlock::open_arcs );
-   !!*/
-  }
+   "CapacitatedFacilityLocationBlock::close_facilities" ,
+   &CapacitatedFacilityLocationBlock::open_facilities );
+
+  register_method< CapacitatedFacilityLocationBlock , Range >(
+   "CapacitatedFacilityLocationBlock::open_facilities",
+   &CapacitatedFacilityLocationBlock::open_facilities );
+
+  register_method< CapacitatedFacilityLocationBlock , Subset && , bool >(
+   "CapacitatedFacilityLocationBlock::open_facilities" ,
+   &CapacitatedFacilityLocationBlock::open_facilities );
+
+  register_method< CapacitatedFacilityLocationBlock , Range >(
+   "CapacitatedFacilityLocationBlock::fix_oopen_facilities",
+   &CapacitatedFacilityLocationBlock::fix_oopen_facilities );
+
+  register_method< CapacitatedFacilityLocationBlock , Subset && , bool >(
+   "CapacitatedFacilityLocationBlock::fix_oopen_facilities" ,
+   &CapacitatedFacilityLocationBlock::fix_oopen_facilities );
+   }
 
 /*--------------------------------------------------------------------------*/
 
@@ -1795,9 +1809,18 @@ public:
 
  void guts_of_add_ModificationSF( c_p_Mod mod , ChnlName chnl );
 
- void guts_of_add_ModificationKF( c_p_Mod mod , ChnlName chnl );
+ void guts_of_add_ModificationKFG( const GroupModification * mod ,
+				   ChnlName chnl );
 
- void guts_of_add_ModificationFF( c_p_Mod mod , ChnlName chnl );
+ void guts_of_add_ModificationKFP( const BinaryKnapsackBlockMod * mod ,
+				   ChnlName chnl );
+
+ void guts_of_add_ModificationFFA( c_p_Mod mod , ChnlName chnl );
+
+ void guts_of_add_ModificationFFG( const GroupModification * mod ,
+				   ChnlName chnl );
+
+ void guts_of_add_ModificationFFP( const MCFBlockMod * mod , ChnlName chnl );
 
  bool guts_of_map_f_Mod_copy(
 			CapacitatedFacilityLocationBlock * R3B , c_p_Mod mod ,
@@ -1882,13 +1905,13 @@ class CapacitatedFacilityLocationBlockMod : public Modification
  /// public enum for the types of CapacitatedFacilityLocationBlockMod
  
  enum MCFB_mod_type {
-  eChgCost = 0 ,   ///< change the arc costs
-  eChgCaps     ,   ///< change the arc capacities
-  eChgDfct     ,   ///< change the node deficits
-  eOpenArc     ,   ///< open arcs
-  eCloseArc    ,   ///< close arcs
-  eAddArc      ,   ///< add arcs
-  eRmvArc          ///< remove arcs
+  eChgFCost = 0 ,   ///< change the facility (design) costs
+  eChgTCost     ,   ///< change the transportation costs
+  eChgCap       ,   ///< change the facility capacities
+  eChgDem       ,   ///< change the customers demands
+  eCloseF       ,   ///< close facilities
+  eOpenF        ,   ///< re-open facilities
+  eBuyF             ///< fix open facilities
   };
 
 /*---------------------- CONSTRUCTOR & DESTRUCTOR --------------------------*/
@@ -1927,20 +1950,21 @@ class CapacitatedFacilityLocationBlockMod : public Modification
  void print( std::ostream &output ) const override {
   output << "CapacitatedFacilityLocationBlockMod[" << this << "]: ";
   switch( f_type ) {
-   case( eChgCost ):  output << "change costs "; break;
-   case( eChgCaps ):  output << "change capacities "; break;
-   case( eChgDfct ):  output << "change deficits "; break;
-   case( eOpenArc ):  output << "open arcs "; break;
-   case( eCloseArc ): output << "close arcs "; break;
-   case( eAddArc ):   output << "add arcs "; break;
-   default:           output << "remove arcs ";
+   case( eChgFCost ): output << "change the facility (design) costs "; break;
+   case( eChgTCost ): output << "change the transportation costs "; break;
+   case( eChgCap ):   output << "change the facility capacities "; break;
+   case( eChgDem ):   output << "change the customers demands "; break;
+   case( eCloseF ):   output << "close facilities "; break;
+   case( eOpenF ):    output << "re-open facilities "; break;
+   default:           output << "fix open facilities ";
    }
   }
 
 /*--------------------- PROTECTED FIELDS OF THE CLASS ----------------------*/
 
  CapacitatedFacilityLocationBlock *f_Block;
-               ///< pointer to the CapacitatedFacilityLocationBlock to which the CapacitatedFacilityLocationBlockMod refers
+ /**< pointer to the CapacitatedFacilityLocationBlock to which the
+  * CapacitatedFacilityLocationBlockMod refers */
 
  int f_type;   ///< type of modification
 
@@ -2021,10 +2045,15 @@ class CapacitatedFacilityLocationBlockSbstMod
 
 /*---------------------- CONSTRUCTOR & DESTRUCTOR --------------------------*/
 
- ///< constructor: takes the CapacitatedFacilityLocationBlock, the type, and the subset
- /**< Constructor: takes the CapacitatedFacilityLocationBlock, the type, and the subset. As the the
-  * && tells, nms is "consumed" by the constructor and its resources become
-  * property of the CapacitatedFacilityLocationBlockSbstMod object. */
+ ///< constructor: takes the Block *, the type, and the subset
+ /**< Constructor: takes the CapacitatedFacilityLocationBlock *, the type,
+  * and the subset. As the the && tells, nms is "consumed" by the constructor
+  * and its resources become property of the
+  * CapacitatedFacilityLocationBlockSbstMod object.
+  *
+  *   NOTE THAT nms IS REQUIRED TO BE ORDERED IN INCREASING SENSE
+  *
+  * although this is not checked by the class. */
 
  CapacitatedFacilityLocationBlockSbstMod(
 				 CapacitatedFacilityLocationBlock * fblock ,
