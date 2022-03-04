@@ -154,8 +154,7 @@ namespace SMSpp_di_unipi_it
  *   that all the changes happen at the same time and that the corresponding
  *   Modification are bunched together in a GroupModification, which is
  *   possible but complex and not implemented yet. The change is instead
- *   possible in the Flow Formulation where demands are node deficits.
- */
+ *   possible in the Flow Formulation where demands are node deficits. */
 
 class CapacitatedFacilityLocationBlock : public Block
 {
