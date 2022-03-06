@@ -2,43 +2,24 @@
 ################################ makefile ####################################
 ##############################################################################
 #                                                                            #
-#   makefile of dmx2nc4                                                      #
-#                                                                            #
-#                                VERSION 1.00                                #
-#                               25 - 10 - 2020                               #
-#                                                                            #
-#                              Implementation by:                            #
+#   makefile of txt2nc4                                                      #
 #                                                                            #
 #                              Antonio Frangioni                             #
-#                           Operations Research Group                        #
 #                          Dipartimento di Informatica                       #
 #                              Universita' di Pisa                           #
 #                                                                            #
 ##############################################################################
 
 # module name
-# NAME can be main, test and dmx2nc4:, the corresponding .cpp is compiled
-# and the final executable named $(NAME) is constructed 
-NAME = dmx2nc4
+NAME = txt2nc4
 
 # basic directory
 DIR = ./
 
-# switch to select the :MCFClass solver, supported values are
-# -DHAVE_CSCL2      for the CS2 class
-# -DHAVE_CPLEX      for the MCFCplex class
-# -DHAVE_MFSMX      for the MCFSimplex class
-# -DHAVE_MFZIB      for the MCFZIB class
-# -DHAVE_RELAX      for the RelaxIV class
-# -DHAVE_CPLEX      for the MCFCplex class
-# -DHAVE_SPTRE      for the SPTree class; note that SPTree cannot solve
-#                   most MCF instances, except those with SPT structure
-MCFCS = -DHAVE_MFSMX
-
 # debug switches
-#SW = -g -glldb -fno-inline -std=c++17 -ferror-limit=1 $(MCFCS)
+#SW = -g -glldb -fno-inline -std=c++17 -ferror-limit=1
 # production switches
-SW = -O3 -std=c++17 -DNDEBUG $(MCFCS)
+SW = -O3 -std=c++17 -DNDEBUG -ferror-limit=1
 
 # compiler
 CC = clang++
@@ -61,17 +42,17 @@ clean::
 # *H   is the list of all include files
 # *INC is the -I<include directories>
 
-# MCFBlock
-MCFBkSDR = ../
-include $(MCFBkSDR)makefile-c
+# CapacitatedFacilityLocationBlock
+CFLBkSDR = ../
+include $(CFLBkSDR)makefile-c
 
 # main module (linking phase) - - - - - - - - - - - - - - - - - - - - - - - -
 
 # object files
-MOBJ =  $(MCFBkOBJ)
+MOBJ =  $(CFLBkOBJ)
 
 # libreries
-MLIB =  $(MCFBkLIB)
+MLIB =  $(CFLBkLIB)
 
 $(NAME): $(MOBJ) $(DIR)$(NAME).o
 	$(CC) -o $(NAME) $(DIR)$(NAME).o $(MOBJ) $(MLIB) $(SW)
@@ -79,10 +60,10 @@ $(NAME): $(MOBJ) $(DIR)$(NAME).o
 # dependencies: every .o from its .C + every recursively included .h- - - - -
 
 # include directives
-MINC =  $(MCFBkINC)
+MINC =  $(CFLBkINC)
 
 # includes
-MH =    $(MCFBkH)
+MH =    $(CFLBkH)
 
 # compile command
 

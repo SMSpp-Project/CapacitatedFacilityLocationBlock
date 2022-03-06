@@ -25,9 +25,12 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#include "Block.h"
+
+#include "BinaryKnapsackBlock.h"
 
 #include "LinearFunction.h"
+
+#include "MCFBlock.h"
 
 #include "FRealObjective.h"
 
@@ -48,6 +51,13 @@ namespace SMSpp_di_unipi_it
  class CapacitatedFacilityLocationSolution;
  // forward declaration of CapacitatedFacilityLocationSolution
 
+ class BinaryKnapsackBlockMod;
+ // forward declaration of BinaryKnapsackBlockMod
+
+ class MCFBlock;     // forward declaration of MCFBlock
+
+ class MCFBlockMod;  // forward declaration of MCFBlockMod
+ 
 /*--------------------------------------------------------------------------*/
 /*------------------------------- CLASSES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -901,17 +911,19 @@ public:
 
  ColVariable & get_y( Index i ) const {
   #ifndef NDEBUG
-   if( ! ( AR &= HasVar ) )
+   if( ! ( AR & 8 ) )  // 8 == HasVar
     throw( std::logic_error( "get_y: variables not generated" ) );
    if( i >= f_n_facilities )
     throw( std::logic_error( "get_y: invalid facility index" ) );
   #endif
 
-  if( ( AR & FormMsk ) == KskForm )
+  if( ( AR & ~3 ) == 1 )  // ~3 = FormMsk , 1 = KskForm
    return( * static_cast< BinaryKnapsackBlock * >(
 				   v_Block[ i ] )->get_Var( f_n_customers ) );
   else
-   return( v_y[ i ] );
+   return( const_cast< ColVariable & >( v_y[ i ] ) );
+   // note the need for the const_cast as all fields of the class are const
+   // inside of a const method (this is const)
 
   return( * static_cast< MCFBlock * >( v_Block[ 1 ] )->i2p_x( i ) );
   }
@@ -921,7 +933,7 @@ public:
 
  ColVariable & get_x( Index i , Index j ) const {
   #ifndef NDEBUG
-   if( ! ( AR &= HasVar ) )
+   if( ! ( AR & 8 ) )  // 8 == HasVar
     throw( std::logic_error( "get_x: variables not generated" ) );
   if( i >= f_n_facilities )
     throw( std::logic_error( "get_x: invalid facility index" ) );
@@ -929,9 +941,13 @@ public:
     throw( std::logic_error( "get_x: invalid customer index" ) );
   #endif
 
-  switch( AR & FormMsk ) {
-   case( StdForm ): return( v_x[ i ][ j ] );
-   case( KskForm ): return( * static_cast< BinaryKnapsackBlock * >(
+  switch( AR & ~3 ) {  // ~3 = FormMsk 
+   case( 0 ):  // 0 = StdForm
+    return( const_cast< ColVariable & >( v_x[ i ][ j ] ) );
+    // note the need for the const_cast as all fields of the class are const
+    // inside of a const method (this is const)
+   case( 1 ):  // 1 = KskForm
+    return( * static_cast< BinaryKnapsackBlock * >(
 				              v_Block[ i ] )->get_Var( j ) );
    }
 
@@ -949,7 +965,7 @@ public:
 
  void get_facility_solution( IS_it Sol ,
 			     Range rng = Range( 0 , Inf< Index >() ) ) {
-  get_y( Sol , rng );
+  get_y< bool >( Sol , rng );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -963,7 +979,7 @@ public:
   * will be in whatever order nms[] is. */
 
  void get_facility_solution( IS_it Sol , c_Subset & nms ) {
-  get_y( Sol , nms );
+  get_y< bool >( Sol , nms );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -977,7 +993,7 @@ public:
 
  void get_facility_solution( CS_it Sol ,
 			     Range rng = Range( 0 , Inf< Index >() ) ) {
-  get_y( Sol , rng );
+  get_y< double >( Sol , rng );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -991,8 +1007,8 @@ public:
   * fractional solution, e.g., as produced by a Solver that can only solve a
   * continuous relaxation of the problem. */
 
- void get_facility_solution( CS_it FSol , c_Subset & nms ) {
-  get_y( Sol , nms );
+ void get_facility_solution( CS_it Sol , c_Subset & nms ) {
+  get_y< double >( Sol , nms );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -1013,7 +1029,7 @@ public:
 
  void get_transportation_solution( IS_it Sol ,
 				   Range rng = Range( 0 , Inf< Index >() ) ) {
-  get_x( Sol , rng );
+  get_x< bool >( Sol , rng );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -1032,8 +1048,8 @@ public:
   * unsplittable version of the problem is solved (get_Unsplittable() ==
   * true), or the integer rounding of the continuous solution otherwise. */
 
- void get_transportation_solution( IS_it FSol , c_Subset & nms ) {
-  get_x( Sol , nms );
+ void get_transportation_solution( IS_it Sol , c_Subset & nms ) {
+  get_x< bool >( Sol , nms );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -1054,7 +1070,7 @@ public:
 
  void get_transportation_solution( CS_it Sol ,
 				   Range rng = Range( 0 , Inf< Index >() ) ) {
-  get_x( Sol , rng );
+  get_x< double >( Sol , rng );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -1073,8 +1089,8 @@ public:
   * the problem is solved (get_Unsplittable() == false), or the integer
   * rounding of the true continuous solution otherwise. */
 
- void get_transportation_solution( IS_it FSol , c_Subset & nms ) {
-  get_x( Sol , nms );
+ void get_transportation_solution( CS_it Sol , c_Subset & nms ) {
+  get_x< double >( Sol , nms );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -1087,7 +1103,7 @@ public:
 
  void set_facility_solution( c_IS_it Sol ,
 			     Range rng = Range( 0 , Inf< Index >() ) ) {
-  set_y( Sol , rng );
+  set_y< bool >( Sol , rng );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -1101,7 +1117,7 @@ public:
   * whatever order nms[] is. */
 
  void set_facility_solution( c_IS_it Sol , c_Subset & nms ) {
-  set_y( Sol , nms );
+  set_y< bool >( Sol , nms );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -1115,7 +1131,7 @@ public:
 
  void set_facility_solution( c_CS_it Sol ,
 			     Range rng = Range( 0 , Inf< Index >() ) ) {
-  set_y( Sol , rng );
+  set_y< double >( Sol , rng );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -1128,8 +1144,8 @@ public:
   * e.g., as produced by a Solver that can only solve a continuous relaxation
   * of the problem. */
 
- void set_facility_solution( c_CS_it FSol , c_Subset & nms ) {
-  set_y( Sol , nms );
+ void set_facility_solution( c_CS_it Sol , c_Subset & nms ) {
+  set_y< double >( Sol , nms );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -1150,7 +1166,7 @@ public:
 
  void set_transportation_solution( c_IS_it Sol ,
 				   Range rng = Range( 0 , Inf< Index >() ) ) {
-  set_x( Sol , rng );
+  set_x< bool >( Sol , rng );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -1169,8 +1185,8 @@ public:
   * unsplittable version of the problem is solved (get_Unsplittable() ==
   * true), or the integer rounding of the continuous solution otherwise. */
 
- void set_transportation_solution( c_IS_it FSol , c_Subset & nms ) {
-  set_y( Sol , nms );
+ void set_transportation_solution( c_IS_it Sol , c_Subset & nms ) {
+  set_x< bool >( Sol , nms );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -1191,7 +1207,7 @@ public:
 
  void set_transportation_solution( c_CS_it Sol ,
 				   Range rng = Range( 0 , Inf< Index >() ) ) {
-  set_x( Sol , rng );
+  set_x< double >( Sol , rng );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -1210,8 +1226,8 @@ public:
   * the problem is solved (get_Unsplittable() == false), or the integer
   * rounding of the true continuous solution otherwise. */
 
- void set_transportation_solution( c_IS_it FSol , c_Subset & nms ) {
-  set_y( Sol , nms );
+ void set_transportation_solution( c_CS_it Sol , c_Subset & nms ) {
+  set_x< double >( Sol , nms );
   }
 
 /** @} ---------------------------------------------------------------------*/
@@ -1354,7 +1370,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// changes the cost of the given facility
 
- void chg_facility_cost( CNumber NCost , Index i ,
+ void chg_facility_cost( Cost NCost , Index i ,
 			 ModParam issueMod = eNoBlck ,
 			 ModParam issueAMod = eNoBlck );
 
@@ -1401,7 +1417,7 @@ public:
   * ( facility , customer ) \p, i.e., facility = p / get_NCustomers() and
   * customer = p % get_NCustomers(). */
 
- void chg_transportation_cost( CNumber NCost , Index p ,
+ void chg_transportation_cost( Cost NCost , Index p ,
 			       ModParam issueMod = eNoBlck ,
 			       ModParam issueAMod = eNoBlck );
 
@@ -1783,12 +1799,12 @@ public:
    &CapacitatedFacilityLocationBlock::open_facilities );
 
   register_method< CapacitatedFacilityLocationBlock , Range >(
-   "CapacitatedFacilityLocationBlock::fix_oopen_facilities",
-   &CapacitatedFacilityLocationBlock::fix_oopen_facilities );
+   "CapacitatedFacilityLocationBlock::fix_open_facilities",
+   &CapacitatedFacilityLocationBlock::fix_open_facilities );
 
   register_method< CapacitatedFacilityLocationBlock , Subset && , bool >(
-   "CapacitatedFacilityLocationBlock::fix_oopen_facilities" ,
-   &CapacitatedFacilityLocationBlock::fix_oopen_facilities );
+   "CapacitatedFacilityLocationBlock::fix_open_facilities" ,
+   &CapacitatedFacilityLocationBlock::fix_open_facilities );
    }
 
 /*--------------------------------------------------------------------------*/
@@ -1838,29 +1854,29 @@ public:
 
  void compute_conditional_bounds( void );
 
- template< typename T >
- void get_y( std::vector< T >::iterator Sol , Range rng );
+ template< class T >
+ void get_y( typename std::vector< T >::iterator Sol , Range rng );
 
  template< typename T >
- void get_y( std::vector< T >::iterator Sol , c_Subset nms );
+ void get_y( typename std::vector< T >::iterator Sol , c_Subset nms );
 
  template< typename T >
- void get_x( std::vector< T >::iterator Sol , Range rng );
+ void get_x( typename std::vector< T >::iterator Sol , Range rng );
 
  template< typename T >
- void get_x( std::vector< T >::iterator Sol , c_Subset nms );
+ void get_x( typename std::vector< T >::iterator Sol , c_Subset nms );
 
  template< typename T >
- void set_y( std::vector< T >::cost_iterator Sol , Range rng );
+ void set_y( typename std::vector< T >::const_iterator Sol , Range rng );
 
  template< typename T >
- void set_y( std::vector< T >::const_iterator Sol , c_Subset nms );
+ void set_y( typename std::vector< T >::const_iterator Sol , c_Subset nms );
 
  template< typename T >
- void set_x( std::vector< T >::cost_iterator Sol , Range rng );
+ void set_x( typename std::vector< T >::const_iterator Sol , Range rng );
 
  template< typename T >
- void set_x( std::vector< T >::const_iterator Sol , c_Subset nms );
+ void set_x( typename std::vector< T >::const_iterator Sol , c_Subset nms );
  
  ModParam make_amod_param( ModParam issueAMod , Index num );
 
@@ -2165,7 +2181,7 @@ class CapacitatedFacilityLocationSolution : public Solution {
   *   CapacitatedFacilityLocationSolution object does not contain any
   *   transportation solution. */
  
- void serialize( netCDF::NcGroup & group )  override final;
+ void serialize( netCDF::NcGroup & group ) const override final;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
@@ -2206,6 +2222,9 @@ class CapacitatedFacilityLocationSolution : public Solution {
 
 /*--------------------------------------------------------------------------*/
 
+ SMSpp_insert_in_factory_h;
+ // insert CapacitatedFacilityLocationSolution in the Solution factory
+ 
  };  // end( class( CapacitatedFacilityLocationSolution ) )
 
 /** @} end( group( CapacitatedFacilityLocationBlock_CLASSES ) ) ------------*/

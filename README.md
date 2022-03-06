@@ -22,7 +22,7 @@ of the features of SMS++, among which:
 
 ## Getting started
 
-These instructions will let you build MCFBlock and MCFSolver on your system.
+These instructions will let you build CapacitatedFacilityLocationBlock on your system.
 
 
 ### Requirements

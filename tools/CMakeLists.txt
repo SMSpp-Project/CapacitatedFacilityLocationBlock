@@ -17,12 +17,12 @@ if (NOT BUILD_SHARED_LIBS)
 endif ()
 
 # ----- dmx2nc4 ------------------------------------------------------------- #
-add_executable(dmx2nc4 dmx2nc4.cpp)
+add_executable(txt2nc4 txt2nc4.cpp)
 target_link_libraries(dmx2nc4 PRIVATE SMS++::MCFBlock)
 
 # ----- Install instructions ------------------------------------------------ #
 include(GNUInstallDirs)
-install(TARGETS dmx2nc4
+install(TARGETS txt2nc4
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # --------------------------------------------------------------------------- #
