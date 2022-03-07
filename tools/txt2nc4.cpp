@@ -63,8 +63,6 @@ static inline void Str2Sthg( const char* const str , T &sthg )
 
 int main( int argc , char **argv )
 {
- Index frmt = 0;
-
  if( argc < 4 ) {
   cerr << "Usage: " << argv[ 0 ] << " frmt txt_in file_out" << endl
        << "        frmt: 0 = ORLib, 1 = demands-first, 2 demand-last" << endl
@@ -144,7 +142,7 @@ int main( int argc , char **argv )
 
   if( frmt == 1 ) {  // demands-first
    // first read demands (doh!)
-   for( Index j = 0 ; j < n , ++j ) {
+   for( Index j = 0 ; j < n ; ++j ) {
     ProbFile >> D[ j ];
     if( ProbFile.fail() ) {
      cerr << "Error reading demand " << j << endl;
@@ -153,7 +151,7 @@ int main( int argc , char **argv )
     }
 
    // then read capacities
-   for( Index i = 0 ; i < m , ++i ) {
+   for( Index i = 0 ; i < m ; ++i ) {
     ProbFile >> Q[ i ];
     if( ProbFile.fail() ) {
      cerr << "Error reading capacity " << i << endl;
@@ -162,7 +160,7 @@ int main( int argc , char **argv )
     }
 
    // then read fixed costs
-   for( Index i = 0 ; i < m , ++i ) {
+   for( Index i = 0 ; i < m ; ++i ) {
     ProbFile >> F[ i ];
     if( ProbFile.fail() ) {
      cerr << "Error reading fixed cost " << i << endl;
@@ -172,7 +170,7 @@ int main( int argc , char **argv )
    }
   else {             // demands-last
    // first read pairs ( capacity , fixed cost )
-   for( Index i = 0 ; i < m , ++i ) {
+   for( Index i = 0 ; i < m ; ++i ) {
     ProbFile >> Q[ i ];
     if( ProbFile.fail() ) {
      cerr << "Error reading capacity " << i << endl;
@@ -186,7 +184,7 @@ int main( int argc , char **argv )
     }
 
    // last read demands (doh!)
-   for( Index j = 0 ; j < n , ++j ) {
+   for( Index j = 0 ; j < n ; ++j ) {
     ProbFile >> D[ j ];
     if( ProbFile.fail() ) {
      cerr << "Error reading demand " << j << endl;
@@ -199,8 +197,8 @@ int main( int argc , char **argv )
   CMatrix C;
   C.resize( boost::extents[ m ][ n ] );
 
-  for( Index i = 0 ; i < m , ++i )
-   for( Index j = 0 ; j < n , ++j ) {
+  for( Index i = 0 ; i < m ; ++i )
+   for( Index j = 0 ; j < n ; ++j ) {
     ProbFile >> C[ i ][ j ];
     if( ProbFile.fail() ) {
      cerr << "Error reading transportation cost ( " << i << ", " << j
@@ -213,7 +211,7 @@ int main( int argc , char **argv )
     }
 
   // finally, load everything into the CapacitatedFacilityLocationBlock
-  CFLB.load( m , n , move( Q ) , move( F ) , move( D ) , move( C ) );
+  CFLB.load( m , n , move( Q ) , move( F ) , move( D ) , std::move( C ) );
   }
 
  ProbFile.close();  // input done, close the file
@@ -230,8 +228,10 @@ int main( int argc , char **argv )
   OutFile << CFLB;
   }
  else
-  CFLB.serialize( name , eBlockFile );
- 
+  CFLB.Block::serialize( name , int( eBlockFile ) );
+  // why the Block:: is needed completely evades me, but clang++ seems to
+  // think it is
+
  // all done
  return( 0 );
  }

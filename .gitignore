@@ -1,5 +1,5 @@
 ### Makefile-generated binaries
-#tools/dmx2nc4
+tools/txt2nc4
 
 ### C/C++ template
 # Prerequisites

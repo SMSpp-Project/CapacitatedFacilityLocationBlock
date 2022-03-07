@@ -964,9 +964,8 @@ public:
   * this is the integer (binary) version of the solution. */
 
  void get_facility_solution( IS_it Sol ,
-			     Range rng = Range( 0 , Inf< Index >() ) ) {
-  get_y< bool >( Sol , rng );
-  }
+			     Range rng = Range( 0 , Inf< Index >() ) )
+  const { get_y< bool >( Sol , rng ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets an arbitrary subset of the (integer) facility solution
@@ -978,7 +977,7 @@ public:
   * nms[] to be ordered, just the entries written in the (sub)vector
   * will be in whatever order nms[] is. */
 
- void get_facility_solution( IS_it Sol , c_Subset & nms ) {
+ void get_facility_solution( IS_it Sol , c_Subset & nms ) const {
   get_y< bool >( Sol , nms );
   }
 
@@ -992,9 +991,8 @@ public:
   * only solve a continuous relaxation of the problem. */
 
  void get_facility_solution( CS_it Sol ,
-			     Range rng = Range( 0 , Inf< Index >() ) ) {
-  get_y< double >( Sol , rng );
-  }
+			     Range rng = Range( 0 , Inf< Index >() ) )
+  const { get_y< double >( Sol , rng ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets an arbitrary subset of the (continuous) facility solution
@@ -1007,52 +1005,11 @@ public:
   * fractional solution, e.g., as produced by a Solver that can only solve a
   * continuous relaxation of the problem. */
 
- void get_facility_solution( CS_it Sol , c_Subset & nms ) {
+ void get_facility_solution( CS_it Sol , c_Subset & nms ) const {
   get_y< double >( Sol , nms );
   }
 
 /*--------------------------------------------------------------------------*/
- /// gets a contiguous interval of the (integer) transportation solution
- /** Method to get the transportation solution: the components of the
-  * transportation solution vector in the range [ rng.first , rng.second )
-  * are written in the IntSolution in the positions starting from where the
-  * iterator TSol points, in the obvious order. The two-dimensional
-  * transportation solution is considered "flattened" into a one-dimensional
-  * vector, arranged facility-wise: first the components corresponding to
-  * the first facility (in order of customer), then these corresponding to
-  * the second facility ...
-  *
-  * Since Sol is an iterator to an IntSolution, this is the integer
-  * (binary) version of the solution, i.e., the "true" solution if the
-  * unsplittable version of the problem is solved (get_Unsplittable() ==
-  * true), or the integer rounding of the continuous solution otherwise. */
-
- void get_transportation_solution( IS_it Sol ,
-				   Range rng = Range( 0 , Inf< Index >() ) ) {
-  get_x< bool >( Sol , rng );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// gets an arbitrary subset of the (integer) transportation solution
- /** Method to get the facility transportation: the components of the
-  * transportation solution vector whose indices are specified in nms[] are
-  * written in the IntSolution in the positions starting from where the
-  * iterator FSol points, in the obvious order. The two-dimensional
-  * transportation solution is considered "flattened" into a one-dimensional
-  * vector, arranged facility-wise: first the components corresponding to
-  * the first facility (in order of customer), then these corresponding to
-  * the second facility ... nms[] must be ordered in increasing sense.
-  *
-  * Since Sol is an iterator to an IntSolution, this is the integer
-  * (binary) version of the solution, i.e., the "true" solution if the
-  * unsplittable version of the problem is solved (get_Unsplittable() ==
-  * true), or the integer rounding of the continuous solution otherwise. */
-
- void get_transportation_solution( IS_it Sol , c_Subset & nms ) {
-  get_x< bool >( Sol , nms );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets a contiguous interval of the (continuous) transportation solution
  /** Method to get the transportation solution: the components of the
   * transportation solution vector in the range [ rng.first , rng.second )
@@ -1069,9 +1026,8 @@ public:
   * rounding of the true continuous solution otherwise. */
 
  void get_transportation_solution( CS_it Sol ,
-				   Range rng = Range( 0 , Inf< Index >() ) ) {
-  get_x< double >( Sol , rng );
-  }
+				   Range rng = Range( 0 , Inf< Index >() ) )
+  const { get_x< double >( Sol , rng ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets an arbitrary subset of the (continuous) transportation solution
@@ -1089,7 +1045,7 @@ public:
   * the problem is solved (get_Unsplittable() == false), or the integer
   * rounding of the true continuous solution otherwise. */
 
- void get_transportation_solution( CS_it Sol , c_Subset & nms ) {
+ void get_transportation_solution( CS_it Sol , c_Subset & nms ) const {
   get_x< double >( Sol , nms );
   }
 
@@ -1149,47 +1105,6 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
- /// sets a contiguous interval of the (integer) transportation solution
- /** Method to set the transportation solution: the components of the
-  * transportation solution vector in the range [ rng.first , rng.second )
-  * are read from the IntSolution in the positions starting from where the
-  * iterator TSol points, in the obvious order. The two-dimensional
-  * transportation solution is considered "flattened" into a one-dimensional
-  * vector, arranged facility-wise: first the components corresponding to
-  * the first facility (in order of customer), then these corresponding to
-  * the second facility ...
-  *
-  * Since Sol is an iterator to an IntSolution, this is the integer
-  * (binary) version of the solution, i.e., the "true" solution if the
-  * unsplittable version of the problem is solved (get_Unsplittable() ==
-  * true), or the integer rounding of the continuous solution otherwise. */
-
- void set_transportation_solution( c_IS_it Sol ,
-				   Range rng = Range( 0 , Inf< Index >() ) ) {
-  set_x< bool >( Sol , rng );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// sets an arbitrary subset of the (integer) transportation solution
- /** Method to set the facility transportation: the components of the
-  * transportation solution vector whose indices are specified in nms[] are
-  * read from the IntSolution in the positions starting from where the
-  * iterator FSol points, in the obvious order. The two-dimensional
-  * transportation solution is considered "flattened" into a one-dimensional
-  * vector, arranged facility-wise: first the components corresponding to
-  * the first facility (in order of customer), then these corresponding to
-  * the second facility ... nms[] must be ordered in increasing sense.
-  *
-  * Since Sol is an iterator to an IntSolution, this is the integer
-  * (binary) version of the solution, i.e., the "true" solution if the
-  * unsplittable version of the problem is solved (get_Unsplittable() ==
-  * true), or the integer rounding of the continuous solution otherwise. */
-
- void set_transportation_solution( c_IS_it Sol , c_Subset & nms ) {
-  set_x< bool >( Sol , nms );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// sets a contiguous interval of the (continuous) transportation solution
  /** Method to set the transportation solution: the components of the
   * transportation solution vector in the range [ rng.first , rng.second )
@@ -1467,10 +1382,10 @@ public:
   * If issueMod says so then a "physical"
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
- void chg_customers_demands( c_DV_it NDem ,
-			     Range rng = Range( 0 , Inf<Index>() ) ,
-			     ModParam issueMod = eNoBlck ,
-			     ModParam issueAMod = eNoBlck );
+ void chg_customer_demands( c_DV_it NDem ,
+			    Range rng = Range( 0 , Inf<Index>() ) ,
+			    ModParam issueMod = eNoBlck ,
+			    ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// change the demands of an arbitrary subset of customers
@@ -1481,10 +1396,10 @@ public:
   * being shipped to the appropriate
   * CapacitatedFacilityLocationBlockSbstMod that is issued. */
 
- void chg_customers_demands( c_DV_it NDem , Subset && nms ,
-			     bool ordered = false ,
-			     ModParam issueMod = eNoBlck ,
-			     ModParam issueAMod = eNoBlck );
+ void chg_customer_demands( c_DV_it NDem , Subset && nms ,
+			    bool ordered = false ,
+			    ModParam issueMod = eNoBlck ,
+			    ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// changes the demand of the given customer
@@ -1498,8 +1413,8 @@ public:
  /** Method to close a subset of facility with "contiguous names", i.e., all
   * facilities rng.first <= i < rmg.second - rng.first. Note that any
   * rng.second >= get_NFacilities() means "up until the end". Closing an
-  * already closed facility does nothing, while closong a precedently
-  * fixed-open facility overrides the fixed-open status.
+  * already closed facility or a fixed-open one does nothing, i.e., closing
+  * a facility does not override the fixed-open status.
   *
   * If issueMod says so then a "physical"
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
@@ -1511,9 +1426,9 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// closes an arbitrary subset of facilities
  /** Method to close an arbitrary subset of facilities, i.e., all those whose
-  * names are found in \p nms.  Closing an already closed facility does
-  * nothing, while closong a precedently fixed-open facility overrides the
-  * fixed-open status. \p ordered tells if \p nms is already ordered in
+  * names are found in \p nms. Closing an already closed facility or a
+  * fixed-open one does nothing, i.e., closing a facility does not override
+  * the fixed-open status. \p ordered tells if \p nms is already ordered in
   * increasing sense. As the && tells, \p nms is "consumed" by the method,
   * typically being shipped to an appropriate
   * CapacitatedFacilityLocationBlockSbstMod object. */
@@ -1524,6 +1439,9 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// closes the given facility
+ /** Closes the given facility, unless i is already closed or fixed-open in
+  * which case it one does nothing; that is, closing a facility does not
+  * override the fixed-open status. */
 
  void close_facility( Index i , ModParam issueMod = eNoBlck ,
 		                ModParam issueAMod = eNoBlck );
@@ -1571,8 +1489,8 @@ public:
   * to be open already. Note that their construction cost is added to the
   * Objective value, but it is not optimised upon since the decision is taken
   * already. Note that any  rng.second >= get_NFacilities() means "up until 
-  * the end". Fixing open a previously closed facility overrides the closed
-  * status. 
+  * the end". Fixing open an already fixed-open or a closed facility does
+  * nothing, i.e., fixing-open a facility does not override its closed status.
   *
   * If issueMod says so then a "physical"
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
@@ -1586,9 +1504,10 @@ public:
  /** Method to fix open an arbitrary subset of facilities, i.e., all those
   * whose names are found in \p nms are now considered to be open already.
   * Note that their construction cost is added to the Objective value, but it
-  * is not optimised upon since the decision is taken  already. Fixing open a
-  * previously closed facility overrides the closed status. \p ordered tells
-  * if \p nms is already ordered in increasing  sense. As the && tells, \p nms
+  * is not optimised upon since the decision is taken  already. Fixing open
+  * an already fixed-open or a closed facility does nothing, i.e., fixing-open
+  * a facility does not override its closed status. \p ordered tells if
+  * \p nms is already ordered in increasing  sense. As the && tells, \p nms
   * is "consumed" by the method, typically being shipped to an appropriate
   * CapacitatedFacilityLocationBlockSbstMod object. */
 
@@ -1598,6 +1517,9 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// fix opens the given facility
+ /** Fixes open a facility, unless it is already fixed-open or a closed in
+  * which case it does nothing; that is, fixing-open a facility does not
+  * override its closed status. */ 
 
  void fix_open_facility( Index i , ModParam issueMod = eNoBlck ,
 			           ModParam issueAMod = eNoBlck );
@@ -1775,12 +1697,12 @@ public:
 
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
    bool >(
-   "CapacitatedFacilityLocationBlock::chg_customers_demands",
-   &CapacitatedFacilityLocationBlock::chg_customers_demands );
+   "CapacitatedFacilityLocationBlock::chg_customer_demands",
+   &CapacitatedFacilityLocationBlock::chg_customer_demands );
 
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
-   "CapacitatedFacilityLocationBlock::chg_customers_demands",
-   &CapacitatedFacilityLocationBlock::chg_customers_demands );
+   "CapacitatedFacilityLocationBlock::chg_customer_demands",
+   &CapacitatedFacilityLocationBlock::chg_customer_demands );
 
    register_method< CapacitatedFacilityLocationBlock , Range >(
    "CapacitatedFacilityLocationBlock::close_facilities",
@@ -1855,16 +1777,16 @@ public:
  void compute_conditional_bounds( void );
 
  template< class T >
- void get_y( typename std::vector< T >::iterator Sol , Range rng );
+ void get_y( typename std::vector< T >::iterator Sol , Range rng ) const;
 
  template< typename T >
- void get_y( typename std::vector< T >::iterator Sol , c_Subset nms );
+ void get_y( typename std::vector< T >::iterator Sol , c_Subset nms ) const;
 
  template< typename T >
- void get_x( typename std::vector< T >::iterator Sol , Range rng );
+ void get_x( typename std::vector< T >::iterator Sol , Range rng ) const;
 
  template< typename T >
- void get_x( typename std::vector< T >::iterator Sol , c_Subset nms );
+ void get_x( typename std::vector< T >::iterator Sol , c_Subset nms ) const;
 
  template< typename T >
  void set_y( typename std::vector< T >::const_iterator Sol , Range rng );
@@ -1935,11 +1857,10 @@ class CapacitatedFacilityLocationBlockMod : public Modification
  /// constructor: takes the CapacitatedFacilityLocationBlock and the type
 
  CapacitatedFacilityLocationBlockMod(
-				  CapacitatedFacilityLocationBlock * fblock ,
-				  int type )
+		       CapacitatedFacilityLocationBlock * fblock , int type )
   : f_Block( fblock ) , f_type( type ) {}
 
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  virtual ~CapacitatedFacilityLocationBlockMod() = default;
  ///< destructor, does nothing
@@ -1951,10 +1872,10 @@ class CapacitatedFacilityLocationBlockMod : public Modification
 
  Block * get_Block( void ) const override  { return( f_Block ); }
 
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// accessor to the type of modification
 
- int type( void ) { return( f_type ); }
+ int type( void ) const { return( f_type ); }
 
 /*--------------------- PROTECTED PART OF THE CLASS ------------------------*/
 
@@ -2021,7 +1942,7 @@ class CapacitatedFacilityLocationBlockRngdMod
 
  /// accessor to the range
 
- Block::c_Range & rng( void ) { return( f_rng ); }
+ Block::c_Range & rng( void ) const { return( f_rng ); }
  
 /*--------------------- PROTECTED PART OF THE CLASS ------------------------*/
 
@@ -2086,7 +2007,7 @@ class CapacitatedFacilityLocationBlockSbstMod
 
  /// accessor to the subset
 
- Block::c_Subset & nms( void ) { return( f_nms ); }
+ Block::c_Subset & nms( void ) const { return( f_nms ); }
 
 /*--------------------- PROTECTED PART OF THE CLASS ------------------------*/
 

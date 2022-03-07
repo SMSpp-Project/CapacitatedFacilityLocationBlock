@@ -137,11 +137,11 @@ static bool is_equal( std::vector<T> & vec , Block::c_Subset & nms ,
 // copies one vector to a given subset of another
 
 template< typename T >
-static void copyidx( std::vector< T > & vec , Block::c_Subset & nms ,
+static void copyidx( T * vec , Block::c_Subset & nms ,
 		     typename std::vector< T >::const_iterator cpy )
 {
  for( auto nm : nms )
-  vec[ nm ] = *(cpy++);
+  *( vec + nm ) = *(cpy++);
  }
 
 /*----------------------------------------------------------------------------
@@ -162,6 +162,10 @@ static void copyidx( std::vector< T > & vec , c_Subset & nms ,
 // register CapacitatedFacilityLocationBlock to the Block factory
 
 SMSpp_insert_in_factory_cpp_1( CapacitatedFacilityLocationBlock );
+
+// register CapacitatedFacilityLocationSolution to the Solution factory
+
+SMSpp_insert_in_factory_cpp_1( CapacitatedFacilityLocationSolution );
 
 /*--------------------------------------------------------------------------*/
 /*--------------- METHODS OF CapacitatedFacilityLocationBlock --------------*/
@@ -1428,7 +1432,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
  if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
   // change abstract and physical representation together - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-  copyidx( v_f_cost , nms , NCost );
+  copyidx( v_f_cost.data() , nms , NCost );
 
   if( ( AR & FormMsk ) != KskForm )
    // since modify_coefficients owns both vectors, two copies are made
@@ -1442,7 +1446,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
   if( not_dry_run( issueMod ) )
-   copyidx( v_f_cost , nms , NCost );
+   copyidx( v_f_cost.data() , nms , NCost );
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
@@ -1599,8 +1603,8 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::chg_transportation_costs(
-			        c_CV_it NCost , Subset && nms , bool ordered
-				ModParam issueMod , ModParam issueAMod )
+			       c_CV_it NCost , Subset && nms , bool ordered ,
+			       ModParam issueMod , ModParam issueAMod )
 {
  if( nms.empty() )  // nothing to change
   return;           // cowardly (and silently) return
@@ -1618,7 +1622,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
   // change abstract and physical representation together - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-  copyidx( v_t_cost , nms , NCost );
+  copyidx( v_t_cost.data() , nms , NCost );
 
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1627,7 +1631,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
      el += f_n_facilities;
 
     // since modify_coefficients owns both vectors, copies has to be made
-    CVector NC( NCost , NCost + num );
+    CVector NC( NCost , NCost + nms.size() );
     get_lfo()->modify_coefficients( std::move( NC ) , std::move( nnms ) ,
 				    true , issueAMod );
     break;
@@ -1641,8 +1645,8 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
      Subset nnms( nms );     // copy and translate names
      for( auto & el : nnms )
       el %= f_n_customers;
-     KB( v_Block[ i ] )->chg_weights( NCost , std::move( nnms ) , true ,
-				      issueMod , issueAMod );
+     BKB( v_Block[ i ] )->chg_weights( NCost , std::move( nnms ) , true ,
+				       issueMod , issueAMod );
      break;
      }
 
@@ -1655,8 +1659,8 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
      for( auto & el : nnms )
       el %= f_n_customers;
 
-     KB( v_Block[ i ] )->chg_profits( NCost , std::move( nnms ) , true ,
-				      issueMod , issueAMod );
+     BKB( v_Block[ i ] )->chg_profits( NCost , std::move( nnms ) , true ,
+				       issueMod , issueAMod );
      if( eit == nms.end() )
       break;
 
@@ -1669,7 +1673,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
     for( auto & el : nnms )
      el += f_n_facilities;
 
-    MCFB( v_Block[ 1 ] )->chg_costs( NCost , nnms , true ,
+    MCFB( v_Block[ 1 ] )->chg_costs( NCost , std::move( nnms ) , true ,
 				     issueMod , issueAMod );
     }
    }
@@ -1678,14 +1682,14 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
   // only change the physical representation- - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   if( not_dry_run( issueMod ) )
-   copyidx( v_t_cost , nms , NCost );
+   copyidx( v_t_cost.data() , nms , NCost );
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
  
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
-			   CapacitatedFacilityLocationBlockSnstMod >( this ,
+			   CapacitatedFacilityLocationBlockSbstMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgTCost ,
 			    std::move( nms ) ) ,
 			   Observer::par2chnl( issueMod ) );
@@ -1697,9 +1701,8 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::chg_transportation_cost(
-				     CNumber NCost , Index p ,
-				     ModParam issueMod , ModParam issueAMod )
+void CapacitatedFacilityLocationBlock::chg_transportation_cost( Cost NCost ,
+			   Index p , ModParam issueMod , ModParam issueAMod )
 {
  c_Index maxn = f_n_facilities * f_n_customers;
  if( p >= maxn )
@@ -1723,7 +1726,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_cost(
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
-    KB( v_Block[ i ] )->chg_profit( NCost , j , issueMod , issueAMod );
+    BKB( v_Block[ i ] )->chg_profit( NCost , j , issueMod , issueAMod );
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1776,16 +1779,15 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
   auto iAM = make_amod_param( issueAMod ,
 			      ( AR & FormMsk ) != FlwForm ? num : 0 );
   switch( AR & FormMsk ) {
-   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( Index i = rng.first ; i < rng.second ; ++i )
-     LF( v_cap[ i ].set_function() )->modify_coefficient( *(NCap++) ,
-							  f_n_customers ,
-							  iAM );
+     LF( v_cap[ i ].get_function() )->modify_coefficient( *(NCap++) ,
+						       f_n_customers , iAM );
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( Index i = rng.first ; i < rng.second ; ++i )
-     KB( v_Block[ i ] )->chg_capacity( *(NCap++) , issueMod , iAM );
+     BKB( v_Block[ i ] )->chg_capacity( *(NCap++) , issueMod , iAM );
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1818,8 +1820,8 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::chg_facility_capacities(
-				  c_DV_it NCap , Subset && nms , bool ordered
-				  ModParam issueMod , ModParam issueAMod )
+			        c_DV_it NCap , Subset && nms , bool ordered ,
+				ModParam issueMod , ModParam issueAMod )
 {
  if( nms.empty() )  // nothing to change
   return;           // cowardly (and silently) return
@@ -1831,35 +1833,35 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
  if( not_dry_run( issueAMod ) && ( AR & HasCapCns ) ) {
   // change abstract and physical representation together - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-  copyidx( v_capacity , nms , NCap );
+  copyidx( v_capacity.data() , nms , NCap );
 
   // if appropriate, open a new channel to bunch up all abstract Modification
   auto iAM = make_amod_param( issueAMod ,
-			      ( AR & FormMsk ) != FlwForm ? num : 0 );
+			      ( AR & FormMsk ) != FlwForm ? nms.size() : 0 );
   switch( AR & FormMsk ) {
-   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto i : nms )
-     LF( v_cap[ i ].set_function() )->modify_coefficient( *(NCap++) ,
-							  f_n_customers ,
-							  iAM );
+     LF( v_cap[ i ].get_function() )->modify_coefficient( *(NCap++) ,
+						       f_n_customers , iAM );
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto i : nms )
-     KB( v_Block[ i ] )->chg_capacity( *(NCap++) , issueMod , iAM );
+     BKB( v_Block[ i ] )->chg_capacity( *(NCap++) , issueMod , iAM );
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    MCFB( v_Block[ 1 ] )->chg_ucaps( NCap , nms , ordered , issueMod , iAM );
+    MCFB( v_Block[ 1 ] )->chg_ucaps( NCap , std::move( nms ) , ordered ,
+				     issueMod , iAM );
    }
 
   // if a new channel had been opened, close it
-  unmake_amod_param( issueAMod , iAM , num );
+  unmake_amod_param( issueAMod , iAM , nms.size() );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
   if( not_dry_run( issueMod ) )
-   copyidx( v_capacity , nms , NCap );
+   copyidx( v_capacity.data() , nms , NCap );
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
@@ -1899,12 +1901,12 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacity( Demand NCap ,
 
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    LF( v_cap[ i ].set_function() )->modify_coefficient( NCap , f_n_customers ,
+    LF( v_cap[ i ].get_function() )->modify_coefficient( NCap , f_n_customers ,
 							 issueAMod );
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
-    KB( v_Block[ i ] )->chg_capacity( NCap , issueMod , issueAMod );
+    BKB( v_Block[ i ] )->chg_capacity( NCap , issueMod , issueAMod );
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1930,7 +1932,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacity( Demand NCap ,
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::chg_customers_demands( c_DV_it NDem ,
+void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
 			 Range rng , ModParam issueMod , ModParam issueAMod )
 {
  rng.second = std::min( rng.second , f_n_customers );
@@ -1956,7 +1958,7 @@ void CapacitatedFacilityLocationBlock::chg_customers_demands( c_DV_it NDem ,
     auto iAM = make_amod_param( issueAMod , num );
 
     for( Index i = rng.first ; i < rng.second ; ++i )
-     v_sat[ i ].set_both( *(NCap++) , iAM );
+     v_sat[ i ].set_both( *(NDem++) , iAM );
 
     // if a new channel had been opened, close it
     unmake_amod_param( issueAMod , iAM , num );
@@ -1967,22 +1969,27 @@ void CapacitatedFacilityLocationBlock::chg_customers_demands( c_DV_it NDem ,
     auto iAM = make_amod_param( issueAMod , f_n_facilities );
 
     for( auto bi : v_Block )
-     KB( vi )->chg_weights( NCap , rng , issueMod , iAM );
+     BKB( bi )->chg_weights( NDem , rng , issueMod , iAM );
 
     // close the new channel
     unmake_amod_param( issueAMod , iAM , f_n_facilities );
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    // ensure that the sum of all deficits always remains == 0
-    MCFB( v_Block[ 1 ] )->chg_dfcts( NCap ,
+    // ensure that the sum of all deficits always remains == 0, which means
+    // there will be at least two Modification
+    auto iAM = make_amod_param( issueAMod , 2 );
+
+    MCFB( v_Block[ 1 ] )->chg_dfcts( NDem ,
 				     Range( rng.first + f_n_facilities ,
 					    rng.second + f_n_facilities ) ,
-				     issueMod , issueAMod );
+				     issueMod , iAM );
     MCFB( v_Block[ 1 ] )->chg_dfct( f_n_facilities + f_n_customers ,
 				    - std::accumulate( v_demand.begin() ,
-						       v_demand.end() ) ,
-				    issueMod , issueAMod );
+						       v_demand.end() , 0 ) ,
+				    issueMod , iAM );
+    // close the new channel
+    unmake_amod_param( issueAMod , iAM , f_n_facilities );
    }
   }
  else
@@ -2003,11 +2010,11 @@ void CapacitatedFacilityLocationBlock::chg_customers_demands( c_DV_it NDem ,
   CheckAbsVSPhys();
  #endif
 
- }  // end( CapacitatedFacilityLocationBlock::chg_customers_demands( rng ) )
+ }  // end( CapacitatedFacilityLocationBlock::chg_customer_demands( rng ) )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::chg_customers_demands( c_DV_it NDem ,
+void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
 			            Subset && nms , bool ordered ,
 				    ModParam issueMod , ModParam issueAMod )
 {
@@ -2025,7 +2032,7 @@ void CapacitatedFacilityLocationBlock::chg_customers_demands( c_DV_it NDem ,
  if( not_dry_run( issueAMod ) && ( AR & HasSatCns ) ) {
   // change abstract and physical representation together - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-  copyidx( v_demand , nms , NDem );
+  copyidx( v_demand.data() , nms , NDem );
 
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2036,7 +2043,7 @@ void CapacitatedFacilityLocationBlock::chg_customers_demands( c_DV_it NDem ,
      v_sat[ i ].set_both( *(NDem++) , iAM );
  
     // if a new channel had been opened, close it
-    unmake_amod_param( issueAMod , iAM , num );
+    unmake_amod_param( issueAMod , iAM , nms.size() );
     break;
    }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2045,14 +2052,17 @@ void CapacitatedFacilityLocationBlock::chg_customers_demands( c_DV_it NDem ,
 
     // note that chg_weights() acquire the vector, so copies must be made
     for( auto bi : v_Block )
-     KB( vi )->chg_weights( NDem , Subset( nms ) , true , issueMod , iAM );
+     BKB( bi )->chg_weights( NDem , Subset( nms ) , true , issueMod , iAM );
 
     // close the new channel
     unmake_amod_param( issueAMod , iAM , f_n_facilities );
     break;
     }
    default: {  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
-    // ensure that the sum of all deficits always remains == 0
+    // ensure that the sum of all deficits always remains == 0, which means
+    // there will be at least two Modification
+    auto iAM = make_amod_param( issueAMod , 2 );
+
     Subset nnms( nms.begin() , nms.end() );  // copy and translate nms
     for( auto & el : nnms )
      el+= f_n_facilities;
@@ -2060,18 +2070,17 @@ void CapacitatedFacilityLocationBlock::chg_customers_demands( c_DV_it NDem ,
 				     issueMod , issueAMod );
     MCFB( v_Block[ 1 ] )->chg_dfct( f_n_facilities + f_n_customers ,
 				    - std::accumulate( v_demand.begin() ,
-						       v_demand.end() ) ,
+						       v_demand.end() , 0 ) ,
 				    issueMod , issueAMod );
+    // close the new channel
+    unmake_amod_param( issueAMod , iAM , f_n_facilities );    
     }
    }
-
-  // if a new channel had been opened, close it
-  unmake_amod_param( issueAMod , iAM , num );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
   if( not_dry_run( issueMod ) )
-   copyidx( v_demand , nms , NCap );
+   copyidx( v_demand.data() , nms , NDem );
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
@@ -2086,12 +2095,12 @@ void CapacitatedFacilityLocationBlock::chg_customers_demands( c_DV_it NDem ,
   CheckAbsVSPhys();
  #endif
 
- }  // end( CapacitatedFacilityLocationBlock::chg_customers_demands( sbst ) )
+ }  // end( CapacitatedFacilityLocationBlock::chg_customer_demands( sbst ) )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::chg_customers_demand( Demand NDem ,
-			  Index j  , ModParam issueMod , ModParam issueAMod )
+void CapacitatedFacilityLocationBlock::chg_customer_demand( Demand NDem ,
+			   Index j , ModParam issueMod , ModParam issueAMod )
 {
  if( j >= f_n_customers )
   throw( std::invalid_argument( "invalid customer name" ) );
@@ -2117,19 +2126,20 @@ void CapacitatedFacilityLocationBlock::chg_customers_demand( Demand NDem ,
     auto iAM = make_amod_param( issueAMod , f_n_facilities );
 
     for( auto bi : v_Block )
-     KB( vi )->chg_weights( NDem , j , issueMod , iAM );
+     BKB( bi )->chg_weight( NDem , j , issueMod , iAM );
 
     // close the new channel
     unmake_amod_param( issueAMod , iAM , f_n_facilities );
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    // ensure that the sum of all deficits always remains == 0
+    // ensure that the sum of all deficits always remains == 0, but this is
+    // done with just one operation so no GroupModification is needed
     Subset nms = { f_n_facilities + j , f_n_facilities + f_n_customers };
-    std::array< MCFBlock::FNumber , 2 > dfct =
-           { NDem , - std::accumulate( v_demand.begin() , v_demand.end() ) };
-    MCFB( v_Block[ 1 ] )->chg_dfcts( NDem.begin() , std::move( nnms ) ,
-				     true , issueMod , issueAMod );
+    MCFBlock::Vec_FNumber dfct = { NDem ,
+      - std::accumulate( v_demand.begin() , v_demand.end() , Demand( 0 ) ) };
+    MCFB( v_Block[ 1 ] )->chg_dfcts( dfct.begin() , std::move( nms ) , true ,
+				     issueMod , issueAMod );
    }
   }
  else
@@ -2144,7 +2154,7 @@ void CapacitatedFacilityLocationBlock::chg_customers_demand( Demand NDem ,
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgDem ,
-			    Range( i , j + 1 ) ) ,
+			    Range( j , j + 1 ) ) ,
 			   Observer::par2chnl( issueMod ) );
  #if CHECK_DS
   CheckAbsVSPhys();
@@ -2168,7 +2178,7 @@ void CapacitatedFacilityLocationBlock::close_facilities( Range rng ,
  // TODO: if some changes are "fake", restrict the range
  Index cnt = 0;
  for( Index i = rng.first ; i < rng.second ; ++i )
-  if( ( ! get_y( i ).is_fixed() ) || ( get_y( i ).get_value() != 0 ) )
+  if( ! get_y( i ).is_fixed() )
    ++cnt;
 
  if( ! cnt )  // all facilities are fixed already
@@ -2182,16 +2192,16 @@ void CapacitatedFacilityLocationBlock::close_facilities( Range rng ,
   // if appropriate, open a new channel to bunch up all abstract Modification
   auto iAM = make_amod_param( issueAMod , cnt );
 
-  if( ( AR & FormMsk ) != KskForm )
-   for( Index i = rng.first ; i < rng.second ; ++i ) {
-    v_y[ i ].set_value( 0 );
-    v_y[ i ].is_fixed( true , iAM );
-    }
+  if( ( AR & FormMsk ) != KskForm ) {
+   for( Index i = rng.first ; i < rng.second ; ++i )
+    if( ! v_y[ i ].is_fixed() ) {
+     v_y[ i ].set_value( 0 );
+     v_y[ i ].is_fixed( true , iAM );
+     }
+   }
   else
-   for( Index i = rng.first ; i < rng.second ; ++i ) {
-    KB( v_Block[ i ] )->get_Var( f_n_customers ).set_value( 0 );
-    KB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , iAM );
-    }
+   for( Index i = rng.first ; i < rng.second ; ++i )
+    BKB( v_Block[ i ] )->fix_x( false , f_n_customers , issueMod , iAM );
 
   // if a new channel had been opened, close it
   unmake_amod_param( issueAMod , iAM , cnt );
@@ -2234,7 +2244,7 @@ void CapacitatedFacilityLocationBlock::close_facilities( Subset && nms ,
  // TODO: if some changes are "fake", restrict the subset
  Index cnt = 0;
  for( auto i : nms )
-  if( ( ! get_y( i ).is_fixed() ) || ( get_y( i ).get_value() != 0 ) )
+  if( ! get_y( i ).is_fixed() )
    ++cnt;
 
  if( ! cnt )  // all facilities are fixed already
@@ -2248,16 +2258,16 @@ void CapacitatedFacilityLocationBlock::close_facilities( Subset && nms ,
   // if appropriate, open a new channel to bunch up all abstract Modification
   auto iAM = make_amod_param( issueAMod , cnt );
 
-  if( ( AR & FormMsk ) != KskForm )
-   for( auto i : nms ) {
-    v_y[ i ].set_value( 0 );
-    v_y[ i ].is_fixed( true , iAM );
-    }
+  if( ( AR & FormMsk ) != KskForm ) {
+   for( auto i : nms )
+    if( ! v_y[ i ].is_fixed() ) {
+     v_y[ i ].set_value( 0 );
+     v_y[ i ].is_fixed( true , iAM );
+     }
+   }
   else
-   for( auto i : nms ) {
-    KB( v_Block[ i ] )->get_Var( f_n_customers ).set_value( 0 );
-    KB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , iAM );
-    }
+   for( auto i : nms )
+    BKB( v_Block[ i ] )->fix_x( false , f_n_customers , issueMod , iAM );
 
   // if a new channel had been opened, close it
   unmake_amod_param( issueAMod , iAM , cnt );
@@ -2290,8 +2300,8 @@ void CapacitatedFacilityLocationBlock::close_facility( Index i ,
   throw( std::logic_error(
 	       "close_facilities unavailable if Variable not generated" ) );
 
- if( get_y( i ).is_fixed() && ( get_y( i ).get_value() == 0 ) )  // fixed
-  return;     // nothing to do
+ if( get_y( i ).is_fixed() )  // fixed already
+  return;                     // nothing to do
 
  // since the physical and abstract representation are the same, anything
  // that has to do with the abstract representation is skipped in the
@@ -2302,10 +2312,8 @@ void CapacitatedFacilityLocationBlock::close_facility( Index i ,
    v_y[ i ].set_value( 0 );
    v_y[ i ].is_fixed( true , issueAMod );
    }
-  else {
-   KB( v_Block[ i ] )->get_Var( f_n_customers ).set_value( 0 );
-   KB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , issueAMod );
-   }
+  else
+   BKB( v_Block[ i ] )->fix_x( false , f_n_customers , issueMod , issueAMod );
   }
 
  // conditional bounds could be reset if they were computed looking at
@@ -2358,7 +2366,7 @@ void CapacitatedFacilityLocationBlock::open_facilities( Range rng ,
     v_y[ i ].is_fixed( false , iAM );
   else
    for( Index i = rng.first ; i < rng.second ; ++i )
-    KB( v_Block[ i ] )->fix_x( false , f_n_customers , issueMod , iAM );
+    BKB( v_Block[ i ] )->unfix_x( f_n_customers , issueMod , iAM );
 
   // if a new channel had been opened, close it
   unmake_amod_param( issueAMod , iAM , cnt );
@@ -2417,10 +2425,10 @@ void CapacitatedFacilityLocationBlock::open_facilities( Subset && nms ,
 
   if( ( AR & FormMsk ) != KskForm )
    for( auto i : nms )
-    v_y[ i ].is_fixed( true , iAM );
+    v_y[ i ].is_fixed( false , iAM );
   else
    for( auto i : nms )
-    KB( v_Block[ i ] )->fix_x( false , f_n_customers , issueMod , iAM );
+    BKB( v_Block[ i ] )->unfix_x( f_n_customers , issueMod , iAM );
 
   // if a new channel had been opened, close it
   unmake_amod_param( issueAMod , iAM , cnt );
@@ -2464,7 +2472,7 @@ void CapacitatedFacilityLocationBlock::open_facility( Index i ,
   if( ( AR & FormMsk ) != KskForm )
    v_y[ i ].is_fixed( false , issueAMod );
   else
-   KB( v_Block[ i ] )->fix_x( false , f_n_customers , issueMod , issueAMod );
+   BKB( v_Block[ i ] )->unfix_x( f_n_customers , issueMod , issueAMod );
   }
 
  // conditional bounds could be reset if they were computed looking at
@@ -2498,10 +2506,10 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Range rng ,
  // TODO: if some changes are "fake", restrict the range
  Index cnt = 0;
  for( Index i = rng.first ; i < rng.second ; ++i )
-  if( ( ! get_y( i ).is_fixed() ) || ( get_y( i ).get_value() != 1 ) )
+  if( ! get_y( i ).is_fixed() )
    ++cnt;
 
- if( ! cnt )  // all facilities are fixed open already
+ if( ! cnt )  // all facilities are fixed already
   return;     // nothing to do
 
  // since the physical and abstract representation are the same, anything
@@ -2514,14 +2522,14 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Range rng ,
 
   if( ( AR & FormMsk ) != KskForm )
    for( Index i = rng.first ; i < rng.second ; ++i ) {
-    v_y[ i ].set_value( 1 );
-    v_y[ i ].is_fixed( true , iAM );
+    if( ! v_y[ i ].is_fixed() ) {
+     v_y[ i ].set_value( 1 );
+     v_y[ i ].is_fixed( true , iAM );
+     }
     }
   else
-   for( Index i = rng.first ; i < rng.second ; ++i ) {
-    KB( v_Block[ i ] )->get_Var( f_n_customers ).set_value( 1 );
-    KB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , iAM );
-    }
+   for( Index i = rng.first ; i < rng.second ; ++i )
+    BKB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , iAM );
 
   // if a new channel had been opened, close it
   unmake_amod_param( issueAMod , iAM , cnt );
@@ -2564,7 +2572,7 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Subset && nms ,
  // TODO: if some changes are "fake", restrict the subset
  Index cnt = 0;
  for( auto i : nms )
-  if( ( ! get_y( i ).is_fixed() ) || ( get_y( i ).get_value() != 0 ) )
+  if( ! get_y( i ).is_fixed() )
    ++cnt;
 
  if( ! cnt )  // all facilities are fixed already
@@ -2578,16 +2586,16 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Subset && nms ,
   // if appropriate, open a new channel to bunch up all abstract Modification
   auto iAM = make_amod_param( issueAMod , cnt );
 
-  if( ( AR & FormMsk ) != KskForm )
-   for( auto i : nms ) {
-    v_y[ i ].set_value( 1 );
-    v_y[ i ].is_fixed( true , iAM );
-    }
+  if( ( AR & FormMsk ) != KskForm ) {
+   for( auto i : nms )
+    if( ! v_y[ i ].is_fixed() ) {
+     v_y[ i ].set_value( 1 );
+     v_y[ i ].is_fixed( true , iAM );
+     }
+   }
   else
-   for( auto i : nms ) {
-    KB( v_Block[ i ] )->get_Var( f_n_customers ).set_value( 1 );
-    KB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , iAM );
-    }
+   for( auto i : nms )
+    BKB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , iAM );
 
   // if a new channel had been opened, close it
   unmake_amod_param( issueAMod , iAM , cnt );
@@ -2620,8 +2628,8 @@ void CapacitatedFacilityLocationBlock::fix_open_facility( Index i ,
   throw( std::logic_error(
 	       "close_facilities unavailable if Variable not generated" ) );
 
- if( get_y( i ).is_fixed() && ( get_y( i ).get_value() ==  ) )  // fixed open
-  return;     // nothing to do
+ if( get_y( i ).is_fixed() )  // fixed already
+  return;                     // nothing to do
 
  // since the physical and abstract representation are the same, anything
  // that has to do with the abstract representation is skipped in the
@@ -2632,10 +2640,8 @@ void CapacitatedFacilityLocationBlock::fix_open_facility( Index i ,
    v_y[ i ].set_value( 1 );
    v_y[ i ].is_fixed( true , issueAMod );
    }
-  else {
-   KB( v_Block[ i ] )->get_Var( f_n_customers ).set_value( 1 );
-   KB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , issueAMod );
-   }
+  else
+   BKB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , issueAMod );
   }
 
  // conditional bounds could be reset if they were computed looking at
@@ -2662,8 +2668,7 @@ void CapacitatedFacilityLocationBlock::print( std::ostream & output ) const
  if( verbosity_lvl != Block::complete ) {  // non-complete version
   // only basic information 
   output << "CapacitatedFacilityLocationBlock with: " << f_n_facilities
-	 << " facilities and " << f_n_cistomers() << " customers"
-	 << std::endl;
+	 << " facilities and " << f_n_customers << " customers" << std::endl;
   }
  else  {
   // complete version: file in standard ORLib format
@@ -2675,7 +2680,7 @@ void CapacitatedFacilityLocationBlock::print( std::ostream & output ) const
   
   output << std::endl;
 
-  for( Index j = 0 ; i < f_n_customers ; ++i ) {
+  for( Index j = 0 ; j < f_n_customers ; ++j ) {
    output << v_demand[ j ] << std::endl;
    for( Index i = 0 ; i < f_n_facilities ; ++i )
     output << v_t_cost[ i ][ j ] << "\t";
@@ -2708,6 +2713,12 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
  for( auto & cnst : v_sfc )  // clear the strong forcin constraints
   cnst.clear();
 
+ // delete all sub-Block
+ for( auto bi : v_Block )
+  delete bi;
+
+ v_Block.clear();  // then clear the vector
+
  // then delete them all
  v_sfc.clear();
  v_cap.clear();
@@ -2717,14 +2728,9 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
  f_obj.clear();
 
  // delete all Variable
- x.clear();
- y.clear();
+ v_x.resize( boost::extents[ 0 ][ 0 ] );
+ v_y.clear();
 
- // delete all sub-Block
- for( auto bi : v_Block )
-  delete bi;
-
- v_Block.clear();  // then clear the vector
 
  // explicitly reset all Constraint and Variable
  // this is done for the case where this method is called prior to re-loading
@@ -2811,7 +2817,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF(
    return;
    }
 
-  auto cnst = dynamic_cast< FRowConstraint * >( lfo->get_observer() );
+  auto cnst = dynamic_cast< FRowConstraint * >( lfo->get_Observer() );
   if( ! cnst )
    throw( std::invalid_argument( "Modification to not FRowConstraint" ) );
 
@@ -2825,7 +2831,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF(
 
   // note that the coefficient of y is the opposite of the capacity
   chg_facility_capacity( - (lfo->get_v_var())[ f ].second ,
-			 std::distance( & v_cap.front() , cap ) ,
+			 std::distance( & v_cap.front() , cnst ) ,
 			 make_par( eNoBlck , chnl ) , eDryRun );
   return;
   }
@@ -2876,8 +2882,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF(
      Subset nnms( sz );
      auto NCit = NC.begin();
      auto nnmsit = nnms.begin();
-     for( ; nmsit != nms.end() ; ++nmsit ) {
-      auto h = *(it++);
+     for( auto h : nms ) {
       *(nnmsit++) = h - f_n_facilities;
       *(NCit++) = (lfo->get_v_var())[ h ].second;
       }
@@ -2889,7 +2894,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF(
    return;
    }
 
-  auto cnst = dynamic_cast< FRowConstraint * >( lfo->get_observer() );
+  auto cnst = dynamic_cast< FRowConstraint * >( lfo->get_Observer() );
   if( ! cnst )
    throw( std::invalid_argument( "Modification to not FRowConstraint" ) );
 
@@ -2903,7 +2908,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF(
 
   // note that the coefficient of y is the opposite of the capacity
   chg_facility_capacity( - (lfo->get_v_var())[ f_n_customers ].second ,
-			 std::distance( & v_cap.front() , cap ) ,
+			 std::distance( & v_cap.front() , cnst ) ,
 			 make_par( eNoBlck , chnl ) , eDryRun );
   return;
   }
@@ -2913,12 +2918,12 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF(
    throw( std::invalid_argument( "RowConstraintMod not allowed" ) );
 
  // VariableMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- if( dynamic_cast< const VariableMod * >( mod ) ) {
-  auto yi = static_cast< const ColVariable * >( tmod->variable() );
-  if( ( yi < & f_y.front() ) || ( yi > & f_y.back() ) )
+ if( auto tmod = dynamic_cast< const VariableMod * >( mod ) ) {
+  auto yi = static_cast< ColVariable * >( tmod->variable() );
+  if( ( yi < & v_y.front() ) || ( yi > & v_y.back() ) )
    throw( std::invalid_argument( "VariableMod to not design variable" ) );
 
-  c_Index i = std::distance( & f_y.front() , yi );
+  c_Index i = std::distance( & v_y.front() , yi );
 
   auto new_state = tmod->new_state();  // get new state of the variable
   if( ( ! ColVariable::is_unitary( new_state ) ) ||
@@ -2956,11 +2961,11 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFG(
   * Modification" or GroupModification further nested into mod need be
   * considered. */
 
- for( auto submod : tmod->sub_Modifications() )
-  if( auto bmod = dynamic_cast< BinaryKnapsackBlockMod * >( submod ) )
+ for( auto submod : mod->sub_Modifications() )
+  if( auto bmod = dynamic_cast< BinaryKnapsackBlockMod * >( submod.get() ) )
    guts_of_add_ModificationKFP( bmod , chnl );
   else
-   if( auto gmod = dynamic_cast< GroupModification * >( submod ) )
+   if( auto gmod = dynamic_cast< GroupModification * >( submod.get() ) )
     guts_of_add_ModificationKFG( gmod , chnl );
 
  }  // end( CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFG )
@@ -3005,11 +3010,12 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
  // the only supported changes are those of the profits and of the weight of
  // the last item  (opposite of capacity)
  if( auto tmod = dynamic_cast< const BinaryKnapsackBlockRngdMod * >( mod ) ) {
-  c_Index f = tmod->range().first;
-  c_Index s = tmod->range().second;
+  c_Index f = tmod->rng().first;
+  c_Index s = tmod->rng().second;
 
-  switch( tmpd->type() ) {
-   case( eChgWeight ):  //- - - - - - - - - - - - - - - - - - - - - - - - - -
+  switch( tmod->type() ) {
+   case( BinaryKnapsackBlockMod::eChgWeight ):  //- - - - - - - - - - - - - -
+
     if( ( f == f_n_customers ) && ( s == f + 1 ) ) {
      // note that the coefficient of y is the opposite of the capacity
      chg_facility_capacity( - bkb->get_Weight( f ) , i ,
@@ -3019,10 +3025,11 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
     throw( std::invalid_argument(
 		"unsupported weight Modification in BinaryKnapsackBlock" ) );
 
-   case( eChgProfit ):  //- - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( BinaryKnapsackBlockMod::eChgProfit ):  //- - - - - - - - - - - - - -
+
     if( f < f_n_customers ) {  // transportation costs are modified
-     c_Index end = std::min( s , f_n_customers )
-      c_Index sz = s - f;
+     c_Index end = std::min( s , f_n_customers );
+     c_Index sz = s - f;
      c_Index offst = f_n_customers * i;
      if( sz == 1 )               // one pair
       chg_transportation_cost( bkb->get_Profit( f ) , f + offst ,
@@ -3041,7 +3048,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
 			make_par( eNoBlck , chnl ) , eDryRun );
     return;
 
-   case( eFixX ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( BinaryKnapsackBlockMod::eFixX ):  // - - - - - - - - - - - - - - - -
 
     if( f < f_n_customers )
      throw( std::invalid_argument( "unsupportd variable fixing" ) );
@@ -3053,7 +3060,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
 
     return;
 
-   case( eUnfixX ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( BinaryKnapsackBlockMod::eUnfixX ):  // - - - - - - - - - - - - - - -
 
     if( f < f_n_customers )
      throw( std::invalid_argument( "unsupportd variable unfixing" ) );
@@ -3074,10 +3081,11 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
  // the only supported changes are those of the profits and of the weight of
  // the last item  (opposite of capacity)
  if( auto tmod = dynamic_cast< const BinaryKnapsackBlockSbstMod * >( mod ) ) {
-  auto & nms = tmod->subset();
+  auto & nms = tmod->nms();
 
-  switch( tmpd->type() ) {
-   case( eChgWeight ):  //- - - - - - - - - - - - - - - - - - - - - - - - - -
+  switch( tmod->type() ) {
+   case( BinaryKnapsackBlockMod::eChgWeight ):  //- - - - - - - - - - - - - -
+
     if( ( nms.back() == f_n_customers ) && ( nms.size() == 1 ) ) {
      // note that the coefficient of y is the opposite of the capacity
      chg_facility_capacity( - bkb->get_Weight( f_n_customers ) , i ,
@@ -3087,12 +3095,12 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
     throw( std::invalid_argument(
 		"unsupported weight Modification in BinaryKnapsackBlock" ) );
 
-   case( eChgProfit ):  //- - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( BinaryKnapsackBlockMod::eChgProfit ):  //- - - - - - - - - - - - - -
 
     if( nms.front() < f_n_customers ) {   // transportation costs changed
      c_Index offst = f_n_customers * i;
      Subset nnms( nms.begin() , nms.back() == f_n_customers ?
-		                std::prev( nms.end ) : nms.end() );
+		                std::prev( nms.end() ) : nms.end() );
      if( nms.size() == 1 )               // only one pair
       chg_transportation_cost(  bkb->get_Profit( nms.front() ) ,
 				nnms.front() + offst ,
@@ -3114,7 +3122,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
 			make_par( eNoBlck , chnl ) , eDryRun );
     return;
 
-   case( eFixX ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( BinaryKnapsackBlockMod::eFixX ):  // - - - - - - - - - - - - - - - -
 
     if( ( nms.size() != 1 ) || ( nms.back() < f_n_customers ) )
      throw( std::invalid_argument( "unsupportd variable fixing" ) );
@@ -3126,7 +3134,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
 
     return;
 
-   case( eUnfixX ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( BinaryKnapsackBlockMod::eUnfixX ):  // - - - - - - - - - - - - - - -
 
     if( ( nms.size() != 1 ) || ( nms.back() < f_n_customers ) )
      throw( std::invalid_argument( "unsupportd variable unfixing" ) );
@@ -3176,8 +3184,8 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFA(
  // concerns_Block() == true, the others are skipped
  if( auto gmod = dynamic_cast< const GroupModification * >( mod ) ) {
   for( auto submod : gmod->sub_Modifications() )
-   if( submod>concerns_Block() )
-    guts_of_add_ModificationFFA( submod , chnl );
+   if( submod->concerns_Block() )
+    guts_of_add_ModificationFFA( submod.get() , chnl );
 
   return;
   }
@@ -3200,7 +3208,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFA(
    //       call to chg_facility_capacity() will do nothing as the capacity
    //       value is the same, so it's acceptable
 
-   auto cnst = dynamic_cast< FRowConstraint * >( lfo->get_observer() );
+   auto cnst = dynamic_cast< FRowConstraint * >( lfo->get_Observer() );
    if( ! cnst )
     throw( std::invalid_argument( "Modification to not FRowConstraint" ) );
 
@@ -3214,7 +3222,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFA(
 
    // note that the coefficient of y is the opposite of the capacity
    chg_facility_capacity( - (lfo->get_v_var())[ 1 ].second ,
-			  std::distance( & v_cap.front() , cap ) ,
+			  std::distance( & v_cap.front() , cnst ) ,
 			  make_par( eNoBlck , chnl ) , eDryRun );   
    return;
    }
@@ -3256,7 +3264,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFA(
    // Modification in the "root" CapacitatedFacilityLocationBlock- - - - - - -
    // it can only be in the facility capacity constraints
 
-   auto cnst = dynamic_cast< FRowConstraint * >( lfo->get_observer() );
+   auto cnst = dynamic_cast< FRowConstraint * >( lfo->get_Observer() );
    if( ! cnst )
     throw( std::invalid_argument( "Modification to not FRowConstraint" ) );
 
@@ -3270,7 +3278,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFA(
 
    // note that the coefficient of y is the opposite of the capacity
    chg_facility_capacity( - (lfo->get_v_var())[ 1 ].second ,
-			  std::distance( & v_cap.front() , cap ) ,
+			  std::distance( & v_cap.front() , cnst ) ,
 			  make_par( eNoBlck , chnl ) , eDryRun );
    return;
    }
@@ -3310,12 +3318,12 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFA(
  // VariableMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // this is the same code as for the Standard Formulation, except that the
  // design variables now live in the "design AbstractBlock"
- if( dynamic_cast< const VariableMod * >( mod ) ) {
-  auto yi = static_cast< const ColVariable * >( tmod->variable() );
-  if( ( yi < & f_y.front() ) || ( yi > & f_y.back() ) )
+ if( auto tmod = dynamic_cast< const VariableMod * >( mod ) ) {
+  auto yi = static_cast< ColVariable * >( tmod->variable() );
+  if( ( yi < & v_y.front() ) || ( yi > & v_y.back() ) )
    throw( std::invalid_argument( "VariableMod to not design variable" ) );
 
-  c_Index i = std::distance( & f_y.front() , yi );
+  c_Index i = std::distance( & v_y.front() , yi );
 
   auto new_state = tmod->new_state();  // get new state of the variable
   if( ( ! ColVariable::is_unitary( new_state ) ) ||
@@ -3352,11 +3360,11 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFG(
   * that come from some the MCFBlock. Only "physical Modification" or
   * GroupModification further nested into mod need be considered. */
 
- for( auto submod : tmod->sub_Modifications() )
-  if( auto mmod = dynamic_cast< MCFBlockMod * >( submod ) )
+ for( auto submod : mod->sub_Modifications() )
+  if( auto mmod = dynamic_cast< MCFBlockMod * >( submod.get() ) )
    guts_of_add_ModificationFFP( mmod , chnl );
   else
-   if( auto gmod = dynamic_cast< GroupModification * >( submod ) )
+   if( auto gmod = dynamic_cast< GroupModification * >( submod.get() ) )
     guts_of_add_ModificationFFG( gmod , chnl );
 
  }  // end( CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFG )
@@ -3405,11 +3413,11 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
  //   hence, we disregard any change in the deficit of the super-source
  //   assuming that eventually it'll be what it necessarily need be
  if( auto tmod = dynamic_cast< const MCFBlockRngdMod * >( mod ) ) {
-  c_Index f = tmod->range().first;
-  Index s = tmod->range().second;
+  c_Index f = tmod->rng().first;
+  Index s = tmod->rng().second;
 
-  switch( tmpd->type() ) {
-   case( eChgCost ): {  //- - - - - - - - - - - - - - - - - - - - - - - - - -
+  switch( tmod->type() ) {
+   case( MCFBlockMod::eChgCost ): {  // - - - - - - - - - - - - - - - - - - -
 
     if( f < f_n_facilities )
      throw( std::invalid_argument(
@@ -3427,7 +3435,8 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 			       make_par( eNoBlck , chnl ) , eDryRun );
     return;
     }
-   case( eChgCaps ): {  //- - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   case( MCFBlockMod::eChgCaps ): {  // - - - - - - - - - - - - - - - - - - -
 
     if( s > f_n_facilities )
      throw( std::invalid_argument(
@@ -3439,11 +3448,12 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
     else              // many facilities
      // note that the capacity vector is supposed to exist (not all +INF)
      chg_facility_capacities( MCFB( v_Block.back() )->get_U().begin() + f ,
-			      tmod->range() ,
+			      tmod->rng() ,
 			      make_par( eNoBlck , chnl ) , eDryRun );
     return;
     }
-   case( eChgDfct ): {  //- - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   case( MCFBlockMod::eChgDfct ): {  // - - - - - - - - - - - - - - - - - - -
 
     if( f < f_n_facilities )
      throw( std::invalid_argument(
@@ -3453,17 +3463,17 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
      s = f_n_facilities + f_n_customers;  // ignore changes of the last node
 
     if( s - f == 1 )  // one customer
-     chg_customers_demand( MCFB( v_Block.back() )->get_B( f ) ,
-			    f - f_n_facilities ,
-			    make_par( eNoBlck , chnl ) , eDryRun );
+     chg_customer_demand( MCFB( v_Block.back() )->get_B( f ) ,
+			  f - f_n_facilities ,
+			  make_par( eNoBlck , chnl ) , eDryRun );
     else              // many customers
      // note that the deficits vector is supposed to exist (not all 0)
-     chg_customers_demands( MCFB( v_Block.back() )->get_B().begin() + f ,
-			    Range( f - f_n_facilities ,
-				   s - f_n_facilities ) ,
-			    make_par( eNoBlck , chnl ) , eDryRun );
+     chg_customer_demands( MCFB( v_Block.back() )->get_B().begin() + f ,
+			   Range( f - f_n_facilities , s - f_n_facilities ) ,
+			   make_par( eNoBlck , chnl ) , eDryRun );
     return;
     }
+
    default:  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     throw( std::invalid_argument( "unsupportd MCFBlockRngdMod" ) );
@@ -3474,10 +3484,10 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
  // MCFBlockSbstMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( auto tmod = dynamic_cast< const MCFBlockSbstMod * >( mod ) ) {
-  auto & nms = tmod->subset();
+  auto & nms = tmod->nms();
 
-  switch( tmpd->type() ) {
-   case( eChgCost ): {  //- - - - - - - - - - - - - - - - - - - - - - - - - -
+  switch( tmod->type() ) {
+   case( MCFBlockMod::eChgCost ): {  // - - - - - - - - - - - - - - - - - - -
 
     if( nms.front() < f_n_facilities )
      throw( std::invalid_argument(
@@ -3489,7 +3499,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 			      make_par( eNoBlck , chnl ) , eDryRun );
     else {                 // many pairs
      // note that the cost vector is supposed to exist (costs not all 0)
-     CVector NC( sz );
+     CVector NC( nms.size() );
      auto NCit = NC.begin();
      for( auto h : nms )
       *(NCit++) = ( MCFB( v_Block.back() )->get_C() )[ h ];
@@ -3502,7 +3512,8 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 
     return;
     }
-   case( eChgCaps ): {  //- - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   case( MCFBlockMod::eChgCaps ): {  // - - - - - - - - - - - - - - - - - - -
 
     if( nms.back() >= f_n_facilities )
      throw( std::invalid_argument(
@@ -3514,17 +3525,18 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 			    make_par( eNoBlck , chnl ) , eDryRun );
     else {                 // many facilities
      // note that the capacity vector is supposed to exist (not all +INF)
-     CVector NU( sz );
+     CVector NU( nms.size() );
      auto NUit = NU.begin();
      for( auto i : nms )
       *(NUit++) = ( MCFB( v_Block.back() )->get_U() )[ i ];
-     chg_facility_capacities( NC.begin() , Subset( nms ) , true ,
+     chg_facility_capacities( NU.begin() , Subset( nms ) , true ,
 			      make_par( eNoBlck , chnl ) , eDryRun );
       }
 
     return;
     }
-   case( eChgDfct ): {  //- - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   case( MCFBlockMod::eChgDfct ): {  // - - - - - - - - - - - - - - - - - - -
 
     if( nms.front() < f_n_facilities )
      throw( std::invalid_argument(
@@ -3536,9 +3548,9 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
       return;
 
      if( nms.size() == 2 )  // one customer
-      chg_customers_demand( MCFB( v_Block.back() )->get_B( nms.front() ) ,
-			    nms.front() - f_n_facilities ,
-			    make_par( eNoBlck , chnl ) , eDryRun );
+      chg_customer_demand( MCFB( v_Block.back() )->get_B( nms.front() ) ,
+			   nms.front() - f_n_facilities ,
+			   make_par( eNoBlck , chnl ) , eDryRun );
      else {                 // many customers
       // note that the deficits vector is supposed to exist (not all 0)
       CVector NB( nms.size() - 1 );
@@ -3549,15 +3561,15 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
        *(NBit++) = ( MCFB( v_Block.back() )->get_B() )[ *nmsit ];
        *(nnmsit++) = *(nmsit++) - f_n_facilities;
        }
-      chg_customers_demands( NB.begin() , std::move( nnms ) , true ,
-			     make_par( eNoBlck , chnl ) , eDryRun );
+      chg_customer_demands( NB.begin() , std::move( nnms ) , true ,
+			    make_par( eNoBlck , chnl ) , eDryRun );
       }
      }
     else  // not changing the last deficit
      if( nms.size() )  // one customer
-      chg_customers_demand( MCFB( v_Block.back() )->get_B( nms.front() ) ,
-			    nms.front() - f_n_facilities ,
-			    make_par( eNoBlck , chnl ) , eDryRun );
+      chg_customer_demand( MCFB( v_Block.back() )->get_B( nms.front() ) ,
+			   nms.front() - f_n_facilities ,
+			   make_par( eNoBlck , chnl ) , eDryRun );
      else {            // many customers
       // note that the deficits vector is supposed to exist (not all 0)
       CVector NB( nms.size() );
@@ -3567,14 +3579,13 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
       Subset nnms( nms.begin() , nms.end() );
       for( auto & h : nnms )
        h -= f_n_facilities;
-      chg_customers_demands( NB.begin() ,
-			     Range( f - f_n_facilities ,
-				    s - f_n_facilities ) ,
-			     make_par( eNoBlck , chnl ) , eDryRun );
+      chg_customer_demands( NB.begin() , Subset( nms ) , true ,
+			    make_par( eNoBlck , chnl ) , eDryRun );
       }
 
     return;
     }
+
    default:  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     throw( std::invalid_argument( "unsupportd MCFBlockRngdMod" ) );
@@ -3658,50 +3669,63 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
   switch( tmod->type() ) {
    case( CapacitatedFacilityLocationBlockMod::eChgFCost ):  //- - - - - - - -
     if( s == f + 1 )
-     R3B->chg_facility_costs( v_f_cost[ f ] , f , iPM , iPA );
+     R3B->chg_facility_cost( v_f_cost[ f ] , f , issuePMod , issueAMod );
     else
      R3B->chg_facility_costs( v_f_cost.begin() + f , tmod->rng() ,
-			      iPM , iPA );
+			      issuePMod , issueAMod );
     break;
+
    case( CapacitatedFacilityLocationBlockMod::eChgTCost ):  //- - - - - - - -
     if( s == f + 1 )
-     R3B->chg_transportation_cost( (v_t_cost.data())[ f ] , f , iPM , iPA );
-    else
-     R3B->chg_transportation_costs( v_t_cost.data().begin() + f ,
-				    tmod->rng() , iPM , iPA );
+     R3B->chg_transportation_cost( (v_t_cost.data())[ f ] , f ,
+				   issuePMod , issueAMod );
+    else{
+     CVector NC( s - f );
+     auto NCit = NC.begin();
+     for( Index i = f ; i < s ; ++i )
+      *(NCit++) = (v_t_cost.data())[ i ]; 
+     R3B->chg_transportation_costs( NC.begin() , tmod->rng() ,
+				    issuePMod , issueAMod );
+     }
     break;
+
    case( CapacitatedFacilityLocationBlockMod::eChgCap ):  //- - - - - - - - -
     if( s == f + 1 )
-     R3B->chg_facility_capacity( v_capacity[ f ] , f , iPM , iPA );
+     R3B->chg_facility_capacity( v_capacity[ f ] , f ,
+				 issuePMod , issueAMod );
     else
      R3B->chg_facility_capacities( v_capacity.begin() + f , tmod->rng() ,
-				   iPM , iPA );
+				   issuePMod , issueAMod );
     break;
+
    case( CapacitatedFacilityLocationBlockMod::eChgDem ):  //- - - - - - - - -
     if( s == f + 1 )
-     R3B->chg_customers_demand( v_demand[ f ] , f , iPM , iPA );
+     R3B->chg_customer_demand( v_demand[ f ] , f , issuePMod , issueAMod );
     else
-     R3B->chg_customers_demands( v_demand.begin() + f , tmod->rng() ,
-				 iPM , iPA );
+     R3B->chg_customer_demands( v_demand.begin() + f , tmod->rng() ,
+				issuePMod , issueAMod );
     break;
+
    case( CapacitatedFacilityLocationBlockMod::eCloseF ):  //- - - - - - - - -
     if( s == f + 1 )
-     R3B->close_facility( f , iPM , iPA );
+     R3B->close_facility( f , issuePMod , issueAMod );
     else
-     R3b->close_facilities( tmod->rng() , iPM , iPA );
+     R3B->close_facilities( tmod->rng() , issuePMod , issueAMod );
     break;
    case( CapacitatedFacilityLocationBlockMod::eOpenF ):  // - - - - - - - - -
     if( s == f + 1 )
-     R3B->open_facility( f , iPM , iPA );
+     R3B->open_facility( f , issuePMod , issueAMod );
     else
-     R3b->open_facilities( tmod->rng() , iPM , iPA );
+     R3B->open_facilities( tmod->rng() , issuePMod , issueAMod );
     break;
+
    case( CapacitatedFacilityLocationBlockMod::eBuyF ):  //- - - - - - - - - -
     if( s == f + 1 )
-     R3B->fix_open_facility( f , iPM , iPA );
+     R3B->fix_open_facility( f , issuePMod , issueAMod );
     else
-     R3b->fix_open_facilities( tmod->rng() , iPM , iPA );
+     R3B->fix_open_facilities( tmod->rng() , issuePMod , issueAMod );
     break;
+
     default:
      throw( std::invalid_argument(
 		   "unknown CapacitatedFacilityLocationBlockRngdMod type" ) );
@@ -3720,74 +3744,87 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
   switch( tmod->type() ) {
    case( CapacitatedFacilityLocationBlockMod::eChgFCost ):  //- - - - - - - -
     if( tmod->nms().size() == 1 )
-     R3B->chg_facility_costs( v_f_cost[ tmod->nms().front() ] ,
-			      tmod->nms().front() , iPM , iPA );
+     R3B->chg_facility_cost( v_f_cost[ tmod->nms().front() ] ,
+			     tmod->nms().front() , issuePMod , issueAMod );
     else {
      CVector NC( tmod->nms().size() );
      auto NCit = NC.begin();
      for( auto i : tmod->nms() )
       *(NCit++) = v_f_cost[ i ]; 
      R3B->chg_facility_costs( NC.begin() , Subset( tmod->nms() ) , true ,
-			      iPM , iPA );
+			      issuePMod , issueAMod );
      }
     break;
+
    case( CapacitatedFacilityLocationBlockMod::eChgTCost ):  //- - - - - - - -
     if( tmod->nms().size() == 1 )
      R3B->chg_transportation_cost( (v_t_cost.data())[ tmod->nms().front() ] ,
-				   tmod->nms().front() , iPM , iPA );
+				   tmod->nms().front() ,
+				   issuePMod , issueAMod );
     else {
      CVector NC( tmod->nms().size() );
      auto NCit = NC.begin();
      for( auto i : tmod->nms() )
       *(NCit++) = (v_t_cost.data())[ i ]; 
-     R3B->chg_transportation_costs( NC.begin() , Subset( tmod->nms() ) , true ,
-				    iPM , iPA );
+     R3B->chg_transportation_costs( NC.begin() , Subset( tmod->nms() ) ,
+				    true , issuePMod , issueAMod );
      }
     break;
+
    case( CapacitatedFacilityLocationBlockMod::eChgCap ):  //- - - - - - - - -
     if( tmod->nms().size() == 1 )
      R3B->chg_facility_capacity( v_capacity[ tmod->nms().front() ] ,
-				 tmod->nms().front() , iPM , iPA );
+				 tmod->nms().front() ,
+				 issuePMod , issueAMod );
     else {
      DVector NC( tmod->nms().size() );
      auto NCit = NC.begin();
      for( auto i : tmod->nms() )
       *(NCit++) = v_capacity[ i ]; 
-     R3B->chg_facility_capacities( NC.begin() , Subset( tmod->nms() ) , true ,
-				   iPM , iPA );
+     R3B->chg_facility_capacities( NC.begin() , Subset( tmod->nms() ) ,
+				   true , issuePMod , issueAMod );
      }
     break;
+
    case( CapacitatedFacilityLocationBlockMod::eChgDem ):  //- - - - - - - - -
     if( tmod->nms().size() == 1 )
-     R3B->chg_customers_demand( v_demand[ tmod->nms().front() ] ,
-				tmod->nms().front() , iPM , iPA );
+     R3B->chg_customer_demand( v_demand[ tmod->nms().front() ] ,
+			       tmod->nms().front() ,
+			       issuePMod , issueAMod );
     else {
      DVector ND( tmod->nms().size() );
      auto NDit = ND.begin();
      for( auto i : tmod->nms() )
       *(NDit++) = v_demand[ i ]; 
-     R3B->chg_customers_demands( ND.begin() , Subset( tmod->nms() ) , true ,
-				 iPM , iPA );
+     R3B->chg_customer_demands( ND.begin() , Subset( tmod->nms() ) , true ,
+				issuePMod , issueAMod );
      }
     break;
+
    case( CapacitatedFacilityLocationBlockMod::eCloseF ):  //- - - - - - - - -
     if( tmod->nms().size() == 1 )
-     R3B->close_facility( tmod->nms().front() , iPM , iPA );
+     R3B->close_facility( tmod->nms().front() , issuePMod , issueAMod );
     else
-     R3b->close_facilities( Subset( tmod->nms() ) , true , iPM , iPA );
+     R3B->close_facilities( Subset( tmod->nms() ) , true ,
+			    issuePMod , issueAMod );
     break;
+
    case( CapacitatedFacilityLocationBlockMod::eOpenF ):  // - - - - - - - - -
     if( tmod->nms().size() == 1 )
-     R3B->open_facility( tmod->nms().front() , iPM , iPA );
+     R3B->open_facility( tmod->nms().front() , issuePMod , issueAMod );
     else
-     R3b->open_facilities( Subset( tmod->nms() ) , true , iPM , iPA );
+     R3B->open_facilities( Subset( tmod->nms() ) , true ,
+			   issuePMod , issueAMod );
     break;
+
    case( CapacitatedFacilityLocationBlockMod::eBuyF ):  //- - - - - - - - - -
     if( tmod->nms().size() == 1 )
-     R3B->fix_open_facility( tmod->nms().front() , iPM , iPA );
+     R3B->fix_open_facility( tmod->nms().front() , issuePMod , issueAMod );
     else
-     R3B->fix_open_facilities( Subset( tmod->nms() ) , true , iPM , iPA );
+     R3B->fix_open_facilities( Subset( tmod->nms() ) , true ,
+			       issuePMod , issueAMod );
     break;
+
    default:
      throw( std::invalid_argument(
 		   "unknown CapacitatedFacilityLocationBlockRngdMod type" ) );
@@ -3855,7 +3892,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_map_f_Mod_MCF(
    R3B->close_channel( par2chnl( iPA ) );
   }
  else  // any other Modification: just make the call
-  ok = guts_of_guts_of_map_f_Mod_copy( R3B , mod , issuePMod , issueAMod );
+  ok = guts_of_guts_of_map_f_Mod_MCF( R3B , mod , issuePMod , issueAMod );
 
  return( ok );
 
@@ -3886,8 +3923,8 @@ void CapacitatedFacilityLocationBlock::compute_conditional_bounds( void )
    f_cond_lower += v_f_cost[ i ];
 
  for( Index j = 0 ; j < f_n_customers ; ++j ) {
-  auto minj = Inf< TCost >();
-  auto maxj = - Inf< TCost >();
+  auto minj = Inf< Cost >();
+  auto maxj = - Inf< Cost >();
 
   for( Index i = 0 ; i < f_n_facilities ; ++i ) {
    if( minj > v_t_cost[ j ][ i ] )
@@ -3905,7 +3942,7 @@ void CapacitatedFacilityLocationBlock::compute_conditional_bounds( void )
 
 template< typename T >
 void CapacitatedFacilityLocationBlock::get_y(
-				 std::vector< T >::iterator Sol , Range rng )
+		  typename std::vector< T >::iterator Sol , Range rng ) const
 {
  if( rng.second <= rng.first )  // Range is empty
   return;                       // nothing to do
@@ -3934,7 +3971,7 @@ void CapacitatedFacilityLocationBlock::get_y(
 
 template< typename T >
 void CapacitatedFacilityLocationBlock::get_y(
-			      std::vector< T >::iterator Sol , c_Subset nms )
+	       typename std::vector< T >::iterator Sol , c_Subset nms ) const
 {
  if( nms.empty() )  // Subset is empty
   return;           // nothing to do
@@ -3967,7 +4004,7 @@ void CapacitatedFacilityLocationBlock::get_y(
 
 template< typename T >
 void CapacitatedFacilityLocationBlock::get_x(
-				 std::vector< T >::iterator Sol , Range rng )
+		  typename std::vector< T >::iterator Sol , Range rng ) const
 {
  if( rng.second <= rng.first )  // Range is empty
   return;                       // nothing to do
@@ -3998,7 +4035,7 @@ void CapacitatedFacilityLocationBlock::get_x(
   // it's at least two facilities
   for( Index h = rng.first ; h < rng.second ; ++h , ++i ) {
    Index scnd = std::min( rng.second - h , f_n_customers );
-   BKB( v_Block[ i ] )->get_x( Sol , Range( frst , second ) );
+   BKB( v_Block[ i ] )->get_x( Sol , Range( frst , scnd ) );
    if( scnd < f_n_customers )
     break;
    scnd -= frst;
@@ -4022,7 +4059,7 @@ void CapacitatedFacilityLocationBlock::get_x(
 
 template< typename T >
 void CapacitatedFacilityLocationBlock::get_x(
-			      std::vector< T >::iterator Sol , c_Subset nms )
+	       typename std::vector< T >::iterator Sol , c_Subset nms ) const
 {
  if( nms.empty() )  // Subset is empty
   return;           // nothing to do
@@ -4077,7 +4114,7 @@ void CapacitatedFacilityLocationBlock::get_x(
 
 template< typename T >
 void CapacitatedFacilityLocationBlock::set_y(
-				 std::vector< T >::iterator Sol , Range rng )
+		  typename std::vector< T >::const_iterator Sol , Range rng )
 {
  if( rng.second <= rng.first )  // Range is empty
   return;                       // nothing to do
@@ -4106,7 +4143,7 @@ void CapacitatedFacilityLocationBlock::set_y(
 
 template< typename T >
 void CapacitatedFacilityLocationBlock::set_y(
-			      std::vector< T >::iterator Sol , c_Subset nms )
+	       typename std::vector< T >::const_iterator Sol , c_Subset nms )
 {
  if( nms.empty() )  // Subset is empty
   return;           // nothing to do
@@ -4139,7 +4176,7 @@ void CapacitatedFacilityLocationBlock::set_y(
 
 template< typename T >
 void CapacitatedFacilityLocationBlock::set_x(
-				 std::vector< T >::iterator Sol , Range rng )
+		  typename std::vector< T >::const_iterator Sol , Range rng )
 {
  if( rng.second <= rng.first )  // Range is empty
   return;                       // nothing to do
@@ -4170,7 +4207,7 @@ void CapacitatedFacilityLocationBlock::set_x(
   // it's at least two facilities
   for( Index h = rng.first ; h < rng.second ; ++h , ++i ) {
    Index scnd = std::min( rng.second - h , f_n_customers );
-   BKB( v_Block[ i ] )->set_x( Sol , Range( frst , second ) );
+   BKB( v_Block[ i ] )->set_x( Sol , Range( frst , scnd ) );
    if( scnd < f_n_customers )
     break;
    scnd -= frst;
@@ -4197,7 +4234,7 @@ void CapacitatedFacilityLocationBlock::set_x(
 
 template< typename T >
 void CapacitatedFacilityLocationBlock::set_x(
-			      std::vector< T >::iterator Sol , c_Subset nms )
+	       typename std::vector< T >::const_iterator Sol , c_Subset nms )
 {
  if( nms.empty() )  // Subset is empty
   return;           // nothing to do
@@ -4246,7 +4283,7 @@ void CapacitatedFacilityLocationBlock::set_x(
  Subset nnms( nms );
  for( auto & nm : nnms )
   nm -= f_n_facilities;
- MCFB( v_Block[ 1 ] )->set_x( SSol , nnms );
+ MCFB( v_Block[ 1 ] )->set_x( SSol.begin() , nnms );
 
  }  // end( set_x( Subset ) )
  
@@ -4323,7 +4360,7 @@ void CapacitatedFacilityLocationSolution::deserialize(
  else {
   auto nf = group.getDim( "NFacilities" );
   if( nf.isNull() )
-   throw( std::invalid_argument( _pfrx + "NFacilities dimension required"
+   throw( std::invalid_argument( _prfx + "NFacilities dimension required"
 				 ) );
   v_y.resize( nf.getSize() );
   fs.getVar( v_y.data() );
@@ -4335,7 +4372,7 @@ void CapacitatedFacilityLocationSolution::deserialize(
  else {
   auto td = group.getDim( "TransportationDim" );
   if( td.isNull() )
-   throw( std::invalid_argument( _pfrx +
+   throw( std::invalid_argument( _prfx +
 				 "TransportationDim dimension required" ) );
   v_x.resize( td.getSize() );
   ts.getVar( v_x.data() );
@@ -4354,7 +4391,7 @@ void CapacitatedFacilityLocationSolution::read( const Block * block )
  // read y- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( ! v_y.empty() ) {
   if( v_x.size() < CFLB->get_NFacilities() )
-   v_x.resize( CFLB->get_NFacilities );
+   v_x.resize( CFLB->get_NFacilities() );
 
   CFLB->get_facility_solution( v_y.begin() );
   }
@@ -4364,7 +4401,7 @@ void CapacitatedFacilityLocationSolution::read( const Block * block )
   if( v_x.size() < CFLB->get_NFacilities() * CFLB->get_NCustomers() )
    v_x.resize( CFLB->get_NFacilities() * CFLB->get_NCustomers() );
 
-  CFLB->get_transportation_solution( v_x.data().begin() );
+  CFLB->get_transportation_solution( v_x.begin() );
   }
  }  // end( CapacitatedFacilityLocationSolution::read )
 
@@ -4390,24 +4427,24 @@ void CapacitatedFacilityLocationSolution::write( Block * block )
   if( v_x.size() < CFLB->get_NFacilities() * CFLB->get_NCustomers() )
    throw( std::invalid_argument( "incompatible transportation size" ) );
 
-  CFLB->set_transportation_solution( v_x.data().begin() );
+  CFLB->set_transportation_solution( v_x.begin() );
   }
  }  // end( CapacitatedFacilityLocationSolution::write )
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationSolution::serialize( netCDF::NcGroup & group )
+void CapacitatedFacilityLocationSolution::serialize( netCDF::NcGroup & group
+						     ) const
 {
  if( ! v_y.empty() ) {
   auto nf = group.addDim( "NFacilities" , v_y.size() );
-  ::serialize( group , "FacilitySolution" , netCDF::NcDouble() , nf ,
-	       v_y.data() );
+  ::serialize( group , "FacilitySolution" , netCDF::NcDouble() , nf , v_y );
   }
 
  if( ! v_x.empty() ) {
   auto td = group.addDim( "TransportationDim" , v_x.size() );
   ::serialize( group , "TransportationSolution" , netCDF::NcDouble() , td ,
-	       v_x.data() );
+	       v_x );
   }
  }  // end( CapacitatedFacilityLocationSolution::serialize )
 
@@ -4469,7 +4506,7 @@ CapacitatedFacilityLocationSolution *
 
  if( empty ) {
   if( ! v_y.empty() )
-   sol->v_y.resize( v_pi.size() );
+   sol->v_y.resize( v_y.size() );
 
   if( ! v_x.empty() )
    sol->v_x.resize( v_x.size() );
