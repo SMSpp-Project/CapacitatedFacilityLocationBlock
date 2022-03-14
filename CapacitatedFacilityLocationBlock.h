@@ -308,6 +308,73 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
+ /// loads the CFL instance from file in standard format
+ /** Loads a CapacitatedFacilityLocationBlock out of a std::istream (which is
+  * what operator>> is dispatched to). The std::istream is assumed to contain
+  * the description of a CFL instance, which according to \p frmt can be in
+  * three different formats:
+  *
+  * The default (frmt == 0 or frmt == 'C') is the ORLib format", which is
+  * somehow customer-oriented and is the following:
+  *
+  * number of potential facility locations (m)
+  * number of customers (n)
+  *
+  * for each potential facility location i (i = 1, ..., m): 
+  *     capacity of facility i, if opened
+  *     fixed cost to open facility i
+  *
+  * for each customer j (j = 1, ..., n):
+  *     demand of customer j
+  *     for each potential facility location i (i = 1, ..., m): 
+  *         cost of allocating all of the demand of j to facility i
+  *
+  * frmt == 'F' is the facility oriented, demands-first format:
+  *
+  * number of potential facility locations (m)
+  * number of customers (n)
+  *
+  * for each customer j (j = 1, ..., n):
+  *     demand of customer j
+  *
+  * for each potential facility location i (i = 1, ..., m): 
+  *     capacity of facility i, if opened
+  *
+  * for each potential facility location i (i = 1, ..., m): 
+  *     capacity of facility i, if opened
+  *     fixed cost to open facility i
+  *
+  * for each potential facility location i (i = 1, ..., m): 
+  *     for each customer j (j = 1, ..., n):
+  *         unitary transportation cost from facility i to customer j
+  *
+  * frmt == 'L' is the facility oriented, demands-last format:
+  *
+  * number of potential facility locations (m)
+  * number of customers (n)
+  *
+  * for each potential facility location i (i = 1, ..., m): 
+  *     capacity of facility i, if opened
+  *     fixed cost to open facility i
+  *
+  * for each customer j (j = 1, ..., n):
+  *     demand of customer j
+  *
+  * for each potential facility location i (i = 1, ..., m): 
+  *     for each customer j (j = 1, ..., n):
+  *         cost of allocating all of the demand of j to facility i
+  *
+  * In all the cases (possibly unlikely what the original formats assumed),
+  * comments (starting with '#' and taking up to the following newline) can
+  * be placed anywhere in the file and are skipped.
+  *
+  * Like load( memory ), if there is any Solver attached to this
+  * CapacitatedFacilityLocationBlock then a NBModification (the "nuclear
+  * option") is issued. */
+
+ void load( std::istream & input , char frmt = 0 ) override;
+
+/*--------------------------------------------------------------------------*/
  /// extends Block::deserialize( netCDF::NcGroup )
  /** Extends Block::deserialize( netCDF::NcGroup ) to the specific format of
   * a CapacitatedFacilityLocationBlock. Besides what is managed by the
@@ -1214,16 +1281,27 @@ public:
  void add_Modification( sp_Mod mod , ChnlName chnl = 0 ) override;
 
 /** @} ---------------------------------------------------------------------*/
-/*---- LOADING, PRINTING & SAVING THE CapacitatedFacilityLocationBlock -----*/
+/*-------- PRINTING & SAVING THE CapacitatedFacilityLocationBlock ----------*/
 /*--------------------------------------------------------------------------*/
-/** @name Methods for loading, printing & saving the
- *        CapacitatedFacilityLocationBlock
+/** @name Methods for printing & saving the CapacitatedFacilityLocationBlock
  *  @{ */
 
+ /// print the CapacitatedFacilityLocationBlock on an ostream
+ /** Prints information about the CapacitatedFacilityLocationBlock with the
+  * given verbosity level. The "complete" level ('C') outputs the
+  * CapacitatedFacilityLocationBlock in the standard ORLib text format,
+  * any other level prints only basic information.
+  *
+  * The verbosity levels corresponding to the other two formats (facility
+  * oriented, demands-first and demands-last) are not implemented yet. */
+
+ void print( std::ostream & output , char vlvl = 0 ) const override;
+
+/*--------------------------------------------------------------------------*/
  /// extends Block::serialize( netCDF::NcGroup )
  /** Extends Block::serialize( netCDF::NcGroup ) to the specific format of a
   * CapacitatedFacilityLocationBlock. See
-  * CapacitatedFacilityLocationBlock::deserialize( netCDF::NcGroup ) for
+  * CapacitatedFacilityLocationBlock::deserialize( netCDF::NcGroup & ) for
   * details of the format of the created netCDF group. */
 
  void serialize( netCDF::NcGroup & group ) const override;
@@ -1537,45 +1615,8 @@ public:
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
-/** @name Protected methods for inserting and extracting
- *  @{ */
-
- /// print the CapacitatedFacilityLocationBlock on an ostream
- /** Protected method to print information about the
-  * CapacitatedFacilityLocationBlock; with the "complete" level it outputs
-  * the CapacitatedFacilityLocationBlock in the standard text format. */
-
- void print( std::ostream &output ) const override;
 
 /*--------------------------------------------------------------------------*/
- /// loads the CFL instance from file in standard format
- /** Protected method for loading a CapacitatedFacilityLocationBlock out of
-  * a std::istream (which is what operator>> is dispatched to). The
-  * std::istream is assumed to contain the description of a CFL instance in
-  * the "ORLib standard format", which is the following:
-  *
-  * number of potential facility locations (m)
-  * number of customers (n)
-  *
-  * for each potential facility location i (i = 1, ..., m): 
-  *     capacity of facility i, if opened
-  *     fixed cost to open facility i
-  *
-  * for each customer j (j = 1, ..., n):
-  *     demand of customer j
-  *     for each potential facility location i (i = 1, ..., m): 
-  *         cost of allocating all of the demand of j to facility i
-  *
-  * Unlike the standard format, however, comments (starting with '#' and
-  * taking up to the following newline) can be added anywhere in the file.
-  *
-  * Like load( memory ), if there is any Solver attached to this
-  * CapacitatedFacilityLocationBlock then a NBModification (the "nuclear
-  * option") is issued. */
-
- void load( std::istream &input ) override;
-
-/** @} ---------------------------------------------------------------------*/
 /*--------------------------- PROTECTED FIELDS  ----------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -1803,6 +1844,14 @@ public:
  ModParam make_amod_param( ModParam issueAMod , Index num );
 
  void unmake_amod_param( ModParam oldiAM , ModParam newiAM , Index num );
+
+/*--------------------------------------------------------------------------*/
+
+#ifndef NDEBUG
+
+ void CheckAbsVSPhys( void );
+ 
+#endif
 
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PRIVATE FIELDS ------------------------------*/

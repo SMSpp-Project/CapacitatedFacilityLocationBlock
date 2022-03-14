@@ -236,7 +236,8 @@ void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::load( std::istream & input )
+void CapacitatedFacilityLocationBlock::load( std::istream & input ,
+					     char frmt )
 {
  static const std::string _prfx = "CapacitatedFacilityLocationBlock::load: ";
 
@@ -246,6 +247,7 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input )
   guts_of_destructor();
 
  // read first non-comment line - - - - - - - - - - - - - - - - - - - - - - -
+ // the first part of the three formats at least is common
 
  input >> eatcomments >> f_n_facilities;
  if( input.fail() )
@@ -261,39 +263,113 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input )
  if( f_n_customers == 0 )
   throw( std::invalid_argument( _prfx + "number of customers too small" ) );
 
+ // size up internal data structures- - - - - - - - - - - - - - - - - - - - -
  v_capacity.resize( f_n_facilities );
  v_f_cost.resize( f_n_facilities );
-
- for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // for( each facility )
-  input >> eatcomments >> v_capacity[ i ];
-  if( input.fail() )
-   goto input_failure;
-  if( v_capacity[ i ] <= 0 )
-   throw( std::invalid_argument( _prfx + "non-positive capacity" ) );
-
-  input >> eatcomments >> v_f_cost[ i ];
-  if( input.fail() )
-   goto input_failure;
-
-  }  // end( for( each facility ) )
-
  v_demand.resize( f_n_customers );
  v_t_cost.resize( boost::extents[ f_n_facilities ][ f_n_customers ] );
 
- for( Index j = 0 ; j < f_n_customers ; ++j ) {  // for( each customer )
-  input >> eatcomments >> v_demand[ j ];
-  if( input.fail() )
-   goto input_failure;
-  if( v_demand[ j ] <= 0 )
-   throw( std::invalid_argument( _prfx + "non-positive demand" ) );
+ // now the format-specific parts
+ switch( frmt ) {
+  case( 'F' ):  // facility oriented, demands-first format- - - - - - - - - -
+                //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   for( Index j = 0 ; j < f_n_customers ; ++j ) {  // read demands
+    input >> eatcomments >> v_demand[ j ];
+    if( input.fail() )
+     goto input_failure;
+    if( v_demand[ j ] <= 0 )
+     throw( std::invalid_argument( _prfx + "non-positive demand" ) );
+    }
 
-  for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // for( each facility )
-   input >> eatcomments >> v_t_cost[ i ][ j ];
-   if( input.fail() )
-    goto input_failure;
-  
-   }  // end( for( each facility ) )
-  }  // end( for( each customer ) )
+   for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // read capacity
+    input >> eatcomments >> v_capacity[ i ];
+    if( input.fail() )
+     goto input_failure;
+    if( v_capacity[ i ] <= 0 )
+     throw( std::invalid_argument( _prfx + "non-positive capacity" ) );
+    }
+
+   for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // read fixed cost
+    input >> eatcomments >> v_f_cost[ i ];
+    if( input.fail() )
+     goto input_failure;
+    }
+
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    for( Index j = 0 ; j < f_n_customers ; ++j ) {
+     input >> v_t_cost[ i ][ j ];
+     if( input.fail() )
+      goto input_failure;
+     // these are unitary costs, make them total costs
+     v_t_cost[ i ][ j ] *= v_demand[ j ];
+     }
+
+   break;
+
+  case( 'L' ):  // facility oriented, demands-last format - - - - - - - - - -
+                //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // for( each facility )
+    input >> eatcomments >> v_capacity[ i ];
+    if( input.fail() )
+     goto input_failure;
+    if( v_capacity[ i ] <= 0 )
+     throw( std::invalid_argument( _prfx + "non-positive capacity" ) );
+
+    input >> eatcomments >> v_f_cost[ i ];
+    if( input.fail() )
+     goto input_failure;
+
+    }  // end( for( each facility ) )
+
+   for( Index j = 0 ; j < f_n_customers ; ++j ) {  // read demands
+    input >> eatcomments >> v_demand[ j ];
+    if( input.fail() )
+     goto input_failure;
+    if( v_demand[ j ] <= 0 )
+     throw( std::invalid_argument( _prfx + "non-positive demand" ) );
+    }
+
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    for( Index j = 0 ; j < f_n_customers ; ++j ) {
+     input >> v_t_cost[ i ][ j ];
+     if( input.fail() )
+      goto input_failure;
+     }
+
+   break;
+
+  default:  // the ORLib, customers-oriented format - - - - - - - - - - - - -
+            //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // for( each facility )
+    input >> eatcomments >> v_capacity[ i ];
+    if( input.fail() )
+     goto input_failure;
+    if( v_capacity[ i ] <= 0 )
+     throw( std::invalid_argument( _prfx + "non-positive capacity" ) );
+
+    input >> eatcomments >> v_f_cost[ i ];
+    if( input.fail() )
+     goto input_failure;
+
+    }  // end( for( each facility ) )
+
+   for( Index j = 0 ; j < f_n_customers ; ++j ) {  // for( each customer )
+    input >> eatcomments >> v_demand[ j ];
+    if( input.fail() )
+     goto input_failure;
+    if( v_demand[ j ] <= 0 )
+     throw( std::invalid_argument( _prfx + "non-positive demand" ) );
+
+    for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // for( each facility )
+     input >> eatcomments >> v_t_cost[ i ][ j ];
+     if( input.fail() )
+      goto input_failure;
+
+     }  // end( for( each facility ) )
+    }  // end( for( each customer ) )
+
+  }  // end( switch( frmt ) ) - - - - - - - - - - - - - - - - - - - - - - - -
+     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
 
@@ -711,11 +787,9 @@ void CapacitatedFacilityLocationBlock::generate_objective(
  // generate the objective in the MCFBlock
  MCFB( v_Block[ 1 ] )->generate_objective();
 
- /*!!
  #if CHECK_DS
   CheckAbsVSPhys();
  #endif
- !!*/
 
  }  // end( CapacitatedFacilityLocationBlock::generate_objective )
 
@@ -1337,6 +1411,35 @@ void CapacitatedFacilityLocationBlock::add_Modification( sp_Mod mod ,
 /*---- LOADING, PRINTING & SAVING THE CapacitatedFacilityLocationBlock -----*/
 /*--------------------------------------------------------------------------*/
 
+void CapacitatedFacilityLocationBlock::print( std::ostream & output ,
+					      char vlvl ) const
+{
+ if( vlvl != 'C' ) {  // non-complete version
+  // only basic information 
+  output << "CapacitatedFacilityLocationBlock with: " << f_n_facilities
+	 << " facilities and " << f_n_customers << " customers" << std::endl;
+  }
+ else  {
+  // complete version: file in standard ORLib format
+  output << f_n_facilities << std::endl;
+  output << f_n_customers << std::endl << std::endl;
+
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   output << v_capacity[ i ] << "\t" << v_f_cost[ i ] << std::endl;
+  
+  output << std::endl;
+
+  for( Index j = 0 ; j < f_n_customers ; ++j ) {
+   output << v_demand[ j ] << std::endl;
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    output << v_t_cost[ i ][ j ] << "\t";
+   output << std::endl;
+   }
+  }
+ }  // end( CapacitatedFacilityLocationBlock::print )
+
+/*--------------------------------------------------------------------------*/
+
 void CapacitatedFacilityLocationBlock::serialize( netCDF::NcGroup & group )
  const
 {
@@ -1361,7 +1464,7 @@ void CapacitatedFacilityLocationBlock::serialize( netCDF::NcGroup & group )
    ).putVar( v_demand.data() );
 
  ::serialize( group , "TransportationCost" , netCDF::NcDouble() ,
-              { nc , nf } , v_t_cost );
+              { nf , nc } , v_t_cost );
 
  }  // end( CapacitatedFacilityLocationBlock::serialize )
 
@@ -2662,34 +2765,6 @@ void CapacitatedFacilityLocationBlock::fix_open_facility( Index i ,
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::print( std::ostream & output ) const
-{
- if( verbosity_lvl != Block::complete ) {  // non-complete version
-  // only basic information 
-  output << "CapacitatedFacilityLocationBlock with: " << f_n_facilities
-	 << " facilities and " << f_n_customers << " customers" << std::endl;
-  }
- else  {
-  // complete version: file in standard ORLib format
-  output << f_n_facilities << std::endl;
-  output << f_n_customers << std::endl << std::endl;
-
-  for( Index i = 0 ; i < f_n_facilities ; ++i )
-   output << v_capacity[ i ] << "\t" << v_f_cost[ i ] << std::endl;
-  
-  output << std::endl;
-
-  for( Index j = 0 ; j < f_n_customers ; ++j ) {
-   output << v_demand[ j ] << std::endl;
-   for( Index i = 0 ; i < f_n_facilities ; ++i )
-    output << v_t_cost[ i ][ j ] << "\t";
-   output << std::endl;
-   }
-  }
- }  // end( CapacitatedFacilityLocationBlock::print )
-
-/*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -3948,7 +4023,7 @@ void CapacitatedFacilityLocationBlock::get_y(
   return;                       // nothing to do
 
  #ifndef NDEBUG
-  if( ! ( AR &= HasVar ) )
+  if( ! ( AR & HasVar ) )
    throw( std::logic_error( "get_facility_solution: variables not generated"
 			    ) );
   if( rng.second > f_n_facilities )
@@ -3978,13 +4053,10 @@ void CapacitatedFacilityLocationBlock::get_y(
 
  #ifndef NDEBUG
   const std::string _prfx = "get_facility_solution: ";
-  if( ! ( AR &= HasVar ) )
+  if( ! ( AR & HasVar ) )
    throw( std::logic_error( _prfx + "variables not generated" ) );
-  if( std__any_of( nms.begin() , nms.end ,
-		   [ & f_n_facilities ]( auto i ) {
-		    return( i > f_n_facilities );
-		    }
-		   ) )
+  if( std::any_of( nms.begin() , nms.end() ,
+		   [ & ]( auto i ) { return( i > f_n_facilities ); } ) )
    throw( std::logic_error( _prfx + "invalid facility index in nms" ) );
  #endif
 
@@ -4010,7 +4082,7 @@ void CapacitatedFacilityLocationBlock::get_x(
   return;                       // nothing to do
 
  #ifndef NDEBUG
-  if( ! ( AR &= HasVar ) )
+  if( ! ( AR & HasVar ) )
    throw( std::logic_error( "get_transportation_solution: "
 			    "variables not generated" ) );
   if( rng.second > f_n_facilities * f_n_customers )
@@ -4066,13 +4138,10 @@ void CapacitatedFacilityLocationBlock::get_x(
 
  #ifndef NDEBUG
   const std::string _prfx = "get_transportation_solution: ";
-  if( ! ( AR &= HasVar ) )
+  if( ! ( AR & HasVar ) )
    throw( std::logic_error( _prfx + "variables not generated" ) );
-  if( std__any_of( nms.begin() , nms.end ,
-		   [ & f_n_facilities ]( auto i ) {
-		    return( i > f_n_facilities );
-		    }
-		   ) )
+  if( std::any_of( nms.begin() , nms.end() ,
+		   [ & ]( auto i ) { return( i > f_n_facilities ); } ) )
    throw( std::logic_error( _prfx + "invalid index in nms" ) );
  #endif
 
@@ -4120,7 +4189,7 @@ void CapacitatedFacilityLocationBlock::set_y(
   return;                       // nothing to do
 
  #ifndef NDEBUG
-  if( ! ( AR &= HasVar ) )
+  if( ! ( AR & HasVar ) )
    throw( std::logic_error( "set_facility_solution: variables not generated"
 			    ) );
   if( rng.second > f_n_facilities )
@@ -4150,13 +4219,10 @@ void CapacitatedFacilityLocationBlock::set_y(
 
  #ifndef NDEBUG
   const std::string _prfx = "set_facility_solution: ";
-  if( ! ( AR &= HasVar ) )
+  if( ! ( AR & HasVar ) )
    throw( std::logic_error( _prfx + "variables not generated" ) );
-  if( std__any_of( nms.begin() , nms.end ,
-		   [ & f_n_facilities ]( auto i ) {
-		    return( i > f_n_facilities );
-		    }
-		   ) )
+  if( std::any_of( nms.begin() , nms.end() ,
+		  [ & ]( auto i ) { return( i > f_n_facilities ); } ) )
    throw( std::logic_error( _prfx + "invalid facility index in nms" ) );
  #endif
 
@@ -4182,7 +4248,7 @@ void CapacitatedFacilityLocationBlock::set_x(
   return;                       // nothing to do
 
  #ifndef NDEBUG
-  if( ! ( AR &= HasVar ) )
+  if( ! ( AR & HasVar ) )
    throw( std::logic_error( "set_transportation_solution: "
 			    "variables not generated" ) );
   if( rng.second > f_n_facilities * f_n_customers )
@@ -4240,14 +4306,12 @@ void CapacitatedFacilityLocationBlock::set_x(
   return;           // nothing to do
 
  #ifndef NDEBUG
+  auto nmx = f_n_facilities * f_n_customers;
   const std::string _prfx = "set_transportation_solution: ";
-  if( ! ( AR &= HasVar ) )
+  if( ! ( AR & HasVar ) )
    throw( std::logic_error( _prfx + "variables not generated" ) );
-  if( std__any_of( nms.begin() , nms.end ,
-		   [ & f_n_facilities ]( auto i ) {
-		    return( i > f_n_facilities );
-		    }
-		   ) )
+  if( std::any_of( nms.begin() , nms.end() ,
+		   [ & ]( auto i ) { return( i > nmx ); } ) )
    throw( std::logic_error( _prfx + "invalid index in nms" ) );
  #endif
 
