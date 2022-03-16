@@ -130,18 +130,23 @@ SW =
 
 ## Tools
 
-We provide a simple tool that converts CFL instances written in a
-"non-standard" format, i.e., different from that of the
-[ORLib](http://people.brunel.ac.uk/~mastjjb/jeb/orlib/capinfo.html),
-into either the "standard" format or into netCDF files.
+We provide a simple tool that reads CFL instances written in three different formats and convert
+them to the SMS++ native netCDF format supported
+by CapacitatedFacilityLocationBlock, or read a
+netCDF file and produce the corresponding text one.
 
 You can run the tool from the `<build-dir>/tools` directory or
 install it with the library (see above).
 Run the tool without arguments for info on its usage:
 
 ```sh
-cfl2nc4
+txt2nc4
 ```
+
+A batch file is provided to build netCDF files for a test bed composed
+by three different sets of instances. First decompress `data/txt.tgz` in place and then
+run `data/batch` to have the instances produced in `data/nc4'
+
 
 ## Getting help
 

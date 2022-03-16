@@ -377,7 +377,7 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input ,
  // note: this is a NBModification, the "nuclear option"
 
  if( anyone_there() )
-  add_Modification( std::make_shared<NBModification>( this ) );
+  add_Modification( std::make_shared< NBModification >( this ) );
 
  return;
 
@@ -437,7 +437,7 @@ void CapacitatedFacilityLocationBlock::deserialize(
   throw( std::logic_error( _prfx + "FacilityCost has wrong size" ) );
  
  v_f_cost.resize( f_n_facilities );
- fq.getVar( v_f_cost.data() );
+ fc.getVar( v_f_cost.data() );
 
  auto cd = group.getVar( "CustomerDemand" );
  if( cd.isNull() )
@@ -1408,7 +1408,7 @@ void CapacitatedFacilityLocationBlock::add_Modification( sp_Mod mod ,
  }  // end( CapacitatedFacilityLocationBlock::add_Modification )
 
 /*--------------------------------------------------------------------------*/
-/*---- LOADING, PRINTING & SAVING THE CapacitatedFacilityLocationBlock -----*/
+/*-------- PRINTING & SAVING THE CapacitatedFacilityLocationBlock ----------*/
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::print( std::ostream & output ,

@@ -1,6 +1,12 @@
 ### Makefile-generated binaries
 tools/txt2nc4
 
+### instances in netCDF format
+*.nc4
+
+# uncompressed instances in txt format
+data/txt
+
 ### C/C++ template
 # Prerequisites
 *.d
