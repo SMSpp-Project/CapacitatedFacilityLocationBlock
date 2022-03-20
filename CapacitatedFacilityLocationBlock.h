@@ -1030,9 +1030,9 @@ public:
   * points, in the obvious order. Since Sol is an iterator to an IntSolution,
   * this is the integer (binary) version of the solution. */
 
- void get_facility_solution( IS_it Sol ,
-			     Range rng = Range( 0 , Inf< Index >() ) )
-  const { get_y< bool >( Sol , rng ); }
+ void get_facility_solution( IS_it Sol , Range rng = INFRange ) const {
+  get_y< bool >( Sol , rng );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets an arbitrary subset of the (integer) facility solution
@@ -1057,9 +1057,9 @@ public:
   * this can be a fractional solution, e.g., as produced by a Solver that can
   * only solve a continuous relaxation of the problem. */
 
- void get_facility_solution( CS_it Sol ,
-			     Range rng = Range( 0 , Inf< Index >() ) )
-  const { get_y< double >( Sol , rng ); }
+ void get_facility_solution( CS_it Sol , Range rng = INFRange ) const {
+  get_y< double >( Sol , rng );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets an arbitrary subset of the (continuous) facility solution
@@ -1092,9 +1092,9 @@ public:
   * the problem is solved (get_Unsplittable() == false), or the integer
   * rounding of the true continuous solution otherwise. */
 
- void get_transportation_solution( CS_it Sol ,
-				   Range rng = Range( 0 , Inf< Index >() ) )
-  const { get_x< double >( Sol , rng ); }
+ void get_transportation_solution( CS_it Sol , Range rng = INFRange ) const {
+  get_x< double >( Sol , rng );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets an arbitrary subset of the (continuous) transportation solution
@@ -1124,8 +1124,7 @@ public:
   * points, in the obvious order. Since Sol is an iterator to an IntSolution,
   * this is the integer (binary) version of the solution. */
 
- void set_facility_solution( c_IS_it Sol ,
-			     Range rng = Range( 0 , Inf< Index >() ) ) {
+ void set_facility_solution( c_IS_it Sol , Range rng = INFRange ) {
   set_y< bool >( Sol , rng );
   }
 
@@ -1152,8 +1151,7 @@ public:
   * this can be a fractional solution, e.g., as produced by a Solver that can
   * only solve a continuous relaxation of the problem. */
 
- void set_facility_solution( c_CS_it Sol ,
-			     Range rng = Range( 0 , Inf< Index >() ) ) {
+ void set_facility_solution( c_CS_it Sol , Range rng = INFRange ) {
   set_y< double >( Sol , rng );
   }
 
@@ -1187,8 +1185,7 @@ public:
   * the problem is solved (get_Unsplittable() == false), or the integer
   * rounding of the true continuous solution otherwise. */
 
- void set_transportation_solution( c_CS_it Sol ,
-				   Range rng = Range( 0 , Inf< Index >() ) ) {
+ void set_transportation_solution( c_CS_it Sol , Range rng = INFRange ) {
   set_x< double >( Sol , rng );
   }
 
@@ -1341,8 +1338,7 @@ public:
   * If issueMod says so then a "physical"
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
- void chg_facility_costs( c_CV_it NCost ,
-			  Range rng = Range( 0 , Inf<Index>() ) ,
+ void chg_facility_costs( c_CV_it NCost , Range rng = INFRange ,
 			  ModParam issueMod = eNoBlck ,
 			  ModParam issueAMod = eNoBlck );
 
@@ -1355,8 +1351,8 @@ public:
   * being shipped to the appropriate CapacitatedFacilityLocationBlockSbstMod
   * that is issued. */
 
- void chg_facility_costs( c_CV_it NCost , Subset && nms ,
-			  bool ordered = false ,
+ void chg_facility_costs( c_CV_it NCost ,
+			  Subset && nms , bool ordered = false ,
 			  ModParam issueMod = eNoBlck ,
 			  ModParam issueAMod = eNoBlck );
 
@@ -1383,8 +1379,7 @@ public:
   * If issueMod says so then a "physical"
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
- void chg_transportation_costs( c_CV_it NCost ,
-				Range rng = Range( 0 , Inf<Index>() ) ,
+ void chg_transportation_costs( c_CV_it NCost , Range rng = INFRange ,
 				ModParam issueMod = eNoBlck ,
 				ModParam issueAMod = eNoBlck );
 
@@ -1399,8 +1394,8 @@ public:
   * is issued. \p order tells if \p nms is already ordered in increasing
   * sense. */
 
- void chg_transportation_costs( c_CV_it NCost , Subset && nms ,
-				bool ordered = false ,
+ void chg_transportation_costs( c_CV_it NCost ,
+				Subset && nms , bool ordered = false ,
 				ModParam issueMod = eNoBlck ,
 				ModParam issueAMod = eNoBlck );
 
@@ -1424,8 +1419,7 @@ public:
   * If issueMod says so then a "physical"
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
- void chg_facility_capacities( c_DV_it NCap ,
-			       Range rng = Range( 0 , Inf<Index>() ) ,
+ void chg_facility_capacities( c_DV_it NCap , Range rng = INFRange ,
 			       ModParam issueMod = eNoBlck ,
 			       ModParam issueAMod = eNoBlck );
 
@@ -1438,8 +1432,8 @@ public:
   * typically being shipped to the appropriate
   * CapacitatedFacilityLocationBlockSbstMod that is issued. */
 
- void chg_facility_capacities( c_DV_it NCap , Subset && nms ,
-			       bool ordered = false ,
+ void chg_facility_capacities( c_DV_it NCap ,
+			       Subset && nms , bool ordered = false ,
 			       ModParam issueMod = eNoBlck ,
 			       ModParam issueAMod = eNoBlck );
 
@@ -1460,8 +1454,7 @@ public:
   * If issueMod says so then a "physical"
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
- void chg_customer_demands( c_DV_it NDem ,
-			    Range rng = Range( 0 , Inf<Index>() ) ,
+ void chg_customer_demands( c_DV_it NDem , Range rng = INFRange ,
 			    ModParam issueMod = eNoBlck ,
 			    ModParam issueAMod = eNoBlck );
 
@@ -1474,8 +1467,8 @@ public:
   * being shipped to the appropriate
   * CapacitatedFacilityLocationBlockSbstMod that is issued. */
 
- void chg_customer_demands( c_DV_it NDem , Subset && nms ,
-			    bool ordered = false ,
+ void chg_customer_demands( c_DV_it NDem ,
+			    Subset && nms , bool ordered = false ,
 			    ModParam issueMod = eNoBlck ,
 			    ModParam issueAMod = eNoBlck );
 
@@ -1497,7 +1490,7 @@ public:
   * If issueMod says so then a "physical"
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
- void close_facilities( Range rng = Range( 0 , Inf<Index>() ) ,
+ void close_facilities( Range rng = INFRange ,
 			ModParam issueMod = eNoBlck ,
 			ModParam issueAMod = eNoBlck );
 
@@ -1536,7 +1529,7 @@ public:
   * If issueMod says so then a "physical"
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
- void open_facilities( Range rng = Range( 0 , Inf<Index>() ) ,
+ void open_facilities( Range rng = INFRange ,
 		       ModParam issueMod = eNoBlck ,
 		       ModParam issueAMod = eNoBlck );
 
@@ -1573,7 +1566,7 @@ public:
   * If issueMod says so then a "physical"
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
- void fix_open_facilities( Range rng = Range( 0 , Inf<Index>() ) ,
+ void fix_open_facilities( Range rng = INFRange ,
 			   ModParam issueMod = eNoBlck ,
 			   ModParam issueAMod = eNoBlck );
 
