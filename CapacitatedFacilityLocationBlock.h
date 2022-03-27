@@ -927,7 +927,7 @@ public:
 			     ModParam issuePMod = eNoBlck ,
 			     ModParam issueAMod = eModBlck ) override;
 
-/**@} ----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*----------------------- Methods for handling Solution --------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Methods for handling Solution
@@ -984,7 +984,7 @@ public:
     throw( std::logic_error( "get_y: invalid facility index" ) );
   #endif
 
-  if( ( AR & ~3 ) == 1 )  // ~3 = FormMsk , 1 = KskForm
+  if( ( AR & 3 ) == 1 )  // 3 = FormMsk , 1 = KskForm
    return( * static_cast< BinaryKnapsackBlock * >(
 				   v_Block[ i ] )->get_Var( f_n_customers ) );
   else
@@ -1008,15 +1008,14 @@ public:
     throw( std::logic_error( "get_x: invalid customer index" ) );
   #endif
 
-  switch( AR & ~3 ) {  // ~3 = FormMsk 
-   case( 0 ):  // 0 = StdForm
+  if( ( AR & 3 ) == 0 )  // 3 = FormMsk, 0 = StdForm
     return( const_cast< ColVariable & >( v_x[ i ][ j ] ) );
     // note the need for the const_cast as all fields of the class are const
     // inside of a const method (this is const)
-   case( 1 ):  // 1 = KskForm
-    return( * static_cast< BinaryKnapsackBlock * >(
+
+  if( ( AR & 3 ) == 1 )  // 3 = FormMsk, 0 = StdForm
+   return( * static_cast< BinaryKnapsackBlock * >(
 				              v_Block[ i ] )->get_Var( j ) );
-   }
 
   return( * static_cast< MCFBlock * >( v_Block[ 1 ] )->i2p_x(
 			          f_n_facilities + i * f_n_customers + j ) );
@@ -1030,9 +1029,7 @@ public:
   * points, in the obvious order. Since Sol is an iterator to an IntSolution,
   * this is the integer (binary) version of the solution. */
 
- void get_facility_solution( IS_it Sol , Range rng = INFRange ) const {
-  get_y< bool >( Sol , rng );
-  }
+ void get_facility_solution( IS_it Sol , Range rng = INFRange ) const;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets an arbitrary subset of the (integer) facility solution
@@ -1044,9 +1041,7 @@ public:
   * nms[] to be ordered, just the entries written in the (sub)vector
   * will be in whatever order nms[] is. */
 
- void get_facility_solution( IS_it Sol , c_Subset & nms ) const {
-  get_y< bool >( Sol , nms );
-  }
+ void get_facility_solution( IS_it Sol , c_Subset & nms ) const;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets a contiguous interval of the (continuous) facility solution
@@ -1057,9 +1052,7 @@ public:
   * this can be a fractional solution, e.g., as produced by a Solver that can
   * only solve a continuous relaxation of the problem. */
 
- void get_facility_solution( CS_it Sol , Range rng = INFRange ) const {
-  get_y< double >( Sol , rng );
-  }
+ void get_facility_solution( CS_it Sol , Range rng = INFRange ) const;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets an arbitrary subset of the (continuous) facility solution
@@ -1072,9 +1065,7 @@ public:
   * fractional solution, e.g., as produced by a Solver that can only solve a
   * continuous relaxation of the problem. */
 
- void get_facility_solution( CS_it Sol , c_Subset & nms ) const {
-  get_y< double >( Sol , nms );
-  }
+ void get_facility_solution( CS_it Sol , c_Subset & nms ) const;
 
 /*--------------------------------------------------------------------------*/
  /// gets a contiguous interval of the (continuous) transportation solution
@@ -1092,9 +1083,7 @@ public:
   * the problem is solved (get_Unsplittable() == false), or the integer
   * rounding of the true continuous solution otherwise. */
 
- void get_transportation_solution( CS_it Sol , Range rng = INFRange ) const {
-  get_x< double >( Sol , rng );
-  }
+ void get_transportation_solution( CS_it Sol , Range rng = INFRange ) const;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// gets an arbitrary subset of the (continuous) transportation solution
@@ -1112,9 +1101,12 @@ public:
   * the problem is solved (get_Unsplittable() == false), or the integer
   * rounding of the true continuous solution otherwise. */
 
- void get_transportation_solution( CS_it Sol , c_Subset & nms ) const {
-  get_x< double >( Sol , nms );
-  }
+ void get_transportation_solution( CS_it Sol , c_Subset & nms ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// returns the objective value of the current solution
+
+ RealObjective::OFValue get_objective_value( void );
 
 /*--------------------------------------------------------------------------*/
  /// sets a contiguous interval of the (integer) facility solution
@@ -1124,9 +1116,7 @@ public:
   * points, in the obvious order. Since Sol is an iterator to an IntSolution,
   * this is the integer (binary) version of the solution. */
 
- void set_facility_solution( c_IS_it Sol , Range rng = INFRange ) {
-  set_y< bool >( Sol , rng );
-  }
+ void set_facility_solution( c_IS_it Sol , Range rng = INFRange );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// sets an arbitrary subset of the (integer) facility solution
@@ -1138,9 +1128,7 @@ public:
   * nms[] to be ordered, just the entries read from the (sub)vector need be in
   * whatever order nms[] is. */
 
- void set_facility_solution( c_IS_it Sol , c_Subset & nms ) {
-  set_y< bool >( Sol , nms );
-  }
+ void set_facility_solution( c_IS_it Sol , c_Subset & nms );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// sets a contiguous interval of the (continuous) facility solution
@@ -1151,9 +1139,7 @@ public:
   * this can be a fractional solution, e.g., as produced by a Solver that can
   * only solve a continuous relaxation of the problem. */
 
- void set_facility_solution( c_CS_it Sol , Range rng = INFRange ) {
-  set_y< double >( Sol , rng );
-  }
+ void set_facility_solution( c_CS_it Sol , Range rng = INFRange );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// sets an arbitrary subset of the (continuous) facility solution
@@ -1165,9 +1151,7 @@ public:
   * e.g., as produced by a Solver that can only solve a continuous relaxation
   * of the problem. */
 
- void set_facility_solution( c_CS_it Sol , c_Subset & nms ) {
-  set_y< double >( Sol , nms );
-  }
+ void set_facility_solution( c_CS_it Sol , c_Subset & nms );
 
 /*--------------------------------------------------------------------------*/
  /// sets a contiguous interval of the (continuous) transportation solution
@@ -1185,9 +1169,7 @@ public:
   * the problem is solved (get_Unsplittable() == false), or the integer
   * rounding of the true continuous solution otherwise. */
 
- void set_transportation_solution( c_CS_it Sol , Range rng = INFRange ) {
-  set_x< double >( Sol , rng );
-  }
+ void set_transportation_solution( c_CS_it Sol , Range rng = INFRange );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// sets an arbitrary subset of the (continuous) transportation solution
@@ -1205,9 +1187,7 @@ public:
   * the problem is solved (get_Unsplittable() == false), or the integer
   * rounding of the true continuous solution otherwise. */
 
- void set_transportation_solution( c_CS_it Sol , c_Subset & nms ) {
-  set_x< double >( Sol , nms );
-  }
+ void set_transportation_solution( c_CS_it Sol , c_Subset & nms );
 
 /** @} ---------------------------------------------------------------------*/
 /*-------------------- Methods for handling Modification -------------------*/
@@ -1595,7 +1575,7 @@ public:
  void fix_open_facility( Index i , ModParam issueMod = eNoBlck ,
 			           ModParam issueAMod = eNoBlck );
 
-/**@} ----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -1709,12 +1689,12 @@ public:
  {
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
    "CapacitatedFacilityLocationBlock::chg_facility_costs",
-   &CapacitatedFacilityLocationBlock::chg_facility_costs );
+   & CapacitatedFacilityLocationBlock::chg_facility_costs );
 
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
    bool >(
    "CapacitatedFacilityLocationBlock::chg_facility_costs" ,
-   &CapacitatedFacilityLocationBlock::chg_facility_costs );
+   & CapacitatedFacilityLocationBlock::chg_facility_costs );
 
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
    "CapacitatedFacilityLocationBlock::chg_transportation_costs" ,
@@ -1723,11 +1703,11 @@ public:
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
    bool >(
    "CapacitatedFacilityLocationBlock::chg_facility_capacities",
-   &CapacitatedFacilityLocationBlock::chg_facility_capacities );
+   & CapacitatedFacilityLocationBlock::chg_facility_capacities );
 
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
    "CapacitatedFacilityLocationBlock::chg_facility_capacities",
-   &CapacitatedFacilityLocationBlock::chg_facility_capacities );
+   & CapacitatedFacilityLocationBlock::chg_facility_capacities );
 
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
    bool >(
@@ -1736,31 +1716,31 @@ public:
 
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
    "CapacitatedFacilityLocationBlock::chg_customer_demands",
-   &CapacitatedFacilityLocationBlock::chg_customer_demands );
+   & CapacitatedFacilityLocationBlock::chg_customer_demands );
 
    register_method< CapacitatedFacilityLocationBlock , Range >(
    "CapacitatedFacilityLocationBlock::close_facilities",
-   &CapacitatedFacilityLocationBlock::close_facilities );
+   & CapacitatedFacilityLocationBlock::close_facilities );
 
   register_method< CapacitatedFacilityLocationBlock , Subset && , bool >(
    "CapacitatedFacilityLocationBlock::close_facilities" ,
-   &CapacitatedFacilityLocationBlock::open_facilities );
+   & CapacitatedFacilityLocationBlock::open_facilities );
 
   register_method< CapacitatedFacilityLocationBlock , Range >(
    "CapacitatedFacilityLocationBlock::open_facilities",
-   &CapacitatedFacilityLocationBlock::open_facilities );
+   & CapacitatedFacilityLocationBlock::open_facilities );
 
   register_method< CapacitatedFacilityLocationBlock , Subset && , bool >(
    "CapacitatedFacilityLocationBlock::open_facilities" ,
-   &CapacitatedFacilityLocationBlock::open_facilities );
+   & CapacitatedFacilityLocationBlock::open_facilities );
 
   register_method< CapacitatedFacilityLocationBlock , Range >(
    "CapacitatedFacilityLocationBlock::fix_open_facilities",
-   &CapacitatedFacilityLocationBlock::fix_open_facilities );
+   & CapacitatedFacilityLocationBlock::fix_open_facilities );
 
   register_method< CapacitatedFacilityLocationBlock , Subset && , bool >(
    "CapacitatedFacilityLocationBlock::fix_open_facilities" ,
-   &CapacitatedFacilityLocationBlock::fix_open_facilities );
+   & CapacitatedFacilityLocationBlock::fix_open_facilities );
    }
 
 /*--------------------------------------------------------------------------*/

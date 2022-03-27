@@ -60,9 +60,9 @@ using v_coeff_pair = LinearFunction::v_coeff_pair;
 /*-------------------------------- CONSTANTS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-static constexpr unsigned char FormMsk = ~3;
-// mask for removing the first four bits and only leaving the formulation
-// (irrespective of if it is splittable or not)
+static constexpr unsigned char FormMsk = 3;
+// mask for removing all but the first two bits and only leaving the
+// formulation (irrespective of if it is splittable or not)
 
 static constexpr unsigned char StdForm = 0;
 // the "standard" formulation is used
@@ -222,6 +222,9 @@ void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
  v_capacity = std::move( Q );
  v_f_cost = std::move( F );
  v_demand = std::move( D );
+ // this resize() should most definitely not be necessary, but it appears
+ // that "=" between multi_arrays does not work as intended
+ v_t_cost.resize( boost::extents[ m ][ n ] );
  v_t_cost = std::move( C );
 
  f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
@@ -270,7 +273,7 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input ,
  v_t_cost.resize( boost::extents[ f_n_facilities ][ f_n_customers ] );
 
  // now the format-specific parts
- switch( frmt ) {
+ switch( std::toupper( frmt ) ) {
   case( 'F' ):  // facility oriented, demands-first format- - - - - - - - - -
                 //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
    for( Index j = 0 ; j < f_n_customers ; ++j ) {  // read demands
@@ -507,7 +510,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
    }
 
   Index cnt = f_n_facilities * f_n_customers;
-  for( auto xij = v_x.data() ; ; )
+  for( auto xij = v_x.data() ; xij != v_x.data() + cnt ; )
    (xij++)->set_type( xt );
   add_static_variable( v_x , "x" );
 
@@ -606,7 +609,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
 			   ) );
  Index wc = 0;
  if( ( ! stcc ) && f_BlockConfig )
-  stcc = f_BlockConfig->f_static_variables_Configuration;
+  stcc = f_BlockConfig->f_static_constraints_Configuration;
  if( auto sci = dynamic_cast< SimpleConfiguration< int > * >( stcc ) )
   wc = sci->f_value;
 
@@ -972,8 +975,9 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
   MCFB = new MCFBlock( father );
 
  Index NN = f_n_facilities + f_n_customers + 1;
- Index NA = f_n_facilities * ( f_n_customers + 1 )
-          + wR3B > 1 ? f_n_customers : 0;
+ Index NA = f_n_facilities * ( f_n_customers + 1 );
+ if( wR3B > 1 )
+  NA += f_n_customers;
 
  Subset EN( NA );
  Subset SN( NA );
@@ -1000,20 +1004,20 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
 
  // first the source -> facility arcs
  for( i = 0 ; i < f_n_facilities ; ++i ) {
-  SN[ a ] = 22;
+  SN[ a ] = ss;
   EN[ a ] = i + 1;
   U[ a ] = v_capacity[ i ];
   C[ a++ ] = v_f_cost[ i ] / v_capacity[ i ];
   }
 
  // now the facility -> customers arcs
-  for( i = 0 ; i < f_n_facilities ; ++i )
-   for( Index j = 0 ; j < f_n_customers ; ++j ) {
-    SN[ a ] = i + 1;
-    EN[ a ] = f_n_facilities + 1 + j;
-    U[ a ] = Inf< MCFBlock::FNumber >();
-    C[ a++ ] = v_t_cost[ i ][ j ] / v_demand[ j ];
-    }
+ for( i = 0 ; i < f_n_facilities ; ++i )
+  for( Index j = 0 ; j < f_n_customers ; ++j ) {
+   SN[ a ] = i + 1;
+   EN[ a ] = f_n_facilities + 1 + j;
+   U[ a ] = Inf< MCFBlock::FNumber >();
+   C[ a++ ] = v_t_cost[ i ][ j ] / v_demand[ j ];
+   }
 
  if( wR3B > 1 ) {
   // now the artificial arcs to ensure feasibility
@@ -1025,7 +1029,7 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
 
    // compute an upper bound on the worst-case transportation cost
    MCFBlock::CNumber maxc = 0;
-   for( i = 0 ; i < f_n_facilities ; ++i , ++a )
+   for( i = 0 ; i < f_n_facilities ; ++i )
     if( auto tci = C[ i ] + v_t_cost[ i ][ j ] / v_demand[ j ] ;
 	maxc < tci )
      maxc = tci;
@@ -1102,7 +1106,7 @@ void CapacitatedFacilityLocationBlock::map_back_solution( Block * R3B ,
                             ( wR3B == 2 ? f_n_customers : 0  ) ) )
   throw( std::invalid_argument( _prfx + "incompatible sizes in R3B" ) );
 
- Index l = ws & 1 ? f_n_facilities : 0;
+ Index l = ws & 1 ? 0 : f_n_facilities;
  Index u = ws & 2 ? f_n_facilities * ( f_n_customers + 1 ) : f_n_facilities;
  
  MCFBlock::Vec_FNumber x( u - l );
@@ -1321,6 +1325,126 @@ Solution * CapacitatedFacilityLocationBlock::get_Solution(
  return( sol );
 
  }  // end( CapacitatedFacilityLocationBlock::get_Solution )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::get_facility_solution( IS_it Sol ,
+							      Range rng )
+ const { get_y< bool >( Sol , rng ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+void CapacitatedFacilityLocationBlock::get_facility_solution( IS_it Sol ,
+							      c_Subset & nms )
+ const { get_y< bool >( Sol , nms ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+void CapacitatedFacilityLocationBlock::get_facility_solution( CS_it Sol ,
+							      Range rng )
+ const { get_y< double >( Sol , rng ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+void CapacitatedFacilityLocationBlock::get_facility_solution( CS_it Sol ,
+							      c_Subset & nms )
+ const { get_y< double >( Sol , nms ); }
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::get_transportation_solution(
+					        CS_it Sol , Range rng ) const
+{
+ get_x< double >( Sol , rng );
+ }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+void CapacitatedFacilityLocationBlock::get_transportation_solution(
+					    CS_it Sol , c_Subset & nms ) const
+{
+ get_x< double >( Sol , nms );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+RealObjective::OFValue
+                CapacitatedFacilityLocationBlock::get_objective_value( void )
+{
+ if( ! ( AR & HasObj ) )  // the objective is not there
+  return( Inf< RealObjective::OFValue >() );
+
+ if( ( AR & FormMsk ) == StdForm ) {  // "natural formulation" (NF) - - - - -
+                                      //- - - - - - - - - - - - - - - - - - -
+  f_obj.compute();
+  return( f_obj.value() );
+  }
+
+ if( ( AR & FormMsk ) == KskForm ) {  // "knapsack formulation" (KF)- - - - -
+                                      //- - - - - - - - - - - - - - - - - - -
+  RealObjective::OFValue res = 0;
+  for( auto ki : v_Block )
+   res += BKB( ki )->get_objective_value();
+
+  return( res );
+  }
+
+ // else it is the "flow formulation" (FF)- - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // the objctive is split between the two sub-Block
+
+ f_obj.compute();
+ return( f_obj.value() + MCFB( v_Block[ 1 ] )->get_objective_value() );
+
+ }  // end( CapacitatedFacilityLocationBlock::get_objective_value )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::set_facility_solution( c_IS_it Sol ,
+							      Range rng )
+{
+ set_y< bool >( Sol , rng );
+ }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+void CapacitatedFacilityLocationBlock::set_facility_solution( c_IS_it Sol ,
+							      c_Subset & nms )
+{
+ set_y< bool >( Sol , nms );
+ }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+void CapacitatedFacilityLocationBlock::set_facility_solution( c_CS_it Sol ,
+							      Range rng )
+{
+ set_y< double >( Sol , rng );
+ }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+void CapacitatedFacilityLocationBlock::set_facility_solution( c_CS_it Sol ,
+							      c_Subset & nms )
+{
+ set_y< double >( Sol , nms );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::set_transportation_solution(
+					            c_CS_it Sol , Range rng )
+{
+ set_x< double >( Sol , rng );
+ }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+void CapacitatedFacilityLocationBlock::set_transportation_solution(
+					       c_CS_it Sol , c_Subset & nms )
+{
+ set_x< double >( Sol , nms );
+ }
 
 /*--------------------------------------------------------------------------*/
 /*-------------------- Methods for handling Modification -------------------*/
@@ -2787,6 +2911,19 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
   cnst.clear();
  for( auto & cnst : v_sfc )  // clear the strong forcin constraints
   cnst.clear();
+ f_obj.clear();              // clear the objective function
+
+ if( ( AR & FormMsk ) == FlwForm ) {
+  // AbstractBlock assumes it is the sole owner of its Constraint and
+  // Variable, but this is not true here, so remove them before
+  // deleting it to avoid double deletion
+  AB( v_Block[ 0 ] )->reset_static_constraints();
+  AB( v_Block[ 0 ] )->reset_static_variables();
+  AB( v_Block[ 0 ] )->reset_objective();
+  // detach the objective from the AbstractBlock, since the latter will
+  // be deleted before the former
+  f_obj.set_Block( nullptr );
+  }
 
  // delete all sub-Block
  for( auto bi : v_Block )
@@ -2799,13 +2936,9 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
  v_cap.clear();
  v_sat.clear();
 
- // clear the objective function
- f_obj.clear();
-
  // delete all Variable
  v_x.resize( boost::extents[ 0 ][ 0 ] );
  v_y.clear();
-
 
  // explicitly reset all Constraint and Variable
  // this is done for the case where this method is called prior to re-loading
