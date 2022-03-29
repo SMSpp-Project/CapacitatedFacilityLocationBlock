@@ -1617,11 +1617,11 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
   if( ( AR & FormMsk ) != KskForm )
    // since modify_coefficients owns the vector, a copy has to be made
    get_lfo()->modify_coefficients( CVector( NCost , NCost + num ) , rng ,
-				   issueAMod );
+				   un_ModBlock( issueAMod ) );
   else
    for( Index i = rng.first ; i < rng.second ; ++i )
-    BKB( v_Block[ i ] )->chg_weight( *(NCost++) , f_n_customers , issueMod ,
-				     issueAMod );
+    BKB( v_Block[ i ] )->chg_profit( *(NCost++) , f_n_customers , issueMod ,
+				     un_ModBlock( issueAMod ) );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -1664,11 +1664,12 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
   if( ( AR & FormMsk ) != KskForm )
    // since modify_coefficients owns both vectors, two copies are made
    get_lfo()->modify_coefficients( CVector( NCost , NCost + nms.size() ) ,
-				   Subset( nms ) , true , issueAMod );
+				   Subset( nms ) , true ,
+				   un_ModBlock( issueAMod ) );
   else
    for( auto i : nms )
-    BKB( v_Block[ i ] )->chg_weight( *(NCost++) , f_n_customers ,
-				     issueMod , issueAMod );
+    BKB( v_Block[ i ] )->chg_profit( *(NCost++) , f_n_customers ,
+				     issueMod , un_ModBlock( issueAMod ) );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -1710,10 +1711,10 @@ void CapacitatedFacilityLocationBlock::chg_facility_cost( Cost NCost ,
   v_f_cost[ i ] = NCost;
 
   if( ( AR & FormMsk ) != KskForm )
-   get_lfo()->modify_coefficient( i , NCost , issueAMod );
+   get_lfo()->modify_coefficient( i , NCost , un_ModBlock( issueAMod ) );
   else
-   BKB( v_Block[ i ] )->chg_weight( NCost , f_n_customers ,
-				    issueMod , issueAMod );
+   BKB( v_Block[ i ] )->chg_profit( NCost , f_n_customers ,
+				    issueMod , un_ModBlock( issueAMod ) );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -1761,7 +1762,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
     get_lfo()->modify_coefficients( std::move( NC ) ,
 				    Range( rng.first + f_n_facilities ,
 					   rng.second + f_n_facilities ) ,
-				    issueAMod );
+				    un_ModBlock( issueAMod ) );
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1770,14 +1771,14 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
     Index l = f % f_n_customers;
     if( ( ( rng.second - 1 ) / f_n_customers ) == i ) {
      // the range is all inside a single facility
-     BKB( v_Block[ i ] )->chg_weights( NCost , Range( l , l + num ) ,
+     BKB( v_Block[ i ] )->chg_profits( NCost , Range( l , l + num ) ,
 				       issueMod , issueAMod );
      break;
      }
 
     // the range of the first facility does not necessarily start from 0
     // but it surely ends at f_n_customers
-    BKB( v_Block[ i++ ] )->chg_weights( NCost , Range( l , f_n_customers ) ,
+    BKB( v_Block[ i++ ] )->chg_profits( NCost , Range( l , f_n_customers ) ,
 					issueMod , issueAMod );
     NCost += ( f_n_customers - l );
     f += ( f_n_customers - l );
@@ -1787,7 +1788,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
     for( ; ; ++i , NCost += f_n_customers ) {
      Index nf = f + f_n_customers;
      if( nf >= rng.second ) {  // last facility
-      BKB( v_Block[ i ] )->chg_weights( NCost , Range( 0 , rng.second - f ) ,
+      BKB( v_Block[ i ] )->chg_profits( NCost , Range( 0 , rng.second - f ) ,
 					issueMod , issueAMod );
       break;
       }
@@ -1860,7 +1861,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
     // since modify_coefficients owns both vectors, copies has to be made
     CVector NC( NCost , NCost + nms.size() );
     get_lfo()->modify_coefficients( std::move( NC ) , std::move( nnms ) ,
-				    true , issueAMod );
+				    true , un_ModBlock( issueAMod ) );
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1872,7 +1873,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
      Subset nnms( nms );     // copy and translate names
      for( auto & el : nnms )
       el %= f_n_customers;
-     BKB( v_Block[ i ] )->chg_weights( NCost , std::move( nnms ) , true ,
+     BKB( v_Block[ i ] )->chg_profits( NCost , std::move( nnms ) , true ,
 				       issueMod , issueAMod );
      break;
      }
@@ -1949,7 +1950,8 @@ void CapacitatedFacilityLocationBlock::chg_transportation_cost( Cost NCost ,
 
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    get_lfo()->modify_coefficient( NCost , p + f_n_facilities , issueAMod );
+    get_lfo()->modify_coefficient( NCost , p + f_n_facilities ,
+				   un_ModBlock( issueAMod ) );
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2014,7 +2016,8 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( Index i = rng.first ; i < rng.second ; ++i )
-     BKB( v_Block[ i ] )->chg_capacity( *(NCap++) , issueMod , iAM );
+     BKB( v_Block[ i ] )->chg_weight( - *(NCap++) , f_n_customers ,
+				      issueMod , iAM );
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2074,7 +2077,8 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto i : nms )
-     BKB( v_Block[ i ] )->chg_capacity( *(NCap++) , issueMod , iAM );
+     BKB( v_Block[ i ] )->chg_weight( - *(NCap++) , f_n_customers ,
+				      issueMod , iAM );
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2129,11 +2133,12 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacity( Demand NCap ,
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
     LF( v_cap[ i ].get_function() )->modify_coefficient( NCap , f_n_customers ,
-							 issueAMod );
+						    un_ModBlock( issueAMod ) );
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
-    BKB( v_Block[ i ] )->chg_capacity( NCap , issueMod , issueAMod );
+    BKB( v_Block[ i ] )->chg_weight( - NCap , f_n_customers ,
+				     issueMod , issueAMod );
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2345,7 +2350,7 @@ void CapacitatedFacilityLocationBlock::chg_customer_demand( Demand NDem ,
 
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    v_sat[ j ].set_both( NDem , issueAMod );
+    v_sat[ j ].set_both( NDem , un_ModBlock( issueAMod ) );
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2537,7 +2542,7 @@ void CapacitatedFacilityLocationBlock::close_facility( Index i ,
 
   if( ( AR & FormMsk ) != KskForm ) {
    v_y[ i ].set_value( 0 );
-   v_y[ i ].is_fixed( true , issueAMod );
+   v_y[ i ].is_fixed( true , un_ModBlock( issueAMod ) );
    }
   else
    BKB( v_Block[ i ] )->fix_x( false , f_n_customers , issueMod , issueAMod );
@@ -2697,7 +2702,7 @@ void CapacitatedFacilityLocationBlock::open_facility( Index i ,
  if( not_dry_run( issueAMod ) ) {
 
   if( ( AR & FormMsk ) != KskForm )
-   v_y[ i ].is_fixed( false , issueAMod );
+   v_y[ i ].is_fixed( false , un_ModBlock( issueAMod ) );
   else
    BKB( v_Block[ i ] )->unfix_x( f_n_customers , issueMod , issueAMod );
   }
@@ -2865,7 +2870,7 @@ void CapacitatedFacilityLocationBlock::fix_open_facility( Index i ,
 
   if( ( AR & FormMsk ) != KskForm ) {
    v_y[ i ].set_value( 1 );
-   v_y[ i ].is_fixed( true , issueAMod );
+   v_y[ i ].is_fixed( true , un_ModBlock( issueAMod ) );
    }
   else
    BKB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , issueAMod );
