@@ -571,7 +571,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   v_Block[ 0 ] = ab;
 
   v_y.resize( f_n_facilities );
-  for( auto yi : v_y )
+  for( auto & yi : v_y )
    yi.set_type( ColVariable::kBinary );
   ab->add_static_variable( v_y , "y" );
 
@@ -709,14 +709,14 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
    v_coeff_pair coeffs( 2 );
 
    coeffs[ 0 ] = std::make_pair( mcfb->i2p_x( i ) , double( 1 ) );
-   coeffs[ 0 ] = std::make_pair( & v_y[ i ] , - v_capacity[ i ] );
+   coeffs[ 1 ] = std::make_pair( & v_y[ i ] , - v_capacity[ i ] );
 
    v_cap[ i ].set_rhs( 0 );
    v_cap[ i ].set_lhs( - Inf< RowConstraint::RHSValue >() );
    v_cap[ i ].set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
    }
 
-  ab->add_static_constraint( v_sat , "sat" );
+  ab->add_static_constraint( v_cap , "cap" );
 
   AR |= HasCapCns;
   }
