@@ -1082,14 +1082,17 @@ void CapacitatedFacilityLocationBlock::map_back_solution( Block * R3B ,
       ( get_NCustomers() != CFLB->get_NCustomers() ) )
    throw( std::invalid_argument( _prfx + "incompatible sizes in R3B" ) );
 
-  if( ws & 1 )
-   for( Index i = 0 ; i < f_n_facilities ; ++i )
-    get_y( i ).set_value( CFLB->get_y( i ).get_value() );
+  if( ws & 1 ) {
+   CntSolution y( f_n_facilities );
+   CFLB->get_facility_solution( y.begin() );
+   set_facility_solution( y.begin() );
+   }
 
-  if( ws & 2 )
-   for( Index i = 0 ; i < f_n_facilities ; ++i )
-    for( Index j = 0 ; j < f_n_customers ; ++j )
-     get_x( i , j ).set_value( CFLB->get_x( i , j ).get_value() );
+  if( ws & 2 ) {
+   CntSolution x( f_n_facilities * f_n_customers );
+   CFLB->get_transportation_solution( x.begin() );
+   set_transportation_solution( x.begin() );
+   }
 
   return;
   }
@@ -1114,15 +1117,19 @@ void CapacitatedFacilityLocationBlock::map_back_solution( Block * R3B ,
 
  MCFB->get_x( it , Range( l , u ) );
 
- if( ws & 1 )
+ if( ws & 1 ) {
   for( Index i = 0 ; i < f_n_facilities ; ++i )
-   get_y( i ).set_value( *(it++) / v_capacity[ i ] );
+   *(it++) /= v_capacity[ i ];
+  set_facility_solution( x.begin() );
+  }
 
- if( ws & 2 )
+ if( ws & 2 ) {
+  auto cit = it;
   for( Index i = 0 ; i < f_n_facilities ; ++i )
    for( Index j = 0 ; j < f_n_customers ; ++j )
-    get_x( i , j ).set_value( *(it++) / v_demand[ j ] );
-
+    *(it++) /= v_demand[ j ];
+  set_transportation_solution( cit );
+  }
  }  // end( CapacitatedFacilityLocationBlock::map_back_solution )
 
 /*--------------------------------------------------------------------------*/
@@ -1184,14 +1191,18 @@ void CapacitatedFacilityLocationBlock::map_forward_solution( Block * R3B ,
  MCFBlock::Vec_FNumber x( u - l );
 
  auto it = x.begin();
- if( ws & 1 )
+ if( ws & 1 ) {
+  get_facility_solution( it );
   for( Index i = 0 ; i < f_n_facilities ; ++i )
-   *(it++) = get_y( i ).get_value() * v_capacity[ i ];
+   *(it++) *= v_capacity[ i ];
+  }
 
- if( ws & 2 )
+ if( ws & 2 ) {
+  get_transportation_solution( it );
   for( Index i = 0 ; i < f_n_facilities ; ++i )
    for( Index j = 0 ; j < f_n_customers ; ++j )
-    *(it++) = get_x( i , j ).get_value() * v_demand[ j ];
+    *(it++) *= v_demand[ j ];
+  }
 
  MCFB->set_x( x.begin() , Range( l , u ) );
 
@@ -2925,6 +2936,9 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
   AB( v_Block[ 0 ] )->reset_static_constraints();
   AB( v_Block[ 0 ] )->reset_static_variables();
   AB( v_Block[ 0 ] )->reset_objective();
+  // clear the capacity constraints before the AbstractBlock is destroyed
+  // to avoid the destruction looking at pointers to the deleted Block
+  v_cap.clear();
   // detach the objective from the AbstractBlock, since the latter will
   // be deleted before the former
   f_obj.set_Block( nullptr );
@@ -4157,16 +4171,16 @@ template< typename T >
 void CapacitatedFacilityLocationBlock::get_y(
 		  typename std::vector< T >::iterator Sol , Range rng ) const
 {
- if( rng.second <= rng.first )  // Range is empty
-  return;                       // nothing to do
-
  #ifndef NDEBUG
   if( ! ( AR & HasVar ) )
    throw( std::logic_error( "get_facility_solution: variables not generated"
 			    ) );
-  if( rng.second > f_n_facilities )
-   rng.second = f_n_facilities;
  #endif
+
+ if( rng.second > f_n_facilities )
+  rng.second = f_n_facilities;
+ if( rng.second <= rng.first )  // Range is empty
+  return;                       // nothing to do
 
  if( ( AR & FormMsk ) == KskForm ) {  // knapsack formulation- - - - - - - - -
   for( Index i = rng.first ; i < rng.second ; )
@@ -4216,16 +4230,16 @@ template< typename T >
 void CapacitatedFacilityLocationBlock::get_x(
 		  typename std::vector< T >::iterator Sol , Range rng ) const
 {
- if( rng.second <= rng.first )  // Range is empty
-  return;                       // nothing to do
-
  #ifndef NDEBUG
   if( ! ( AR & HasVar ) )
-   throw( std::logic_error( "get_transportation_solution: "
-			    "variables not generated" ) );
-  if( rng.second > f_n_facilities * f_n_customers )
-   rng.second = f_n_facilities * f_n_customers;
+   throw( std::logic_error(
+		  "get_transportation_solution: variables not generated" ) );
  #endif
+
+ if( rng.second > f_n_facilities * f_n_customers )
+  rng.second = f_n_facilities * f_n_customers;
+ if( rng.second <= rng.first )  // Range is empty
+  return;                       // nothing to do
 
  if( ( AR & FormMsk ) == StdForm ) {  // standard formulation- - - - - - - - -
   for( Index h = rng.first ; h < rng.second ; )
@@ -4323,16 +4337,16 @@ template< typename T >
 void CapacitatedFacilityLocationBlock::set_y(
 		  typename std::vector< T >::const_iterator Sol , Range rng )
 {
- if( rng.second <= rng.first )  // Range is empty
-  return;                       // nothing to do
-
  #ifndef NDEBUG
   if( ! ( AR & HasVar ) )
-   throw( std::logic_error( "set_facility_solution: variables not generated"
-			    ) );
-  if( rng.second > f_n_facilities )
-   rng.second = f_n_facilities;
+   throw( std::logic_error(
+		         "set_facility_solution: variables not generated" ) );
  #endif
+
+ if( rng.second > f_n_facilities )
+  rng.second = f_n_facilities;
+ if( rng.second <= rng.first )  // Range is empty
+  return;                       // nothing to do
 
  if( ( AR & FormMsk ) == KskForm ) {  // knapsack formulation- - - - - - - - -
   for( Index i = rng.first ; i < rng.second ; )
@@ -4382,16 +4396,16 @@ template< typename T >
 void CapacitatedFacilityLocationBlock::set_x(
 		  typename std::vector< T >::const_iterator Sol , Range rng )
 {
- if( rng.second <= rng.first )  // Range is empty
-  return;                       // nothing to do
-
  #ifndef NDEBUG
   if( ! ( AR & HasVar ) )
-   throw( std::logic_error( "set_transportation_solution: "
-			    "variables not generated" ) );
-  if( rng.second > f_n_facilities * f_n_customers )
-   rng.second = f_n_facilities * f_n_customers;
+   throw( std::logic_error(
+		  "set_transportation_solution: variables not generated" ) );
  #endif
+
+ if( rng.second > f_n_facilities * f_n_customers )
+  rng.second = f_n_facilities * f_n_customers;
+ if( rng.second <= rng.first )  // Range is empty
+  return;                       // nothing to do
 
  if( ( AR & FormMsk ) == StdForm ) {  // standard formulation- - - - - - - - -
   for( Index h = rng.first ; h < rng.second ; )
