@@ -527,13 +527,13 @@ public:
   *   and it is a SimpleConfiguration< int >, then wc is the f_value of the
   *   SimpleConfiguration< int >
   *
-  * - otherwise, wc is 0
+  * - otherwise, wc is 3
   *
   * The meaning of wc is bit-wise: the first bit being 1 means that the
-  * customers satisfation constraints are *not* constructed, while the
-  * second bit being 1 means that the capacity constraints are *not*
-  * constructed this has different meanings according to which formulation
-  * is used, as decided by generate_abstract_variables():
+  * customers satisfation constraints are constructed, while the second bit
+  * being 1 means that the capacity constraints are constructed.
+  * Note that "constraints X constructed" has different meanings according
+  * to which formulation is used, as decided by generate_abstract_variables():
   *
   * - If the "natural formulation" (SF) is used, there are the two explicit
   *   groups of "linear constraints" (FRowConstraint with a LinearFunction)
@@ -566,9 +566,38 @@ public:
   *   is constructed unless ( wc & 2 ) == true, while the constraints in
   *   the MCFBlock sub-Block (which impose the satisfation of customers'
   *   demands, although they also are a part of the capacity ones) are
-  *   constructed unless ( wc & 1 ) == true. */
+  *   constructed unless ( wc & 1 ) == true.
+  *
+  * Finally, if the third bit of ws is 1, then an appropriately arranged
+  * group of dynamic Constraint is added that support the separation of
+  * the "strong linking" contraints x_{ij} \leq y_i. If this is done,
+  * then generate_dynamic_constraints() implements this separation. Note
+  * that, whatever the formulation, che corresponding "strong" group of
+  * dynamic Constraint is always added to the "root"
+  * CapacitatedFacilityLocationBlock */
  
  void generate_abstract_constraints( Configuration * stcc = nullptr )
+  override;
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// generate the dynamic Constraints of the CapacitatedFacilityLocationBlock
+ /** The CapacitatedFacilityLocationBlock (in whatever formulation) only has
+  * a single group of dynamic Constraint: the "strong forcing" constraints
+  * x_{ij} <= y_i. These can only be dynamically separated if "declared" as
+  * being part of the formulation in generate_abstract_constraints() (see
+  * the comments there).
+  *
+  * If not nullptr, dycc must be a SimpleConfiguration< std::pair< int ,
+  * double > > *. The first parameter is the maximum number of constraints
+  * to generate at each separation round; a negative number (default) means
+  * "infinite". If the number of constraints to be inserted exceeds the
+  * number of those that could be separated, the ones with larger violations
+  * are preferred. The second parameter (default 1e-4) is the minimal absolute
+  * violation required to declare a constraint violated (since both variables
+  * have no coefficients and are in [ 0 , 1 ] an absolute threshold, for once,
+  * makes sense). */
+
+ void generate_dynamic_constraints( Configuration * dycc = nullptr )
   override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -973,7 +1002,9 @@ public:
 			  bool emptys = true ) override;
 
 /*--------------------------------------------------------------------------*/
- /// gets a (reference to) the Y[] variable corresponding to facility i
+ /// gets (a reference to) the y[] variable corresponding to facility i
+ /** Gets a reference to the ColVariable representing whether or not facility
+  * i is constructed. */
 
  ColVariable & get_y( Index i ) const {
   #ifndef NDEBUG
@@ -986,16 +1017,24 @@ public:
   if( ( AR & 3 ) == 1 )  // 3 = FormMsk , 1 = KskForm
    return( * static_cast< BinaryKnapsackBlock * >(
 				   v_Block[ i ] )->get_Var( f_n_customers ) );
-  else
-   return( const_cast< ColVariable & >( v_y[ i ] ) );
-   // note the need for the const_cast as all fields of the class are const
-   // inside of a const method (this is const)
 
-  return( * static_cast< MCFBlock * >( v_Block[ 1 ] )->i2p_x( i ) );
+  // note the need for the const_cast as all fields of the class are const
+  // inside of a const method (this is const)
+  return( const_cast< ColVariable & >( v_y[ i ] ) );
   }
 
 /*--------------------------------------------------------------------------*/
- /// gets a (reference to) the X[ i ][ j ] variable
+ /// gets (a reference to) the x[ i ][ j ] variable
+ /** Gets a reference to the ColVariable representing how much of the demand
+  * of the customer j is served by facility i.
+  *
+  * Important note: in the Standard and Knapsack Formulation the variable
+  *                 is in [ 0 , 1 ] and represents the fraction of the
+  *                 overall demand of j served by i, but in the Flow
+  *                 Formulation the variable actually contains the total
+  *                 amount of demand of j served by i, which menas that to
+  *                 get the actual value in [ 0 , 1 ] one must divide its
+  *                 value by the demand of j. */
 
  ColVariable & get_x( Index i , Index j ) const {
   #ifndef NDEBUG
@@ -1008,9 +1047,9 @@ public:
   #endif
 
   if( ( AR & 3 ) == 0 )  // 3 = FormMsk, 0 = StdForm
-    return( const_cast< ColVariable & >( v_x[ i ][ j ] ) );
-    // note the need for the const_cast as all fields of the class are const
-    // inside of a const method (this is const)
+   return( const_cast< ColVariable & >( v_x[ i ][ j ] ) );
+   // note the need for the const_cast as all fields of the class are const
+   // inside of a const method (this is const)
 
   if( ( AR & 3 ) == 1 )  // 3 = FormMsk, 0 = StdForm
    return( * static_cast< BinaryKnapsackBlock * >(
@@ -1637,12 +1676,13 @@ public:
   * The following bits encode which parts of the abstract formulation have
   * been constructed:
   *
-  * - AR & HasVar:    if the Variable have been constructed
-  * - AR & HasObj:    if the Objective has been constructed
-  * - AR & HasSatCns: if the customer satisfaction Constraints have been
-  *                   constructed
-  * - AR & HasCapCns: if the capacity Constraints have been constructed
-  */
+  * - AR & HasVar:      if the Variable have been constructed
+  * - AR & HasObj:      if the Objective has been constructed
+  * - AR & HasSatCns:   if the customer satisfaction Constraints have been
+  *                     constructed
+  * - AR & HasCapCns:   if the capacity Constraints have been constructed
+  * - AR & HasStrngCns: if the strong Linking Constraints have been
+  *                     prepared for being separated */
 
  bool f_unsplittable;    ///< if customers can only be served once
 
@@ -1652,7 +1692,7 @@ public:
  boost::multi_array< ColVariable , 2 > v_x;  ///< the flow variables
                                              /**< x is a bi-dimensional array
 				              * of ColVariable representing
-  * transportation; thay is, v_x[ j ][ i ] is the fraction of demand of
+  * transportation; thay is, v_x[ i ][ j ] is the fraction of demand of
   * customer j served by facility i. */
 
  std::vector< ColVariable > v_y;  ///< the design variables
@@ -1663,7 +1703,11 @@ public:
 
  std::vector< FRowConstraint> v_cap;  ///< the facility capacity constraints
 
- std::list< FRowConstraint > v_sfc;   ///< the strong forcing constraints
+ std::vector< std::list< FRowConstraint > > v_sfc;
+ ///< the strong forcing constraints
+ /**< v_sfc is an array of FRowConstraint for the dynamic separation of
+  * "strong forcing" constraints x_{ij} \leq y_i; v_sfc[ i ] are all the
+  * strong forcing" constraints corresponding to y_i. */
 
  FRealObjective f_obj;                ///< the (linear) objective function
 

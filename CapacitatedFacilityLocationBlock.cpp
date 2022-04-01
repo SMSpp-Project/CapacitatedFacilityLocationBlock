@@ -88,6 +88,9 @@ static constexpr unsigned char HasSatCns = 32;
 static constexpr unsigned char HasCapCns = 64;
 // 7th bit of AR == 1 if the capacity Constraints are constructed
 
+static constexpr unsigned char HasStrngCns = 128;
+// 8th bit of AR == 1 if the strong Linking Constraints are separated
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- FUNCTIONS -------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -607,7 +610,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
  if( ! ( AR & HasVar ) )
   throw( std::logic_error( _prfx + "generate_abstract_variables not called"
 			   ) );
- Index wc = 0;
+ Index wc = 3;
  if( ( ! stcc ) && f_BlockConfig )
   stcc = f_BlockConfig->f_static_constraints_Configuration;
  if( auto sci = dynamic_cast< SimpleConfiguration< int > * >( stcc ) )
@@ -615,7 +618,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
 
  if( ( AR & FormMsk ) == StdForm ) {  // "natural formulation" (NF) - - - - -
                                       //- - - - - - - - - - - - - - - - - - -
-  if( ( ! ( wc & 1 ) && ( ! ( AR & HasSatCns ) ) ) ) {
+  if( ( wc & 1 ) && ( ! ( AR & HasSatCns ) ) ) {
    // construct customer satisfaction constraints (not there already)
    v_sat.resize( f_n_customers );
    for( Index j = 0 ; j < f_n_customers ; ++j ) {
@@ -632,7 +635,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
    AR |= HasSatCns;
    }
 
-  if( ( ! ( wc & 2 ) ) && ( ! ( AR & HasCapCns ) ) ) {
+  if( ( wc & 2 ) && ( ! ( AR & HasCapCns ) ) ) {
    // construct facility capacity constraints (not there already)
    v_cap.resize( f_n_facilities );
    for( Index i = 0 ; i < f_n_facilities ; ++i ) {
@@ -652,12 +655,12 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
    AR |= HasCapCns;
    }
 
-  return;
+  goto Strong_Linking;
   }
 
  if( ( AR & FormMsk ) == KskForm ) {  // "knapsack formulation" (KF)- - - - -
                                       //- - - - - - - - - - - - - - - - - - -
-  if( ( ! ( wc & 1 ) && ( ! ( AR & HasSatCns ) ) ) ) {
+  if( ( wc & 1 ) && ( ! ( AR & HasSatCns ) ) ) {
    // construct customer satisfaction constraints (not there already)
    v_sat.resize( f_n_customers );
    for( Index j = 0 ; j < f_n_customers ; ++j ) {
@@ -674,7 +677,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
    AR |= HasSatCns;
    }
 
-  if( ( ! ( wc & 2 ) ) && ( ! ( AR & HasCapCns ) ) ) {
+  if( ( wc & 2 ) && ( ! ( AR & HasCapCns ) ) ) {
    // construct facility capacity constraints (not there already)
    // these are just the constraint in the BinaryKnapsackBlock
    for( auto ki : v_Block )
@@ -683,20 +686,20 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
    AR |= HasCapCns;
    }
 
-  return;
+  goto Strong_Linking;
   }
 
  // else it is the "flow formulation" (FF)- - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( ( ! ( wc & 1 ) && ( ! ( AR & HasSatCns ) ) ) ) {
+ if( ( wc & 1 ) && ( ! ( AR & HasSatCns ) ) ) {
   // construct customer satisfaction constraints (not there already)
   // these are, just the MCFBlock ones
   v_Block[ 1 ]->generate_abstract_constraints();
   AR |= HasSatCns;
   }
 
- if( ( ! ( wc & 2 ) ) && ( ! ( AR & HasCapCns ) ) ) {
+ if( ( wc & 2 ) && ( ! ( AR & HasCapCns ) ) ) {
   // construct facility capacity constraints (not there already)
   // these are the ones linking the y[] variables to the
   // arc flow variables of facility arcs
@@ -721,6 +724,18 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
   AR |= HasCapCns;
   }
 
+ Strong_Linking:
+ // construct "strong linking" Constraint, that are formulation-agnostic- - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( ! ( wc & 4 ) )
+  return;
+
+ v_sfc.resize( f_n_facilities );
+ add_dynamic_constraint( v_sfc , "strong" );
+
+ AR |= HasStrngCns;
+ 
  /*!!
  #if CHECK_DS
   CheckAbsVSPhys();
@@ -728,6 +743,109 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
  !!*/
 
  }  // end( CapacitatedFacilityLocationBlock::generate_abstract_constraints )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::generate_dynamic_constraints(
+						       Configuration * dycc )
+{
+ if( ! ( AR & HasStrngCns ) )
+  return;
+
+ // read separation parameters
+ double eps = 1e-4;
+ int max = -1;
+ if( ( ! dycc ) && f_BlockConfig )
+  dycc = f_BlockConfig->f_dynamic_constraints_Configuration;
+ if( auto sc = dynamic_cast< SimpleConfiguration< std::pair< int , double >
+                                                             > * >( dycc ) ) {
+  max = sc->f_value.first;
+  if( max == 0 )  // weird
+   return;        // what else?
+  eps = sc->f_value.second;
+  }
+
+ // prepare data structures
+ using Violij = std::tuple< double , Index , Index >;
+ std::vector< Violij > found;
+
+ // get fractional solution
+ CntSolution y( f_n_facilities );
+ get_facility_solution( y.begin() );
+
+ CntSolution x( f_n_facilities * f_n_customers );
+ get_transportation_solution( x.begin() );
+
+ // perform separation loop
+ auto yit = y.begin();
+ auto xit = x.begin();
+ for( Index i = 0 ; i < f_n_facilities ; ++i , ++yit )
+  for( Index j = 0 ; j < f_n_customers ; ++j , ++xit )
+   if( auto viol = *xit - *yit ; viol >= eps )
+    found.push_back( std::make_tuple( viol , i , j ) );
+
+ // found is naturally ordered by increasing i, but if it's too long it has
+ // to be reduced, which implies sorting on viol first and then re-sorting
+ // on i to restore the original property
+ if( ( max > 0 ) && ( int( found.size() ) > max ) ) {
+  // sort by decreasing violation
+  std::sort( found.begin() , found.end() ,
+	     []( auto & a , auto & b ) {
+	      return( std::get< 0 >( a ) > std::get< 0 >( b ) );
+	      } );
+
+  found.resize( max );  // eliminate unwanted part
+
+  // re-sort by increasing i
+  std::sort( found.begin() , found.end() ,
+	     []( auto & a , auto & b ) {
+	      return( std::get< 1 >( a ) < std::get< 1 >( b ) );
+	      } );
+  }
+
+ // finally the actual insertion of the Constraint
+ auto fit = found.begin();
+ for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // for each i
+  // construct the list of [FRow]Constraint corresponding to y_i
+  std::list< FRowConstraint > lst;
+  ColVariable * yi = & get_y( i );
+  while( ( fit != found.end() ) && ( std::get< 1 >( *fit ) == i ) ) {
+   std::list< FRowConstraint > li( 1 );
+   li.back().set_rhs( 0 );
+   li.back().set_lhs( - Inf< RowConstraint::RHSValue >() );
+
+   Index j = std::get< 2 >( *(fit++) );
+   v_coeff_pair p( 2 );
+
+   // the constraint is x_{ij} - y_i <= 0, but in the Flow Formulation
+   // x_{ij} is scaled by the demand of j, so we implement it as
+   // x_{ij} - v_demand[ j ] y_i <= 0
+   p[ 0 ] = std::make_pair( yi , ( AR & FormMsk ) == FlwForm
+			         ? - v_demand[ j ] : -1 );
+   p[ 1 ] = std::make_pair( & get_x( i , j ) , 1 );
+
+   /*!!
+   std::cerr << std::endl << "i = " << i << ", j = " << j << ", y_i = "
+	     << yi->get_value() << ", x_{ij} = "
+	     << p[ 1 ].first->get_value();
+	     !!*/
+ 
+   li.back().set_function( new LinearFunction( std::move( p ) ) );
+   lst.splice( lst.end() , li );
+   }
+
+  // if any constraint concerning y_i was separated, add them all in one blow
+  // note the "eNoBlck", which makes sense because this is an "abstract
+  // representation only matter" and therefore there is no point in having
+  // the corresponding BlockModAdd< FRowConstraint > to be scanned inside
+  // add_Modification()
+  if( ! lst.empty() )
+   add_dynamic_constraints( v_sfc[ i ] , lst , eNoBlck );
+
+  if( fit == found.end() )  // if we have depleted the list
+   break;                   // nothing else to do
+  }
+ }  // end( CapacitatedFacilityLocationBlock::generate_dynamic_constraints )
 
 /*--------------------------------------------------------------------------*/
 
@@ -862,7 +980,7 @@ bool CapacitatedFacilityLocationBlock::customer_feasible( double eps ,
   // do it using the physical representation- - - - - - - - - - - - - - - - -
 
   for( Index j = 0 ; j < f_n_customers ; ++j ) {
-   auto tot = 0;
+   double tot = 0;
    for( Index i = 0 ; i < f_n_facilities ; ++i )
     tot += get_x( i , j ).get_value();
 
@@ -2921,11 +3039,12 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
   * afterwards which means that any listening Observer already knows that
   * none of the previus Variable and Constraint are valid any longer. */
 
- for( auto & cnst : v_sat )  // clear the satisfaction constraints
-  cnst.clear();
+ for( auto & lst : v_sfc )  // clear the strong forcing constraints
+  for( auto & cnst : lst )
+   cnst.clear();
  for( auto & cnst : v_cap )  // clear the capacity constraints
-  cnst.clear();
- for( auto & cnst : v_sfc )  // clear the strong forcin constraints
+  cnst.clear(); 
+ for( auto & cnst : v_sat )  // clear the satisfaction constraints
   cnst.clear();
  f_obj.clear();              // clear the objective function
 
