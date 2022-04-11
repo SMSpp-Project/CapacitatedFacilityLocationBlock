@@ -1092,72 +1092,7 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
  else
   MCFB = new MCFBlock( father );
 
- Index NN = f_n_facilities + f_n_customers + 1;
- Index NA = f_n_facilities * ( f_n_customers + 1 );
- if( wR3B > 1 )
-  NA += f_n_customers;
-
- Subset EN( NA );
- Subset SN( NA );
- MCFBlock::Vec_FNumber U( NA );
- MCFBlock::Vec_CNumber C( NA );
- MCFBlock::Vec_FNumber B( NN );
-
- // construct deficits vector
- Index i = 0;
- while( i < f_n_facilities )  // facilities nodes
-  B[ i++ ] = 0;
-
- MCFBlock::FNumber todD = 0;
- for( Index j = 0 ; j < f_n_customers ; j++ ) {  // customers nodes
-  todD -= v_demand[ j ];
-  B[ i++ ] = v_demand[ j ];
-  }
-
- B[ i ] = todD;  // super-source
-
- // construct arcs SN, EN, U, C: "common part" of the graph
- Index a = 0;
- const Index ss = f_n_facilities + f_n_customers + 1;
-
- // first the source -> facility arcs
- for( i = 0 ; i < f_n_facilities ; ++i ) {
-  SN[ a ] = ss;
-  EN[ a ] = i + 1;
-  U[ a ] = v_capacity[ i ];
-  C[ a++ ] = v_f_cost[ i ] / v_capacity[ i ];
-  }
-
- // now the facility -> customers arcs
- for( i = 0 ; i < f_n_facilities ; ++i )
-  for( Index j = 0 ; j < f_n_customers ; ++j ) {
-   SN[ a ] = i + 1;
-   EN[ a ] = f_n_facilities + 1 + j;
-   U[ a ] = Inf< MCFBlock::FNumber >();
-   C[ a++ ] = v_t_cost[ i ][ j ] / v_demand[ j ];
-   }
-
- if( wR3B > 1 ) {
-  // now the artificial arcs to ensure feasibility
-
-  for( Index j = 0 ; j < f_n_customers ; ++j ) {
-   SN[ a ] = ss;
-   EN[ a ] = f_n_facilities + 1 + j;
-   U[ a ] = Inf< MCFBlock::FNumber >();
-
-   // compute an upper bound on the worst-case transportation cost
-   MCFBlock::CNumber maxc = 0;
-   for( i = 0 ; i < f_n_facilities ; ++i )
-    if( auto tci = C[ i ] + v_t_cost[ i ][ j ] / v_demand[ j ] ;
-	maxc < tci )
-     maxc = tci;
-   maxc += 1;    // ! +1
-   maxc *= 100;  // ! *100 
-   C[ a++ ] = maxc;
-   }
-  }
-
- MCFB->load( NN , NA , EN , SN , U , C , B );
+ guts_of_get_R3B_MCF( MCFB , wR3B );
 
  return( MCFB );
 
@@ -1371,8 +1306,17 @@ bool CapacitatedFacilityLocationBlock::map_forward_Modification(
                             ( wR3B == 2 ? f_n_customers : 0 ) ) )
   throw( std::invalid_argument( _prfx + "incompatible sizes in R3Block" ) );
 
- return( guts_of_map_f_Mod_MCF( MCFB , mod , issuePMod , issueAMod ) );
+ // NBModification- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // this is the "nuclear option": the CapacitatedFacilityLocationBlock has
+ // been re-loaded, so the MCFBlock must be re-loaded. treat this here since
+ // it is the only case where wR3B is needed
 
+ if( auto tmod = dynamic_cast< const NBModification * >( mod ) ) {
+  guts_of_get_R3B_MCF( MCFB , wR3B );
+  return( true );
+  }
+
+ return( guts_of_map_f_Mod_MCF( MCFB , mod , issuePMod , issueAMod ) );
 
  }  // end( CapacitatedFacilityLocationBlock::map_forward_Modification )
 
@@ -1880,7 +1824,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
 
  if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
   // change abstract and physical representation together - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
   std::copy( NCost , NCost + num , v_t_cost.data() + rng.first );
 
@@ -2337,20 +2281,8 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    // ensure that the sum of all deficits always remains == 0, which means
-    // there will be at least two Modification
-    auto iAM = make_amod_param( issueAMod , 2 );
-
-    MCFB( v_Block[ 1 ] )->chg_dfcts( NDem ,
-				     Range( rng.first + f_n_facilities ,
-					    rng.second + f_n_facilities ) ,
-				     issueMod , iAM );
-    MCFB( v_Block[ 1 ] )->chg_dfct( f_n_facilities + f_n_customers ,
-				    - std::accumulate( v_demand.begin() ,
-						       v_demand.end() , 0 ) ,
-				    issueMod , iAM );
-    // close the new channel
-    unmake_amod_param( issueAMod , iAM , f_n_facilities );
+    guts_of_chg_dem_MCF( MCFB( v_Block[ 1 ] ) , NDem , rng ,
+			 issueMod , issueAMod );
    }
   }
  else
@@ -2419,23 +2351,9 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
     unmake_amod_param( issueAMod , iAM , f_n_facilities );
     break;
     }
-   default: {  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
-    // ensure that the sum of all deficits always remains == 0, which means
-    // there will be at least two Modification
-    auto iAM = make_amod_param( issueAMod , 2 );
-
-    Subset nnms( nms.begin() , nms.end() );  // copy and translate nms
-    for( auto & el : nnms )
-     el+= f_n_facilities;
-    MCFB( v_Block[ 1 ] )->chg_dfcts( NDem , std::move( nnms ) , true ,
-				     issueMod , issueAMod );
-    MCFB( v_Block[ 1 ] )->chg_dfct( f_n_facilities + f_n_customers ,
-				    - std::accumulate( v_demand.begin() ,
-						       v_demand.end() , 0 ) ,
-				    issueMod , issueAMod );
-    // close the new channel
-    unmake_amod_param( issueAMod , iAM , f_n_facilities );    
-    }
+   default:    // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
+    guts_of_chg_dem_MCF( MCFB( v_Block[ 1 ] ) , NDem , nms ,
+			 issueMod , issueAMod );
    }
   }
  else
@@ -3021,8 +2939,6 @@ void CapacitatedFacilityLocationBlock::fix_open_facility( Index i ,
  }  // end( CapacitatedFacilityLocationBlock::fix_open_facility )
 
 /*--------------------------------------------------------------------------*/
-/*-------------------------- PROTECTED METHODS -----------------------------*/
-/*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -3091,6 +3007,126 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
  AR = 0;  // no longer any abstract representation
 
  }  // end( CapacitatedFacilityLocationBlock::guts_of_destructor )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::guts_of_get_R3B_MCF( MCFBlock * mcfb ,
+							    int wR3B )
+{
+ Index NN = f_n_facilities + f_n_customers + 1;
+ Index NA = f_n_facilities * ( f_n_customers + 1 );
+ if( wR3B > 1 )
+  NA += f_n_customers;
+
+ Subset EN( NA );
+ Subset SN( NA );
+ MCFBlock::Vec_FNumber U( NA );
+ MCFBlock::Vec_CNumber C( NA );
+ MCFBlock::Vec_FNumber B( NN );
+
+ // construct deficits vector
+ Index i = 0;
+ while( i < f_n_facilities )  // facilities nodes
+  B[ i++ ] = 0;
+
+ MCFBlock::FNumber todD = 0;
+ for( Index j = 0 ; j < f_n_customers ; j++ ) {  // customers nodes
+  todD -= v_demand[ j ];
+  B[ i++ ] = v_demand[ j ];
+  }
+
+ B[ i ] = todD;  // super-source
+
+ // construct arcs SN, EN, U, C: "common part" of the graph
+ Index a = 0;
+ const Index ss = f_n_facilities + f_n_customers + 1;
+
+ // first the source -> facility arcs
+ for( i = 0 ; i < f_n_facilities ; ++i ) {
+  SN[ a ] = ss;
+  EN[ a ] = i + 1;
+  U[ a ] = v_capacity[ i ];
+  C[ a++ ] = v_f_cost[ i ] / v_capacity[ i ];
+  }
+
+ // now the facility -> customers arcs
+ for( i = 0 ; i < f_n_facilities ; ++i )
+  for( Index j = 0 ; j < f_n_customers ; ++j ) {
+   SN[ a ] = i + 1;
+   EN[ a ] = f_n_facilities + 1 + j;
+   U[ a ] = Inf< MCFBlock::FNumber >();
+   C[ a++ ] = v_t_cost[ i ][ j ] / v_demand[ j ];
+   }
+
+ if( wR3B > 1 ) {
+  // now the artificial arcs to ensure feasibility
+
+  for( Index j = 0 ; j < f_n_customers ; ++j ) {
+   SN[ a ] = ss;
+   EN[ a ] = f_n_facilities + 1 + j;
+   U[ a ] = Inf< MCFBlock::FNumber >();
+
+   // compute an upper bound on the worst-case transportation cost
+   MCFBlock::CNumber maxc = 0;
+   for( i = 0 ; i < f_n_facilities ; ++i )
+    if( auto tci = C[ i ] + v_t_cost[ i ][ j ] / v_demand[ j ] ;
+	maxc < tci )
+     maxc = tci;
+   maxc += 1;    // ! +1
+   maxc *= 100;  // ! *100 
+   C[ a++ ] = maxc;
+   }
+  }
+
+ mcfb->load( NN , NA , EN , SN , U , C , B );
+
+ }  // end( CapacitatedFacilityLocationBlock::guts_of_get_R3B_MCF )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
+				     c_DV_it NDem , Range rng ,
+				     ModParam issueMod , ModParam issueAMod )
+{
+ // ensure that the sum of all deficits always remains == 0, which means
+ // there will be at least two Modification
+ auto iAM = make_amod_param( issueAMod , 2 );
+
+ mcfb->chg_dfcts( NDem , Range( rng.first + f_n_facilities ,
+				rng.second + f_n_facilities ) ,
+		  issueMod , iAM );
+
+ mcfb->chg_dfct( f_n_facilities + f_n_customers ,
+		 - std::accumulate( v_demand.begin() , v_demand.end() , 0 ) ,
+		 issueMod , iAM );
+
+ // close the new channel
+ unmake_amod_param( issueAMod , iAM , f_n_facilities );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
+				    c_DV_it NDem , c_Subset & nms ,
+				    ModParam issueMod , ModParam issueAMod )
+{
+ // ensure that the sum of all deficits always remains == 0, which means
+ // there will be at least two Modification
+ auto iAM = make_amod_param( issueAMod , 2 );
+
+ Subset nnms( nms.begin() , nms.end() );  // copy and translate nms
+ for( auto & el : nnms )
+  el+= f_n_facilities;
+
+ mcfb->chg_dfcts( NDem , std::move( nnms ) , true , issueMod , issueAMod );
+
+ mcfb->chg_dfct( f_n_facilities + f_n_customers ,
+		 - std::accumulate( v_demand.begin() , v_demand.end() , 0 ) ,
+		 issueMod , issueAMod );
+
+ // close the new channel
+ unmake_amod_param( issueAMod , iAM , f_n_facilities );    
+ }
 
 /*--------------------------------------------------------------------------*/
 
@@ -3764,7 +3800,6 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 
   switch( tmod->type() ) {
    case( MCFBlockMod::eChgCost ): {  // - - - - - - - - - - - - - - - - - - -
-
     if( f < f_n_facilities )
      throw( std::invalid_argument(
 			       "unsupported arc cost change in MCFBlock" ) );
@@ -3783,7 +3818,6 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
     }
 
    case( MCFBlockMod::eChgCaps ): {  // - - - - - - - - - - - - - - - - - - -
-
     if( s > f_n_facilities )
      throw( std::invalid_argument(
 			   "unsupported arc capacity change in MCFBlock" ) );
@@ -3800,7 +3834,6 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
     }
 
    case( MCFBlockMod::eChgDfct ): {  // - - - - - - - - - - - - - - - - - - -
-
     if( f < f_n_facilities )
      throw( std::invalid_argument(
 			   "unsupported node deficit change in MCFBlock" ) );
@@ -3834,7 +3867,6 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 
   switch( tmod->type() ) {
    case( MCFBlockMod::eChgCost ): {  // - - - - - - - - - - - - - - - - - - -
-
     if( nms.front() < f_n_facilities )
      throw( std::invalid_argument(
 			       "unsupported arc cost change in MCFBlock" ) );
@@ -3860,7 +3892,6 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
     }
 
    case( MCFBlockMod::eChgCaps ): {  // - - - - - - - - - - - - - - - - - - -
-
     if( nms.back() >= f_n_facilities )
      throw( std::invalid_argument(
 			   "unsupported arc capacity change in MCFBlock" ) );
@@ -3883,7 +3914,6 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
     }
 
    case( MCFBlockMod::eChgDfct ): {  // - - - - - - - - - - - - - - - - - - -
-
     if( nms.front() < f_n_facilities )
      throw( std::invalid_argument(
 			   "unsupported node deficit change in MCFBlock" ) );
@@ -4075,7 +4105,8 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
     default:
      throw( std::invalid_argument(
 		   "unknown CapacitatedFacilityLocationBlockRngdMod type" ) );
-    }  // end( switch )
+
+   }  // end( switch )
 
   return( true );
   }
@@ -4174,6 +4205,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
    default:
      throw( std::invalid_argument(
 		   "unknown CapacitatedFacilityLocationBlockRngdMod type" ) );
+
    }  // end( switch )
 
   return( true );
@@ -4184,7 +4216,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
  // this is the "nuclear option": the CapacitatedFacilityLocationBlock has
  // been re-loaded
 
- if(  auto tmod = dynamic_cast< const NBModification * >( mod ) ) {
+ if( auto tmod = dynamic_cast< const NBModification * >( mod ) ) {
   R3B->load( f_n_facilities , f_n_customers , v_capacity , v_f_cost ,
 	     v_demand , v_t_cost );
   return( true );
@@ -4250,7 +4282,190 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
 				    MCFBlock * R3B , c_p_Mod mod ,
 			            ModParam issuePMod , ModParam issueAMod )
 {
- // TODO: implement
+ // process Modification- - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // this requires to patiently sift through the possible Modification types
+ // to find what this Modification exactly is, and call the appropriate
+ // method of R3B: note that we only consider "physical Modification" since
+ // any change in the "abstract representation" is intercepted by the :Block
+ // and a "physical Modification" is produced, so intercepting "abstract
+ // Modification" is useless and wasteful (besides being more complicated)
+
+ // CapacitatedFacilityLocationBlockRngdMod - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( auto tmod = dynamic_cast<
+                 const CapacitatedFacilityLocationBlockRngdMod * >( mod ) ) {
+  c_Index f = tmod->rng().first;
+  c_Index s = tmod->rng().second;
+
+  switch( tmod->type() ) {
+   case( CapacitatedFacilityLocationBlockMod::eChgFCost ):  //- - - - - - - -
+    if( s == f + 1 )
+     R3B->chg_cost( v_f_cost[ f ] / v_capacity[ f ] , f ,
+		    issuePMod , issueAMod );
+    else {
+     MCFBlock::Vec_CNumber NC( s - f );
+     auto NCit = NC.begin();
+     for( Index i = f ; i < s ; ++i )
+      *(NCit++) = v_f_cost[ i ] / v_capacity[ i ];
+     R3B->chg_costs( NC.begin() , tmod->rng() , issuePMod , issueAMod );
+     }
+
+    break;
+
+   case( CapacitatedFacilityLocationBlockMod::eChgTCost ):  //- - - - - - - -
+    if( s == f + 1 )
+     R3B->chg_cost( (v_t_cost.data())[ f ] , f + f_n_facilities ,
+		    issuePMod , issueAMod );
+    else{
+     MCFBlock::Vec_CNumber NC( s - f );
+     auto NCit = NC.begin();
+     for( Index i = f ; i < s ; ++i )
+      *(NCit++) = (v_t_cost.data())[ i ]; 
+     R3B->chg_costs( NC.begin() , Range( f + f_n_facilities ,
+					 s + f_n_facilities ) ,
+		     issuePMod , issueAMod );
+     }
+
+    break;
+
+   case( CapacitatedFacilityLocationBlockMod::eChgCap ):  //- - - - - - - - -
+    if( s == f + 1 )
+     R3B->chg_ucap( v_capacity[ f ] , f , issuePMod , issueAMod );
+    else
+     R3B->chg_ucaps( v_capacity.begin() + f , tmod->rng() ,
+		     issuePMod , issueAMod );
+    break;
+
+   case( CapacitatedFacilityLocationBlockMod::eChgDem ):  //- - - - - - - - -
+    guts_of_chg_dem_MCF( R3B , v_demand.begin() + f , tmod->rng() ,
+			 issuePMod , issueAMod );
+    break;
+
+   case( CapacitatedFacilityLocationBlockMod::eCloseF ):  //- - - - - - - - -
+    if( s == f + 1 )
+     R3B->close_arc( f , issuePMod , issueAMod );
+    else
+     R3B->close_arcs( tmod->rng() , issuePMod , issueAMod );
+    break;
+
+   case( CapacitatedFacilityLocationBlockMod::eOpenF ):  // - - - - - - - - -
+    if( s == f + 1 )
+     R3B->open_arc( f , issuePMod , issueAMod );
+    else
+     R3B->open_arcs( tmod->rng() , issuePMod , issueAMod );
+    break;
+
+   case( CapacitatedFacilityLocationBlockMod::eBuyF ):  //- - - - - - - - - -
+    throw( std::invalid_argument(
+     "mapping fix_open Modification to a MCFBlock R3Block not supported" ) );
+
+    default:
+     throw( std::invalid_argument(
+		   "unknown CapacitatedFacilityLocationBlockRngdMod type" ) );
+
+   }  // end( switch )
+
+  return( true );
+  }
+
+ // CapacitatedFacilityLocationBlockSbstMod - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // note that tmod->nms() need be copied, since the chg_*() methods "consume"
+ // the names vector
+ if( auto tmod = dynamic_cast<
+                 const CapacitatedFacilityLocationBlockSbstMod * >( mod ) ) {
+
+  switch( tmod->type() ) {
+   case( CapacitatedFacilityLocationBlockMod::eChgFCost ):  //- - - - - - - -
+    if( tmod->nms().size() == 1 )
+     R3B->chg_cost( v_f_cost[ tmod->nms().front() ] /
+		    v_capacity[ tmod->nms().front() ] ,
+		    tmod->nms().front() , issuePMod , issueAMod );
+    else {
+     MCFBlock::Vec_CNumber NC( tmod->nms().size() );
+     auto NCit = NC.begin();
+     for( auto i : tmod->nms() )
+      *(NCit++) = v_f_cost[ i ] / v_capacity[ i ]; 
+     R3B->chg_costs( NC.begin() , Subset( tmod->nms() ) , true ,
+		     issuePMod , issueAMod );
+     }
+
+    break;
+    
+   case( CapacitatedFacilityLocationBlockMod::eChgTCost ):  //- - - - - - - -
+    if( tmod->nms().size() == 1 )
+     R3B->chg_cost( (v_t_cost.data())[ tmod->nms().front() ] ,
+		    tmod->nms().front() + f_n_facilities ,
+		    issuePMod , issueAMod );
+    else {
+     MCFBlock::Vec_CNumber NC( tmod->nms().size() );
+     Subset nnms( tmod->nms() );
+     auto NCit = NC.begin();
+     for( auto & i : nnms ) {
+      *(NCit++) = (v_t_cost.data())[ i ];
+      i += f_n_facilities;
+      }
+     R3B->chg_costs( NC.begin() , std::move( nnms ) , true ,
+		     issuePMod , issueAMod );
+     }
+ 
+    break;
+
+   case( CapacitatedFacilityLocationBlockMod::eChgCap ):  //- - - - - - - - -
+    if( tmod->nms().size() == 1 )
+     R3B->chg_ucap( v_capacity[ tmod->nms().front() ] , tmod->nms().front() ,
+		    issuePMod , issueAMod );
+    else {
+     MCFBlock::Vec_FNumber NC( tmod->nms().size() );
+     auto NCit = NC.begin();
+     for( auto i : tmod->nms() )
+      *(NCit++) = v_capacity[ i ]; 
+     R3B->chg_ucaps( NC.begin() , Subset( tmod->nms() ) , true ,
+		     issuePMod , issueAMod );
+     }
+
+    break;
+
+   case( CapacitatedFacilityLocationBlockMod::eChgDem ): {  //- - - - - - - -
+    DVector ND( tmod->nms().size() );
+    auto NDit = ND.begin();
+    for( auto i : tmod->nms() )
+     *(NDit++) = v_demand[ i ]; 
+
+    guts_of_chg_dem_MCF( R3B , ND.begin() , tmod->nms() ,
+			 issuePMod , issueAMod );
+    break;
+    }
+
+   case( CapacitatedFacilityLocationBlockMod::eCloseF ):  //- - - - - - - - -
+    if( tmod->nms().size() == 1 )
+     R3B->close_arc( tmod->nms().front() , issuePMod , issueAMod );
+    else
+     R3B->close_arcs( Subset( tmod->nms() ) , true , issuePMod , issueAMod );
+
+    break;
+
+   case( CapacitatedFacilityLocationBlockMod::eOpenF ):  // - - - - - - - - -
+    if( tmod->nms().size() == 1 )
+     R3B->open_arc( tmod->nms().front() , issuePMod , issueAMod );
+    else
+     R3B->open_arcs( Subset( tmod->nms() ) , true , issuePMod , issueAMod );
+
+    break;
+
+   case( CapacitatedFacilityLocationBlockMod::eBuyF ):  //- - - - - - - - - -
+    throw( std::invalid_argument(
+     "mapping fix_open Modification to a MCFBlock R3Block not supported" ) );
+
+   default:
+     throw( std::invalid_argument(
+		  "unknown CapacitatedFacilityLocationBlockRngdMod type" ) );
+
+   }  // end( switch )
+
+  return( true );
+  }
 
  return( false );  // any other Modification is not mapped
  

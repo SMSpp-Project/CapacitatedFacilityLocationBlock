@@ -1551,7 +1551,7 @@ public:
  /// re-opens a contiguous interval of facilities
  /** Method to re-open a subset of facility with "contiguous names", i.e.,
   * all facilities rng.first <= i < rmg.second - rng.first that had
-  * previously been closed are now open again. Note that any  rng.second >=
+  * previously been closed are now open again. Note that any rng.second >=
   * get_NFacilities() means "up until the end". Re-opening a facility that
   * had not been previously closed does nothing, while re-openomg a precently
   * fixed-open facility overrides the fixed-open status.
@@ -1589,7 +1589,7 @@ public:
   * all facilities rng.first <= i < rmg.second - rng.first are now considered
   * to be open already. Note that their construction cost is added to the
   * Objective value, but it is not optimised upon since the decision is taken
-  * already. Note that any  rng.second >= get_NFacilities() means "up until 
+  * already. Note that any rng.second >= get_NFacilities() means "up until 
   * the end". Fixing open an already fixed-open or a closed facility does
   * nothing, i.e., fixing-open a facility does not override its closed status.
   *
@@ -1813,6 +1813,14 @@ public:
 /*--------------------------------------------------------------------------*/
  
  void guts_of_destructor( void );
+
+ void guts_of_get_R3B_MCF( MCFBlock * mcfb , int wR3B );
+ 
+ void guts_of_chg_dem_MCF( MCFBlock * mcfb , c_DV_it NDem , Range rng ,
+			   ModParam issueMod , ModParam issueAMod );
+
+ void guts_of_chg_dem_MCF( MCFBlock * mcfb , c_DV_it NDem , c_Subset & nms ,
+			   ModParam issueMod , ModParam issueAMod );
 
  void guts_of_add_ModificationSF( c_p_Mod mod , ChnlName chnl );
 
