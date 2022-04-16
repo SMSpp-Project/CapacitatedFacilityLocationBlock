@@ -118,11 +118,11 @@ static LinearFunction * LF( Function * f ) {
  }
 
 /*--------------------------------------------------------------------------*/
-// returns true if two vectors differ, one of them being given as a base
-// vector and a subset of indices
+// returns true if two vectors differ, one of them being given as a pointer
+// to an array and a subset of indices
 
 template< typename T >
-static bool is_equal( std::vector<T> & vec , Block::c_Subset & nms ,
+static bool is_equal( T * vec , Block::c_Subset & nms ,
 		      typename std::vector< T >::const_iterator cmp ,
 		      Block::Index n_max )
 {
@@ -1726,7 +1726,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
   return;           // cowardly (and silently) return
 
  // TODO: eliminate from nms the "fake" changes
- if( is_equal( v_f_cost , nms , NCost , f_n_facilities ) )
+ if( is_equal( v_f_cost.data() , nms , NCost , f_n_facilities ) )
   return;  // actually nothing changes, avoid issuing the Modification
 
  if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
@@ -1916,7 +1916,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
 
  // TODO: eliminate from nms the "fake" changes
  const Index maxn = f_n_facilities * f_n_customers;
- if( is_equal( v_f_cost , nms , NCost , maxn ) )
+ if( is_equal( v_t_cost.data() , nms , NCost , maxn ) )
   return;  // actually nothing changes, avoid issuing the Modification
 
  if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
@@ -2023,7 +2023,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_cost( Cost NCost ,
 
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    get_lfo()->modify_coefficient( NCost , p + f_n_facilities ,
+    get_lfo()->modify_coefficient( p + f_n_facilities , NCost ,
 				   un_ModBlock( issueAMod ) );
     break;
     }
@@ -2083,8 +2083,8 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( Index i = rng.first ; i < rng.second ; ++i )
-     LF( v_cap[ i ].get_function() )->modify_coefficient( *(NCap++) ,
-						       f_n_customers , iAM );
+     LF( v_cap[ i ].get_function() )->modify_coefficient( f_n_customers ,
+							  *(NCap++) , iAM );
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2130,7 +2130,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
   return;           // cowardly (and silently) return
 
  // TODO: eliminate from nms the "fake" changes
- if( is_equal( v_capacity , nms , NCap , f_n_facilities ) )
+ if( is_equal( v_capacity.data() , nms , NCap , f_n_facilities ) )
   return;  // actually nothing changes, avoid issuing the Modification
 
  if( not_dry_run( issueAMod ) && ( AR & HasCapCns ) ) {
@@ -2144,8 +2144,8 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto i : nms )
-     LF( v_cap[ i ].get_function() )->modify_coefficient( *(NCap++) ,
-						       f_n_customers , iAM );
+     LF( v_cap[ i ].get_function() )->modify_coefficient( f_n_customers ,
+							  *(NCap++) , iAM );
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2205,7 +2205,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacity( Demand NCap ,
 
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    LF( v_cap[ i ].get_function() )->modify_coefficient( NCap , f_n_customers ,
+    LF( v_cap[ i ].get_function() )->modify_coefficient( f_n_customers , NCap , 
 						    un_ModBlock( issueAMod ) );
     break;
     }
@@ -2319,7 +2319,7 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
   std::sort( nms.begin() , nms.end() );
 
  // TODO: eliminate from nms the "fake" changes
- if( is_equal( v_demand , nms , NDem , f_n_customers ) )
+ if( is_equal( v_demand.data() , nms , NDem , f_n_customers ) )
   return;  // actually nothing changes, avoid issuing the Modification
 
  if( not_dry_run( issueAMod ) && ( AR & HasSatCns ) ) {
