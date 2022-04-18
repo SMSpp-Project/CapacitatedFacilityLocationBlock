@@ -1543,11 +1543,23 @@ void CapacitatedFacilityLocationBlock::add_Modification( sp_Mod mod ,
   *
   *     AND RESET THE concerns_Block() BIT
   *
-  * before passing them to the father CapacitatedFacilityLocationBlock.
-  * This means that the "standard trick" of relying upon the
-  * concerns_Block() bit to identify the Modification that need be
-  * processed by the CapacitatedFacilityLocationBlock does not work.
-  * However, there is a silver lining in this, since
+  * before passing them to the father CapacitatedFacilityLocationBlock. This
+  * means that the "standard trick" of relying upon the concerns_Block() bit
+  * to identify the Modification that need (not) be processed by the
+  * CapacitatedFacilityLocationBlock does not work. The solution to this
+  * issue is that CapacitatedFacilityLocationBlock ensures that f_mod_skip
+  * == true if and only if this is what is happening. That is, f_mod_skip is
+  * false by default, it is set to true right before calling the chg_*
+  * methods of the sub-Block (within which "physical" Modification are issued
+  * and CapacitatedFacilityLocationBlock::add_Modification() is called) and
+  * put back to false immediately after this happened. This would be dangerous
+  * in case multiple changes would be happening at the same time, with some of
+  * them "known already" by CapacitatedFacilityLocationBlock and others not,
+  * but this is not supposed to happen since the mechanism is only activated
+  * inside the chg_* methods of CapacitatedFacilityLocationBlock, which are
+  * only supposed to be called when it is lock()-ed.
+  *
+  * Furthermore, this "nonstandard" mechanism implies that
   *
   *     CapacitatedFacilityLocationBlock CAN USE THE "PHYSICAL
   *     Modification" OF BinaryKnapsackBlock AND MCFBlock TO
@@ -1555,11 +1567,14 @@ void CapacitatedFacilityLocationBlock::add_Modification( sp_Mod mod ,
   *
   * These are in fact less than the "abstract Modification" produced by
   * changing the abstract representation and "more informative", so the
-  * code is actually a bit simpler because of this. */
+  * code is actually quite a bit simpler because of this. */
  //!! std::cout << *mod << std::endl;
 
- // first analyse it for abstract representation -> physical representation
- // synchronization: this must be done on a case-by-case basis
+ if( f_mod_skip )           // this is a "physical-abstract" Modification
+  goto do_the_usual_stuff;  // just do the usual stuff
+
+ // otherwise process it for abstract representation -> physical
+ // representation synchronization: this must be done on a case-by-case basis
  switch( AR & FormMsk ) {
   case( StdForm ):  // Standard Formulation
    if( mod->concerns_Block() ) {  // the usual drill
@@ -1575,7 +1590,7 @@ void CapacitatedFacilityLocationBlock::add_Modification( sp_Mod mod ,
 	   "unsupported Modification to CapacitatedFacilityLocationBlock" ) );
 
    // it can't be a physical Moification coming from the "root" Block
-   // either since these won't pass from here, hence it must be coming+
+   // either since these won't pass from here, hence it must be coming
    // from some BinaryKnapsackBlockMod
    if( auto bmod = dynamic_cast< BinaryKnapsackBlockMod * >( mod.get() ) )
     guts_of_add_ModificationKFP( bmod , chnl );
@@ -1600,6 +1615,8 @@ void CapacitatedFacilityLocationBlock::add_Modification( sp_Mod mod ,
   }  // end( switch )
 
  // finally, do the usual stuff (pass to the Solver and to the father)
+ do_the_usual_stuff:
+
  Block::add_Modification( mod , chnl );
 
  }  // end( CapacitatedFacilityLocationBlock::add_Modification )
@@ -1691,10 +1708,13 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
    // since modify_coefficients owns the vector, a copy has to be made
    get_lfo()->modify_coefficients( CVector( NCost , NCost + num ) , rng ,
 				   un_ModBlock( issueAMod ) );
-  else
+  else {
+   f_mod_skip = true;
    for( Index i = rng.first ; i < rng.second ; ++i )
-    BKB( v_Block[ i ] )->chg_profit( *(NCost++) , f_n_customers , issueMod ,
-				     un_ModBlock( issueAMod ) );
+    BKB( v_Block[ i ] )->chg_profit( *(NCost++) , f_n_customers ,
+				     issueMod , issueAMod );
+   f_mod_skip = false;
+   }
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -1739,10 +1759,13 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
    get_lfo()->modify_coefficients( CVector( NCost , NCost + nms.size() ) ,
 				   Subset( nms ) , true ,
 				   un_ModBlock( issueAMod ) );
-  else
+  else {
+   f_mod_skip = true;
    for( auto i : nms )
     BKB( v_Block[ i ] )->chg_profit( *(NCost++) , f_n_customers ,
 				     issueMod , un_ModBlock( issueAMod ) );
+   f_mod_skip = false;
+   }
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -1785,9 +1808,12 @@ void CapacitatedFacilityLocationBlock::chg_facility_cost( Cost NCost ,
 
   if( ( AR & FormMsk ) != KskForm )
    get_lfo()->modify_coefficient( i , NCost , un_ModBlock( issueAMod ) );
-  else
+  else {
+   f_mod_skip = true;
    BKB( v_Block[ i ] )->chg_profit( NCost , f_n_customers ,
 				    issueMod , un_ModBlock( issueAMod ) );
+   f_mod_skip = false;
+   }
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -1828,6 +1854,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
   // in the meantime, if so instructed also issue abstract Modification
   std::copy( NCost , NCost + num , v_t_cost.data() + rng.first );
 
+  f_mod_skip = true;
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
     // since modify_coefficients owns the vector, a copy has to be made
@@ -1849,10 +1876,13 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
      break;
      }
 
+    // open a new channel to bunch up all  Modification
+    auto iAM = make_amod_param( issueAMod , 2 );
+
     // the range of the first facility does not necessarily start from 0
     // but it surely ends at f_n_customers
     BKB( v_Block[ i++ ] )->chg_profits( NCost , Range( l , f_n_customers ) ,
-					issueMod , issueAMod );
+					issueMod , iAM );
     NCost += ( f_n_customers - l );
     f += ( f_n_customers - l );
  
@@ -1862,15 +1892,17 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
      Index nf = f + f_n_customers;
      if( nf >= rng.second ) {  // last facility
       BKB( v_Block[ i ] )->chg_profits( NCost , Range( 0 , rng.second - f ) ,
-					issueMod , issueAMod );
+					issueMod , iAM );
       break;
       }
      else {
       BKB( v_Block[ i ] )->chg_profits( NCost , Range( 0 , f_n_customers ) ,
-					issueMod , issueAMod );
+					issueMod , iAM );
       f = nf;
       }
      }
+
+    unmake_amod_param( issueAMod , iAM , 2 );  // close the new channel
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1879,6 +1911,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
 					    rng.second + f_n_facilities ) ,
 				     issueMod , issueAMod );
    }
+  f_mod_skip = false;
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -1925,6 +1958,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
   // in the meantime, if so instructed also issue abstract Modification
   copyidx( v_t_cost.data() , nms , NCost );
 
+  f_mod_skip = true;
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     Subset nnms( nms );     // copy and translate names
@@ -1938,9 +1972,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
-    Index f = nms.front();
-    Index i = f / f_n_customers;
-    Index l = f % f_n_customers;
+    Index i = nms.front() / f_n_customers;
     if( ( nms.back() / f_n_customers ) == i ) {
      // the subset is all inside a single facility
      Subset nnms( nms );     // copy and translate names
@@ -1951,22 +1983,30 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
      break;
      }
 
-    for( auto bit = nms.begin() ; ; ++i ) {
-     auto eit = bit;
+    // open a new channel to bunch up all  Modification
+    auto iAM = make_amod_param( issueAMod , 2 );
+
+    for( auto bit = nms.begin() , eit = bit ; ; ++i ) {
      while( ( eit != nms.end() ) && ( *eit / f_n_customers ) == i )
       ++eit;
 
-     Subset nnms( bit , eit );     // copy and translate names
+     if( eit == bit )  // the subset is empty for this i
+      continue;        // move to next i
+
+     Subset nnms( bit , eit );  // copy and translate names
      for( auto & el : nnms )
       el %= f_n_customers;
 
      BKB( v_Block[ i ] )->chg_profits( NCost , std::move( nnms ) , true ,
-				       issueMod , issueAMod );
+				       issueMod , iAM );
      if( eit == nms.end() )
       break;
 
      NCost += std::distance( bit , eit );
+     bit = eit;
      }
+
+    unmake_amod_param( issueAMod , iAM , 2 );  // close the new channel
     break;
     }
    default: {  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1978,6 +2018,8 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
 				     issueMod , issueAMod );
     }
    }
+
+  f_mod_skip = false;
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -2021,6 +2063,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_cost( Cost NCost ,
   // in the meantime, if so instructed also issue abstract Modification
   v_t_cost[ i ][ j ] = NCost;
 
+  f_mod_skip = true;
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
     get_lfo()->modify_coefficient( p + f_n_facilities , NCost ,
@@ -2035,6 +2078,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_cost( Cost NCost ,
     MCFB( v_Block[ 1 ] )->chg_cost( NCost , p + f_n_facilities ,
 				     issueMod , issueAMod );
    }
+  f_mod_skip = false;
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -2067,7 +2111,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
  if( rng.second <= rng.first )  // nothing to change
   return;                       // cowardly (and silently) return
 
- const Index num = rng.second - rng.first;
+ Index num = rng.second - rng.first;
  // TODO: if some changes are "fake", rather restrict the range
  if( std::equal( NCap , NCap + num , v_capacity.begin() + rng.first ) )
   return;  // actually nothing changes, avoid issuing the Modification
@@ -2078,24 +2122,29 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
   std::copy( NCap , NCap + num , v_capacity.begin() + rng.first );
 
   // if appropriate, open a new channel to bunch up all abstract Modification
-  auto iAM = make_amod_param( issueAMod ,
-			      ( AR & FormMsk ) != FlwForm ? num : 0 );
+  if( ( AR & FormMsk ) == FlwForm )
+   num = 0;
+  auto iAM = make_amod_param( issueAMod , num );
+  f_mod_skip = true;
+
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( Index i = rng.first ; i < rng.second ; ++i )
-     LF( v_cap[ i ].get_function() )->modify_coefficient( f_n_customers ,
-							  *(NCap++) , iAM );
+     LF( v_cap[ i ].get_function()
+	 )->modify_coefficient( f_n_customers , - *(NCap++) , iAM );
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( Index i = rng.first ; i < rng.second ; ++i )
-     BKB( v_Block[ i ] )->chg_weight( - *(NCap++) , f_n_customers ,
-				      issueMod , iAM );
+     BKB( v_Block[ i ]
+	  )->chg_weight( - *(NCap++) , f_n_customers , issueMod , iAM );
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
     MCFB( v_Block[ 1 ] )->chg_ucaps( NCap , rng , issueMod , iAM );
    }
+
+  f_mod_skip = false;
 
   // if a new channel had been opened, close it
   unmake_amod_param( issueAMod , iAM , num );
@@ -2129,6 +2178,12 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
  if( nms.empty() )  // nothing to change
   return;           // cowardly (and silently) return
 
+ if( ! ordered )
+  std::sort( nms.begin() , nms.end() );
+
+ if( nms.back() >= f_n_facilities )
+  throw( std::invalid_argument( "invalid facility name" ) );
+
  // TODO: eliminate from nms the "fake" changes
  if( is_equal( v_capacity.data() , nms , NCap , f_n_facilities ) )
   return;  // actually nothing changes, avoid issuing the Modification
@@ -2139,28 +2194,31 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
   copyidx( v_capacity.data() , nms , NCap );
 
   // if appropriate, open a new channel to bunch up all abstract Modification
-  auto iAM = make_amod_param( issueAMod ,
-			      ( AR & FormMsk ) != FlwForm ? nms.size() : 0 );
+  Index num = ( ( AR & FormMsk ) == FlwForm ) ? 0 : nms.size();
+  auto iAM = make_amod_param( issueAMod , num );
+  f_mod_skip = true;
+
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto i : nms )
-     LF( v_cap[ i ].get_function() )->modify_coefficient( f_n_customers ,
-							  *(NCap++) , iAM );
+     LF( v_cap[ i ].get_function()
+	 )->modify_coefficient( f_n_customers , - *(NCap++) , iAM );
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto i : nms )
-     BKB( v_Block[ i ] )->chg_weight( - *(NCap++) , f_n_customers ,
-				      issueMod , iAM );
+     BKB( v_Block[ i ]
+	  )->chg_weight( - *(NCap++) , f_n_customers , issueMod , iAM );
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    MCFB( v_Block[ 1 ] )->chg_ucaps( NCap , std::move( nms ) , ordered ,
+    MCFB( v_Block[ 1 ] )->chg_ucaps( NCap , std::move( nms ) , true ,
 				     issueMod , iAM );
    }
 
+  f_mod_skip = false;
   // if a new channel had been opened, close it
-  unmake_amod_param( issueAMod , iAM , nms.size() );
+  unmake_amod_param( issueAMod , iAM , num );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -2170,19 +2228,14 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
  
- if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
-  // ensure the names are ordered even if they were not so originally
-  if( ! ordered )
-   std::sort( nms.begin() , nms.end() );
-
+ if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockSbstMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgCap ,
 			    std::move( nms ) ) ,
 			   Observer::par2chnl( issueMod ) );
-  }
- }  // end CapacitatedFacilityLocationBlock::chg_facility_capacities( sbst )
 
+ }  // end CapacitatedFacilityLocationBlock::chg_facility_capacities( sbst )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2202,21 +2255,25 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacity( Demand NCap ,
   // change abstract and physical representation together - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
   v_capacity[ i ] = NCap;
+  f_mod_skip = true;
 
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    LF( v_cap[ i ].get_function() )->modify_coefficient( f_n_customers , NCap , 
-						    un_ModBlock( issueAMod ) );
+    LF( v_cap[ i ].get_function()
+	)->modify_coefficient( f_n_customers , - NCap , 
+			       un_ModBlock( issueAMod ) );
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
-    BKB( v_Block[ i ] )->chg_weight( - NCap , f_n_customers ,
-				     issueMod , issueAMod );
+    BKB( v_Block[ i ]
+	 )->chg_weight( - NCap , f_n_customers , issueMod , issueAMod );
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
     MCFB( v_Block[ 1 ] )->chg_ucap( NCap , i , issueMod , issueAMod );
    }
+
+  f_mod_skip = false;
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -2244,7 +2301,7 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
  if( rng.second <= rng.first )  // nothing to change
   return;                       // cowardly (and silently) return
 
- const Index num = rng.second - rng.first;
+ c_Index num = rng.second - rng.first;
  // TODO: if some changes are "fake", rather restrict the range
  if( std::equal( NDem , NDem + num , v_demand.begin() + rng.first ) )
   return;  // actually nothing changes, avoid issuing the Modification
@@ -2255,35 +2312,31 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
   std::copy( NDem , NDem + num , v_demand.begin() + rng.first );
 
   // if appropriate, open a new channel to bunch up all abstract Modification
-  auto iAM = make_amod_param( issueAMod ,
-			      ( AR & FormMsk ) != FlwForm ? num : 0 );
+  Index nc = ( ( AR & FormMsk ) == FlwForm ) ? 0 : f_n_facilities;
+  auto iAM = make_amod_param( issueAMod , nc );
+  f_mod_skip = true;
+
   switch( AR & FormMsk ) {
-   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    // if appropriate, open a new channel to bunch up all abstract Modification
-    auto iAM = make_amod_param( issueAMod , num );
-
-    for( Index i = rng.first ; i < rng.second ; ++i )
-     v_sat[ i ].set_both( *(NDem++) , iAM );
-
-    // if a new channel had been opened, close it
-    unmake_amod_param( issueAMod , iAM , num );
+   case( StdForm ):    // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    for( auto & capi : v_cap )
+     LF( capi.get_function()
+	 )->modify_coefficients( DVector( NDem , NDem + num ) , rng , iAM );
     break;
-    }
-   case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
-    // open a new channel to bunch up all abstract Modification
-    auto iAM = make_amod_param( issueAMod , f_n_facilities );
 
+   case( KskForm ):    // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto bi : v_Block )
      BKB( bi )->chg_weights( NDem , rng , issueMod , iAM );
 
-    // close the new channel
-    unmake_amod_param( issueAMod , iAM , f_n_facilities );
     break;
-    }
+
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
     guts_of_chg_dem_MCF( MCFB( v_Block[ 1 ] ) , NDem , rng ,
 			 issueMod , issueAMod );
    }
+
+  f_mod_skip = false;
+  // if a new channel had been opened, close it
+  unmake_amod_param( issueAMod , iAM , nc );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -2318,6 +2371,9 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
  if( ! ordered )
   std::sort( nms.begin() , nms.end() );
 
+ if( nms.back() >= f_n_customers )
+  throw( std::invalid_argument( "invalid customer name" ) );
+
  // TODO: eliminate from nms the "fake" changes
  if( is_equal( v_demand.data() , nms , NDem , f_n_customers ) )
   return;  // actually nothing changes, avoid issuing the Modification
@@ -2327,34 +2383,33 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
   // in the meantime, if so instructed also issue abstract Modification
   copyidx( v_demand.data() , nms , NDem );
 
+  // if appropriate, open a new channel to bunch up all abstract Modification
+  Index nc = ( ( AR & FormMsk ) == FlwForm ) ? 0 : f_n_facilities;
+  auto iAM = make_amod_param( issueAMod , nc );
+  f_mod_skip = true;
+
   switch( AR & FormMsk ) {
-   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    // if appropriate, open a new channel to bunch up all abstract Modification
-    auto iAM = make_amod_param( issueAMod , nms.size() );
-
-    for( auto i : nms )
-     v_sat[ i ].set_both( *(NDem++) , iAM );
- 
-    // if a new channel had been opened, close it
-    unmake_amod_param( issueAMod , iAM , nms.size() );
+   case( StdForm ):    // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    for( auto & capi : v_cap )
+     LF( capi.get_function()
+	 )->modify_coefficients( DVector( NDem , NDem + nms.size() ) ,
+				 Subset( nms ) , true , iAM );
     break;
-   }
-   case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
-    // open a new channel to bunch up all abstract Modification
-    auto iAM = make_amod_param( issueAMod , f_n_facilities );
-
-    // note that chg_weights() acquire the vector, so copies must be made
+ 
+   case( KskForm ):    // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto bi : v_Block )
      BKB( bi )->chg_weights( NDem , Subset( nms ) , true , issueMod , iAM );
 
-    // close the new channel
-    unmake_amod_param( issueAMod , iAM , f_n_facilities );
     break;
-    }
+
    default:    // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
     guts_of_chg_dem_MCF( MCFB( v_Block[ 1 ] ) , NDem , nms ,
 			 issueMod , issueAMod );
    }
+
+  f_mod_skip = false;
+  // if a new channel had been opened, close it
+  unmake_amod_param( issueAMod , iAM , nc );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -2393,25 +2448,27 @@ void CapacitatedFacilityLocationBlock::chg_customer_demand( Demand NDem ,
  if( not_dry_run( issueAMod ) && ( AR & HasSatCns ) ) {
   // change abstract and physical representation together - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-   v_demand[ j ] = NDem;
+  v_demand[ j ] = NDem;
+
+  // if appropriate, open a new channel to bunch up all abstract Modification
+  Index nc = ( ( AR & FormMsk ) == FlwForm ) ? 0 : f_n_facilities;
+  auto iAM = make_amod_param( issueAMod , nc );
+  f_mod_skip = true;
 
   switch( AR & FormMsk ) {
-   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    v_sat[ j ].set_both( NDem , un_ModBlock( issueAMod ) );
-    break;
-    }
-   case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
-    // open a new channel to bunch up all abstract Modification
-    auto iAM = make_amod_param( issueAMod , f_n_facilities );
+   case( StdForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    for( auto & capi : v_cap )
+     LF( capi.get_function() )->modify_coefficient( j , NDem , iAM );
 
+    break;
+ 
+   case( KskForm ):    // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto bi : v_Block )
      BKB( bi )->chg_weight( NDem , j , issueMod , iAM );
 
-    // close the new channel
-    unmake_amod_param( issueAMod , iAM , f_n_facilities );
     break;
-    }
-   default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   default: {  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
     // ensure that the sum of all deficits always remains == 0, but this is
     // done with just one operation so no GroupModification is needed
     Subset nms = { f_n_facilities + j , f_n_facilities + f_n_customers };
@@ -2419,7 +2476,12 @@ void CapacitatedFacilityLocationBlock::chg_customer_demand( Demand NDem ,
       - std::accumulate( v_demand.begin() , v_demand.end() , Demand( 0 ) ) };
     MCFB( v_Block[ 1 ] )->chg_dfcts( dfct.begin() , std::move( nms ) , true ,
 				     issueMod , issueAMod );
+    }
    }
+
+  f_mod_skip = false;
+  // if a new channel had been opened, close it
+  unmake_amod_param( issueAMod , iAM , nc );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -2478,9 +2540,12 @@ void CapacitatedFacilityLocationBlock::close_facilities( Range rng ,
      v_y[ i ].is_fixed( true , iAM );
      }
    }
-  else
+  else {
+   f_mod_skip = true;
    for( Index i = rng.first ; i < rng.second ; ++i )
     BKB( v_Block[ i ] )->fix_x( false , f_n_customers , issueMod , iAM );
+   f_mod_skip = false;
+   }
 
   // if a new channel had been opened, close it
   unmake_amod_param( issueAMod , iAM , cnt );
@@ -2544,9 +2609,12 @@ void CapacitatedFacilityLocationBlock::close_facilities( Subset && nms ,
      v_y[ i ].is_fixed( true , iAM );
      }
    }
-  else
+  else {
+   f_mod_skip = true;
    for( auto i : nms )
     BKB( v_Block[ i ] )->fix_x( false , f_n_customers , issueMod , iAM );
+   f_mod_skip = false;
+   }
 
   // if a new channel had been opened, close it
   unmake_amod_param( issueAMod , iAM , cnt );
@@ -2591,8 +2659,11 @@ void CapacitatedFacilityLocationBlock::close_facility( Index i ,
    v_y[ i ].set_value( 0 );
    v_y[ i ].is_fixed( true , un_ModBlock( issueAMod ) );
    }
-  else
+  else {
+   f_mod_skip = true;
    BKB( v_Block[ i ] )->fix_x( false , f_n_customers , issueMod , issueAMod );
+   f_mod_skip = false;
+   }
   }
 
  // conditional bounds could be reset if they were computed looking at
@@ -2643,9 +2714,12 @@ void CapacitatedFacilityLocationBlock::open_facilities( Range rng ,
   if( ( AR & FormMsk ) != KskForm )
    for( Index i = rng.first ; i < rng.second ; ++i )
     v_y[ i ].is_fixed( false , iAM );
-  else
+  else {
+   f_mod_skip = true;
    for( Index i = rng.first ; i < rng.second ; ++i )
     BKB( v_Block[ i ] )->unfix_x( f_n_customers , issueMod , iAM );
+   f_mod_skip = false;
+   }
 
   // if a new channel had been opened, close it
   unmake_amod_param( issueAMod , iAM , cnt );
@@ -2705,9 +2779,12 @@ void CapacitatedFacilityLocationBlock::open_facilities( Subset && nms ,
   if( ( AR & FormMsk ) != KskForm )
    for( auto i : nms )
     v_y[ i ].is_fixed( false , iAM );
-  else
+  else {
+   f_mod_skip = true;
    for( auto i : nms )
     BKB( v_Block[ i ] )->unfix_x( f_n_customers , issueMod , iAM );
+   f_mod_skip = false;
+   }
 
   // if a new channel had been opened, close it
   unmake_amod_param( issueAMod , iAM , cnt );
@@ -2750,8 +2827,11 @@ void CapacitatedFacilityLocationBlock::open_facility( Index i ,
 
   if( ( AR & FormMsk ) != KskForm )
    v_y[ i ].is_fixed( false , un_ModBlock( issueAMod ) );
-  else
+  else {
+   f_mod_skip = true;
    BKB( v_Block[ i ] )->unfix_x( f_n_customers , issueMod , issueAMod );
+   f_mod_skip = false;
+   }
   }
 
  // conditional bounds could be reset if they were computed looking at
@@ -2760,7 +2840,7 @@ void CapacitatedFacilityLocationBlock::open_facility( Index i ,
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
-			     CapacitatedFacilityLocationBlockMod::eCloseF ,
+			     CapacitatedFacilityLocationBlockMod::eOpenF ,
 			     Range( i , i + 1 ) ) ,
 			   Observer::par2chnl( issueMod ) );
  #if CHECK_DS
@@ -2806,9 +2886,12 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Range rng ,
      v_y[ i ].is_fixed( true , iAM );
      }
     }
-  else
+  else {
+   f_mod_skip = true;
    for( Index i = rng.first ; i < rng.second ; ++i )
     BKB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , iAM );
+   f_mod_skip = true;
+   }
 
   // if a new channel had been opened, close it
   unmake_amod_param( issueAMod , iAM , cnt );
@@ -2872,9 +2955,12 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Subset && nms ,
      v_y[ i ].is_fixed( true , iAM );
      }
    }
-  else
+  else {
+   f_mod_skip = true;
    for( auto i : nms )
     BKB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , iAM );
+   f_mod_skip = false;
+   }
 
   // if a new channel had been opened, close it
   unmake_amod_param( issueAMod , iAM , cnt );
@@ -2919,8 +3005,11 @@ void CapacitatedFacilityLocationBlock::fix_open_facility( Index i ,
    v_y[ i ].set_value( 1 );
    v_y[ i ].is_fixed( true , un_ModBlock( issueAMod ) );
    }
-  else
+  else {
+   f_mod_skip = true;
    BKB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , issueAMod );
+   f_mod_skip = false;
+   }
   }
 
  // conditional bounds could be reset if they were computed looking at
@@ -3091,6 +3180,7 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
  // ensure that the sum of all deficits always remains == 0, which means
  // there will be at least two Modification
  auto iAM = make_amod_param( issueAMod , 2 );
+ f_mod_skip = true;
 
  mcfb->chg_dfcts( NDem , Range( rng.first + f_n_facilities ,
 				rng.second + f_n_facilities ) ,
@@ -3100,8 +3190,9 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
 		 - std::accumulate( v_demand.begin() , v_demand.end() , 0 ) ,
 		 issueMod , iAM );
 
+ f_mod_skip = false;
  // close the new channel
- unmake_amod_param( issueAMod , iAM , f_n_facilities );
+ unmake_amod_param( issueAMod , iAM , 2 );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -3113,6 +3204,7 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
  // ensure that the sum of all deficits always remains == 0, which means
  // there will be at least two Modification
  auto iAM = make_amod_param( issueAMod , 2 );
+ f_mod_skip = true;
 
  Subset nnms( nms.begin() , nms.end() );  // copy and translate nms
  for( auto & el : nnms )
@@ -3124,8 +3216,9 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
 		 - std::accumulate( v_demand.begin() , v_demand.end() , 0 ) ,
 		 issueMod , issueAMod );
 
+ f_mod_skip = false;
  // close the new channel
- unmake_amod_param( issueAMod , iAM , f_n_facilities );    
+ unmake_amod_param( issueAMod , iAM , 2 );    
  }
 
 /*--------------------------------------------------------------------------*/
@@ -3374,7 +3467,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
   *     CapacitatedFacilityLocationBlock IS A "STATIC" Block IN WHICH THE
   *     SIZE OF THE STUFF NEVER CHANGES (save if it is re-loaded whole)
   *
-  * This means that the indices, sanges and subsets found in the Modification
+  * This means that the indices, ranges and subsets found in the Modification
   * are always still valid, which drastically simplifies some of the logic. */
 
  // find the originating BinaryKnapsackBlock  - - - - - - - - - - - - - - - -
@@ -4849,13 +4942,13 @@ ModParam CapacitatedFacilityLocationBlock::make_amod_param(
   ChnlName chnl = par2chnl( issueAMod );
   if( num > 1 ) {            // more than one Modification have to be issued
     if( chnl )               // and a channel is already provided
-     nest_channel( chnl );   // nest the channel
+     nest_channel( chnl );   // nest it
     else                     // it was being sent to default channel
-     chnl = open_channel();  /* open a new channel: note that the
-			      * GroupModification will automatically be a
-     * "physical Modification" (i.e., concerns_Block() == false) since such
-     * are all the Modification there inside: in fact, all the inner
-     * Modification will be issued with the return value, which i eNoBlck */
+     chnl = open_channel();  // open a new channel
+                             // note that the GroupModification will
+     // automatically be a "physical Modification" (i.e., concerns_Block()
+     // == false) since such will be all the Modification there inside: in
+     // fact, they will all be issued with the return value, which is eNoBlck
    }
 
   return( make_par( eNoBlck , chnl ) );

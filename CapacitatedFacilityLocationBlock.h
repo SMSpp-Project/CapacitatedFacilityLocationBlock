@@ -250,7 +250,7 @@ public:
  explicit CapacitatedFacilityLocationBlock( Block *father = nullptr )
   : Block( father ) , f_n_facilities( 0 ) , f_n_customers( 0 ) ,
     f_unsplittable( false ) , AR( 0 ) , f_cond_lower( dNaN ) ,
-    f_cond_upper( dNaN ) { }
+  f_cond_upper( dNaN ) , f_mod_skip( false ) {}
 
 /*--------------------------------------------------------------------------*/
  /// destructor; deletes the abstract representation, if any
@@ -1632,6 +1632,10 @@ public:
  protected:
 
 /*--------------------------------------------------------------------------*/
+/*--------------------------- PROTECTED TYPES ------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+/*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED FRIENDS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -1710,6 +1714,29 @@ public:
   * strong forcing" constraints corresponding to y_i. */
 
  FRealObjective f_obj;                ///< the (linear) objective function
+
+ // Modification handling - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ bool f_mod_skip;  ///< if the Modification is a "abstract-physical" one
+                   /**< CapacitatedFacilityLocationBlock uses the "physical"
+		    * Modification of the inner Block as "abstract"
+  * Modification. This creates an issue whereby when a  "physical"
+  * Modification of an inner Block is processed, it is not known whether it
+  * has been issued due to a change that the CapacitatedFacilityLocationBlock
+  * already knows about, and therefore can (and must) be ignored, or it has 
+  * been issued due to a change that the CapacitatedFacilityLocationBlock
+  * does not know about, and therefore it must be processed. The solution to
+  * this issue is that CapacitatedFacilityLocationBlock ensures that
+  * f_mod_skip == true if and only if this is what is happening. That is,
+  * f_mod_skip is false by default, it is set to true right before calling
+  * the chg_* methods of the sub-Block (within which "physical" Modification
+  * are issued and CapacitatedFacilityLocationBlock::add_Modification() is
+  * called) and put back to false immediately after this happened. This would
+  * be dangerous in case multiple changes would be happening at the same time,
+  * with some of them "known already" by CapacitatedFacilityLocationBlock and
+  * others not, but this is not supposed to happen since the mechanism is only
+  * activated inside the chg_* methods of CapacitatedFacilityLocationBlock,
+  * which are only supposed to be called when it is lock()-ed. */
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
