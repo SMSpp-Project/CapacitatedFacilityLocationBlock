@@ -579,7 +579,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   ab->add_static_variable( v_y , "y" );
 
   // the second Block is a MCFBlock as constructed by get_R3_Block
-  static SimpleConfiguration< int > r3bc( 2 );
+ static SimpleConfiguration< int > r3bc( 2 );
   auto mcfb = static_cast< MCFBlock * >( get_R3_Block( & r3bc ) );
   v_Block[ 1 ] = mcfb;
 
@@ -1843,7 +1843,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
  if( rng.second <= rng.first )  // nothing to change
   return;                       // cowardly (and silently) return
 
- const Index num = rng.second - rng.first;
+ c_Index num = rng.second - rng.first;
  // TODO: if some changes are "fake", rather restrict the range
  if( std::equal( NCost , NCost + num , v_t_cost.data() + rng.first ) )
   return;  // actually nothing changes, avoid issuing the Modification
@@ -1877,7 +1877,8 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
      }
 
     // open a new channel to bunch up all  Modification
-    auto iAM = make_amod_param( issueAMod , 2 );
+    not_ModBlock( issueAMod );
+    auto iAM = open_if_needed( issueAMod , 2 );
 
     // the range of the first facility does not necessarily start from 0
     // but it surely ends at f_n_customers
@@ -1902,15 +1903,14 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
       }
      }
 
-    unmake_amod_param( issueAMod , iAM , 2 );  // close the new channel
+    close_if_needed( iAM , 2 );  // close the new channel
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    MCFB( v_Block[ 1 ] )->chg_costs( NCost ,
-				     Range( rng.first + f_n_facilities ,
-					    rng.second + f_n_facilities ) ,
-				     issueMod , issueAMod );
+    guts_of_chg_tcost_MCF( MCFB( v_Block[ 1 ] ) , rng ,
+			   issueMod , issueAMod );
    }
+
   f_mod_skip = false;
   }
  else
@@ -1984,7 +1984,8 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
      }
 
     // open a new channel to bunch up all  Modification
-    auto iAM = make_amod_param( issueAMod , 2 );
+    not_ModBlock( issueAMod );
+    auto iAM = open_if_needed( issueAMod , 2 );
 
     for( auto bit = nms.begin() , eit = bit ; ; ++i ) {
      while( ( eit != nms.end() ) && ( *eit / f_n_customers ) == i )
@@ -2006,17 +2007,12 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
      bit = eit;
      }
 
-    unmake_amod_param( issueAMod , iAM , 2 );  // close the new channel
+    close_if_needed( iAM , 2 );  // close the new channel
     break;
     }
-   default: {  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
-    Subset nnms( nms );     // copy and translate names
-    for( auto & el : nnms )
-     el += f_n_facilities;
-
-    MCFB( v_Block[ 1 ] )->chg_costs( NCost , std::move( nnms ) , true ,
-				     issueMod , issueAMod );
-    }
+   default:    // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
+    guts_of_chg_tcost_MCF( MCFB( v_Block[ 1 ] ) , nms ,
+			   issueMod , issueAMod );
    }
 
   f_mod_skip = false;
@@ -2075,9 +2071,10 @@ void CapacitatedFacilityLocationBlock::chg_transportation_cost( Cost NCost ,
     break;
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    MCFB( v_Block[ 1 ] )->chg_cost( NCost , p + f_n_facilities ,
-				     issueMod , issueAMod );
+    guts_of_chg_tcost_MCF( MCFB( v_Block[ 1 ] ) , Range( p , p + 1 ) ,
+			   issueMod , issueAMod );
    }
+
   f_mod_skip = false;
   }
  else
@@ -2124,7 +2121,8 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
   // if appropriate, open a new channel to bunch up all abstract Modification
   if( ( AR & FormMsk ) == FlwForm )
    num = 0;
-  auto iAM = make_amod_param( issueAMod , num );
+  not_ModBlock( issueAMod );
+  auto iAM = open_if_needed( issueAMod , num );
   f_mod_skip = true;
 
   switch( AR & FormMsk ) {
@@ -2147,7 +2145,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
   f_mod_skip = false;
 
   // if a new channel had been opened, close it
-  unmake_amod_param( issueAMod , iAM , num );
+  close_if_needed( iAM , num );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -2195,7 +2193,8 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
 
   // if appropriate, open a new channel to bunch up all abstract Modification
   Index num = ( ( AR & FormMsk ) == FlwForm ) ? 0 : nms.size();
-  auto iAM = make_amod_param( issueAMod , num );
+  not_ModBlock( issueAMod );
+  auto iAM = open_if_needed( issueAMod , num );
   f_mod_skip = true;
 
   switch( AR & FormMsk ) {
@@ -2218,7 +2217,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
 
   f_mod_skip = false;
   // if a new channel had been opened, close it
-  unmake_amod_param( issueAMod , iAM , num );
+  close_if_needed( iAM , num );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -2313,7 +2312,8 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
 
   // if appropriate, open a new channel to bunch up all abstract Modification
   Index nc = ( ( AR & FormMsk ) == FlwForm ) ? 0 : f_n_facilities;
-  auto iAM = make_amod_param( issueAMod , nc );
+  not_ModBlock( issueAMod );
+  auto iAM = open_if_needed( issueAMod , nc );
   f_mod_skip = true;
 
   switch( AR & FormMsk ) {
@@ -2330,13 +2330,12 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
     break;
 
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    guts_of_chg_dem_MCF( MCFB( v_Block[ 1 ] ) , NDem , rng ,
-			 issueMod , issueAMod );
+    guts_of_chg_dem_MCF( MCFB( v_Block[ 1 ] ) , rng , issueMod , issueAMod );
    }
 
   f_mod_skip = false;
   // if a new channel had been opened, close it
-  unmake_amod_param( issueAMod , iAM , nc );
+  close_if_needed( iAM , nc );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -2385,7 +2384,8 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
 
   // if appropriate, open a new channel to bunch up all abstract Modification
   Index nc = ( ( AR & FormMsk ) == FlwForm ) ? 0 : f_n_facilities;
-  auto iAM = make_amod_param( issueAMod , nc );
+  not_ModBlock( issueAMod );
+  auto iAM = open_if_needed( issueAMod , nc );
   f_mod_skip = true;
 
   switch( AR & FormMsk ) {
@@ -2403,13 +2403,12 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
     break;
 
    default:    // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
-    guts_of_chg_dem_MCF( MCFB( v_Block[ 1 ] ) , NDem , nms ,
-			 issueMod , issueAMod );
+    guts_of_chg_dem_MCF( MCFB( v_Block[ 1 ] ) , nms , issueMod , issueAMod );
    }
 
   f_mod_skip = false;
   // if a new channel had been opened, close it
-  unmake_amod_param( issueAMod , iAM , nc );
+  close_if_needed( iAM , nc );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -2452,7 +2451,8 @@ void CapacitatedFacilityLocationBlock::chg_customer_demand( Demand NDem ,
 
   // if appropriate, open a new channel to bunch up all abstract Modification
   Index nc = ( ( AR & FormMsk ) == FlwForm ) ? 0 : f_n_facilities;
-  auto iAM = make_amod_param( issueAMod , nc );
+  not_ModBlock( issueAMod );
+  auto iAM = open_if_needed( issueAMod , nc );
   f_mod_skip = true;
 
   switch( AR & FormMsk ) {
@@ -2481,7 +2481,7 @@ void CapacitatedFacilityLocationBlock::chg_customer_demand( Demand NDem ,
 
   f_mod_skip = false;
   // if a new channel had been opened, close it
-  unmake_amod_param( issueAMod , iAM , nc );
+  close_if_needed( iAM , nc );
   }
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
@@ -2531,7 +2531,8 @@ void CapacitatedFacilityLocationBlock::close_facilities( Range rng ,
  if( not_dry_run( issueAMod ) ) {
 
   // if appropriate, open a new channel to bunch up all abstract Modification
-  auto iAM = make_amod_param( issueAMod , cnt );
+  not_ModBlock( issueAMod );
+  auto iAM = open_if_needed( issueAMod , cnt );
 
   if( ( AR & FormMsk ) != KskForm ) {
    for( Index i = rng.first ; i < rng.second ; ++i )
@@ -2548,7 +2549,7 @@ void CapacitatedFacilityLocationBlock::close_facilities( Range rng ,
    }
 
   // if a new channel had been opened, close it
-  unmake_amod_param( issueAMod , iAM , cnt );
+  close_if_needed( iAM , cnt );
   }
 
  // conditional bounds could be reset if they were computed looking at
@@ -2600,7 +2601,8 @@ void CapacitatedFacilityLocationBlock::close_facilities( Subset && nms ,
  if( not_dry_run( issueAMod ) ) {
 
   // if appropriate, open a new channel to bunch up all abstract Modification
-  auto iAM = make_amod_param( issueAMod , cnt );
+  not_ModBlock( issueAMod );
+  auto iAM = open_if_needed( issueAMod , cnt );
 
   if( ( AR & FormMsk ) != KskForm ) {
    for( auto i : nms )
@@ -2617,7 +2619,7 @@ void CapacitatedFacilityLocationBlock::close_facilities( Subset && nms ,
    }
 
   // if a new channel had been opened, close it
-  unmake_amod_param( issueAMod , iAM , cnt );
+  close_if_needed( iAM , cnt );
   }
 
  // conditional bounds could be reset if they were computed looking at
@@ -2709,7 +2711,8 @@ void CapacitatedFacilityLocationBlock::open_facilities( Range rng ,
  if( not_dry_run( issueAMod ) ) {
 
   // if appropriate, open a new channel to bunch up all abstract Modification
-  auto iAM = make_amod_param( issueAMod , cnt );
+  not_ModBlock( issueAMod );
+  auto iAM = open_if_needed( issueAMod , cnt );
 
   if( ( AR & FormMsk ) != KskForm )
    for( Index i = rng.first ; i < rng.second ; ++i )
@@ -2722,7 +2725,7 @@ void CapacitatedFacilityLocationBlock::open_facilities( Range rng ,
    }
 
   // if a new channel had been opened, close it
-  unmake_amod_param( issueAMod , iAM , cnt );
+  close_if_needed( iAM , cnt );
   }
 
  // conditional bounds could be reset if they were computed looking at
@@ -2774,7 +2777,8 @@ void CapacitatedFacilityLocationBlock::open_facilities( Subset && nms ,
  if( not_dry_run( issueAMod ) ) {
 
   // if appropriate, open a new channel to bunch up all abstract Modification
-  auto iAM = make_amod_param( issueAMod , cnt );
+  not_ModBlock( issueAMod );
+  auto iAM = open_if_needed( issueAMod , cnt );
 
   if( ( AR & FormMsk ) != KskForm )
    for( auto i : nms )
@@ -2787,7 +2791,7 @@ void CapacitatedFacilityLocationBlock::open_facilities( Subset && nms ,
    }
 
   // if a new channel had been opened, close it
-  unmake_amod_param( issueAMod , iAM , cnt );
+  close_if_needed( iAM , cnt );
   }
 
  // conditional bounds could be reset if they were computed looking at
@@ -2877,7 +2881,8 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Range rng ,
  if( not_dry_run( issueAMod ) ) {
 
   // if appropriate, open a new channel to bunch up all abstract Modification
-  auto iAM = make_amod_param( issueAMod , cnt );
+  not_ModBlock( issueAMod );
+  auto iAM = open_if_needed( issueAMod , cnt );
 
   if( ( AR & FormMsk ) != KskForm )
    for( Index i = rng.first ; i < rng.second ; ++i ) {
@@ -2894,7 +2899,7 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Range rng ,
    }
 
   // if a new channel had been opened, close it
-  unmake_amod_param( issueAMod , iAM , cnt );
+  close_if_needed( iAM , cnt );
   }
 
  // conditional bounds could be reset if they were computed looking at
@@ -2946,7 +2951,8 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Subset && nms ,
  if( not_dry_run( issueAMod ) ) {
 
   // if appropriate, open a new channel to bunch up all abstract Modification
-  auto iAM = make_amod_param( issueAMod , cnt );
+  not_ModBlock( issueAMod );
+  auto iAM = open_if_needed( issueAMod , cnt );
 
   if( ( AR & FormMsk ) != KskForm ) {
    for( auto i : nms )
@@ -2963,7 +2969,7 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Subset && nms ,
    }
 
   // if a new channel had been opened, close it
-  unmake_amod_param( issueAMod , iAM , cnt );
+  close_if_needed( iAM , cnt );
   }
 
  // conditional bounds could be reset if they were computed looking at
@@ -3102,6 +3108,23 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
 void CapacitatedFacilityLocationBlock::guts_of_get_R3B_MCF( MCFBlock * mcfb ,
 							    int wR3B )
 {
+ // structure of the graph (remember that node names start from 1):
+ //
+ // - nodes 1 .. f_n_facilities: facility nodes
+ // - nodes f_n_facilities + 1 ... f_n_facilities + f_n_customers:
+ //   customer nodes
+ // - node f_n_facilities + f_n_customers + 1: super-source
+ //
+ // - arcs 0 ... f_n_facilities: from super-source to facility 
+ // - arcs f_n_facilities ... f_n_facilities * ( f_n_customers + 1 ) - 1:
+ //   from source to facility, arranged facility-wise (first f_n_customers
+ //   arcs from 1st facility, then f_n_customers arcs from 2nd facility ...)
+ //
+ // optionally, arcs f_n_facilities * ( f_n_customers + 1 ) ...
+ // f_n_facilities * ( f_n_customers + 1 ) + f_n_customers - 1:
+ // from super-source directly to customers (huge cost, +INF capacity) to
+ // ensure the MCF is never empty
+
  Index NN = f_n_facilities + f_n_customers + 1;
  Index NA = f_n_facilities * ( f_n_customers + 1 );
  if( wR3B > 1 )
@@ -3173,52 +3196,138 @@ void CapacitatedFacilityLocationBlock::guts_of_get_R3B_MCF( MCFBlock * mcfb ,
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
-				     c_DV_it NDem , Range rng ,
+void CapacitatedFacilityLocationBlock::guts_of_chg_tcost_MCF(
+				     MCFBlock * mcfb , Range rng ,
 				     ModParam issueMod , ModParam issueAMod )
 {
- // ensure that the sum of all deficits always remains == 0, which means
- // there will be at least two Modification
- auto iAM = make_amod_param( issueAMod , 2 );
+ c_Index f = rng.first;
+ c_Index s = rng.second;
+
+ if( s == f + 1 ) {
+  mcfb->chg_cost( (v_t_cost.data())[ f ] / v_demand[ f % f_n_customers ] ,
+		  f + f_n_facilities , issueMod , issueAMod );
+  return;
+  }
+
+ CVector NSC( s - f );
+ auto NSCit = NSC.begin();
+ auto tcit =  v_t_cost.data() + f;
+ for( Index h = f ; h < s ; ++h )
+  *(NSCit++) = *(tcit++) / v_demand[ h % f_n_customers ];
+
+ rng.first += f_n_facilities;
+ rng.second += f_n_facilities;
+ 
+ mcfb->chg_costs( NSC.begin() , rng , issueMod , issueAMod );
+
+ }  // end( CapacitatedFacilityLocationBlock::guts_of_chg_tcost_MCF( range ) )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::guts_of_chg_tcost_MCF(
+			             MCFBlock * mcfb , c_Subset & nms ,
+			             ModParam issueMod , ModParam issueAMod )
+{
+ if( nms.size() == 1 ) {
+  Index f = nms.front();
+  mcfb->chg_cost( (v_t_cost.data())[ f ] / v_demand[ f % f_n_customers ] ,
+		  f + f_n_facilities , issueMod , issueAMod );
+  return;
+  }
+
+ CVector NSC( nms.size() );
+ Subset nnms( nms.size() );
+ auto NSCit = NSC.begin();
+ auto nnmsit = nnms.begin();
+ for( Index h : nms ) {
+  *(NSCit++) = v_t_cost.data()[ h ] / v_demand[ h % f_n_customers ];
+  *(nnmsit++) = h + f_n_facilities;
+  }
+
+ mcfb->chg_costs( NSC.begin() , std::move( nnms ) , true ,
+		  issueMod , issueAMod );
+
+ }  // end( CapacitatedFacilityLocationBlock::guts_of_chg_tcost_MCF( range ) )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
+			 Range rng , ModParam issueMod , ModParam issueAMod )
+{
+ // this operation is complicated by the fact that the demands scale the
+ // transportation costs, i.e., the (unitary flow) cost of the transportation
+ // arc ( i , j ) is v_t_cost[ i ][ h ] / v_demand[ j ]
+
+ // there will be three Modification, one for changing costs
+ not_ModBlock( issueAMod );
+ auto iAM = open_if_needed( issueAMod , 3 );
  f_mod_skip = true;
 
- mcfb->chg_dfcts( NDem , Range( rng.first + f_n_facilities ,
-				rng.second + f_n_facilities ) ,
-		  issueMod , iAM );
+ // change the demands: these are the deficits of the corresponding demand
+ // nodes plus the deficit of the super-source, to ensure that the sum of
+ // all deficits always remains == 0
+ mcfb->chg_dfcts( v_demand.begin() + rng.first ,
+		  Range( rng.first + f_n_facilities ,
+			 rng.second + f_n_facilities ) , issueMod , iAM );
 
- mcfb->chg_dfct( f_n_facilities + f_n_customers ,
-		 - std::accumulate( v_demand.begin() , v_demand.end() , 0 ) ,
-		 issueMod , iAM );
+ mcfb->chg_dfct( - std::accumulate( v_demand.begin() , v_demand.end() , 0 ) ,
+		 f_n_facilities + f_n_customers , issueMod , iAM );
+
+ // now update the costs of all arcs ( i , j ) s.t. the capacity of j changed
+ Subset nms( ( rng.second - rng.first ) * f_n_facilities );
+ auto nmsit = nms.begin();
+ for( Index i = 0 ; i < f_n_facilities ; ++i )
+  for( Index j = rng.first ; j < rng.second ; ++j )
+   *(nmsit++) = i * f_n_facilities + j;
+
+ guts_of_chg_tcost_MCF( mcfb , nms , issueMod , iAM );
 
  f_mod_skip = false;
- // close the new channel
- unmake_amod_param( issueAMod , iAM , 2 );
+ close_if_needed( iAM , 3 );  // close the new channel
  }
 
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
-				    c_DV_it NDem , c_Subset & nms ,
-				    ModParam issueMod , ModParam issueAMod )
+		    c_Subset & nms , ModParam issueMod , ModParam issueAMod )
 {
- // ensure that the sum of all deficits always remains == 0, which means
- // there will be at least two Modification
- auto iAM = make_amod_param( issueAMod , 2 );
+ // this operation is complicated by the fact that the demands scale the
+ // transportation costs, i.e., the (unitary flow) cost of the transportation
+ // arc ( i , j ) is v_t_cost[ i ][ h ] / v_demand[ j ]
+
+ // there will be two Modification, one being for changing costs
+ not_ModBlock( issueAMod );
+ auto iAM = open_if_needed( issueAMod , 2 );
  f_mod_skip = true;
 
- Subset nnms( nms.begin() , nms.end() );  // copy and translate nms
- for( auto & el : nnms )
-  el+= f_n_facilities;
+ // change the demands: these are the deficits of the corresponding demand
+ // nodes plus the deficit of the super-source, to ensure that the sum of
+ // all deficits always remains == 0
+ MCFBlock::Vec_FNumber ND( nms.size() + 1 );
+ Subset nnms( nms.size() + 1 );
+ std::copy( nms.begin() , nms.end() , nnms.begin() );
+ auto NDit = ND.begin();
+ for( auto & j : nnms ) {
+  *(NDit++) = v_demand[ j ];
+  j += f_n_facilities;
+  }
 
- mcfb->chg_dfcts( NDem , std::move( nnms ) , true , issueMod , issueAMod );
+ ND.back() = - std::accumulate( v_demand.begin() , v_demand.end() , 0 );
+ nnms.back() = f_n_facilities + f_n_customers;
 
- mcfb->chg_dfct( f_n_facilities + f_n_customers ,
-		 - std::accumulate( v_demand.begin() , v_demand.end() , 0 ) ,
-		 issueMod , issueAMod );
+ mcfb->chg_dfcts( ND.begin() , std::move( nnms ) , true , issueMod , iAM );
+
+ // now update the costs of all arcs ( i , j ) s.t. the capacity of j changed
+ nnms.resize( nms.size() * f_n_facilities );
+ auto nnmsit = nnms.begin();
+ for( Index i = 0 ; i < f_n_facilities ; ++i )
+  for( Index j : nms )
+   *(nnmsit++) = i * f_n_facilities + j;
+
+ guts_of_chg_tcost_MCF( mcfb , nnms , issueMod , iAM );
 
  f_mod_skip = false;
- // close the new channel
- unmake_amod_param( issueAMod , iAM , 2 );    
+ close_if_needed( iAM , 2 );  // close the new channel
  }
 
 /*--------------------------------------------------------------------------*/
@@ -4080,31 +4189,18 @@ bool CapacitatedFacilityLocationBlock::guts_of_map_f_Mod_copy(
  bool ok = true;  // final return value
 
  if( auto tmod = dynamic_cast< const GroupModification * >( mod ) ) {
-  // if the channels are the default ones, open new ones, otherwise nest them
-  auto iPM = issuePMod;
-  if( par2chnl( issuePMod ) )
-   R3B->nest_channel( par2chnl( issuePMod ) );
-  else
-   iPM = make_par( par2mod( issuePMod ) , R3B->open_channel() );
-  auto iPA = issueAMod;
-  if( par2chnl( issueAMod ) )
-   R3B->nest_channel( par2chnl( issueAMod ) );
-  else
-   iPA = make_par( par2mod( issueAMod ) , R3B->open_channel() );
-
-  for( const auto & submod : tmod->sub_Modifications() )  // for each sub-Mod
+  // open / nest two new the channels
+  auto iPM = R3B->open_channel( par2chnl( issuePMod ) );
+  auto iPA = R3B->open_channel( par2chnl( issueAMod ) );
+  
+  // run through each sub-Mod on these channels
+  for( const auto & submod : tmod->sub_Modifications() )
    if( ! guts_of_map_f_Mod_copy( R3B , submod.get() , iPM , iPA ) )
     ok = false;
 
-  // now close the opened channels or un-nest them
-  if( par2chnl( issuePMod ) )
-   R3B->un_nest_channel( par2chnl( issuePMod ) );
-  else
-   R3B->close_channel( par2chnl( iPM ) );
-  if( par2chnl( issueAMod ) )
-   R3B->un_nest_channel( par2chnl( issueAMod ) );
-  else
-   R3B->close_channel( par2chnl( iPA ) );
+  // close / un-nest newly the opened channels
+  R3B->close_channel( par2chnl( iPA ) );
+  R3B->close_channel( par2chnl( iPM ) );
   }
  else  // any other Modification: just make the call
   ok = guts_of_guts_of_map_f_Mod_copy( R3B , mod , issuePMod , issueAMod );
@@ -4336,31 +4432,18 @@ bool CapacitatedFacilityLocationBlock::guts_of_map_f_Mod_MCF(
  bool ok = true;  // final return value
 
  if( auto tmod = dynamic_cast< const GroupModification * >( mod ) ) {
-  // if the channels are the default ones, open new ones, otherwise nest them
-  auto iPM = issuePMod;
-  if( par2chnl( issuePMod ) )
-   R3B->nest_channel( par2chnl( issuePMod ) );
-  else
-   iPM = make_par( par2mod( issuePMod ) , R3B->open_channel() );
-  auto iPA = issueAMod;
-  if( par2chnl( issueAMod ) )
-   R3B->nest_channel( par2chnl( issueAMod ) );
-  else
-   iPA = make_par( par2mod( issueAMod ) , R3B->open_channel() );
-
-  for( const auto & submod : tmod->sub_Modifications() )  // for each sub-Mod
+  // open / nest two new the channels
+  auto iPM = R3B->open_channel( par2chnl( issuePMod ) );
+  auto iPA = R3B->open_channel( par2chnl( issueAMod ) );
+  
+  // run through each sub-Mod on these channels
+  for( const auto & submod : tmod->sub_Modifications() )
    if( ! guts_of_map_f_Mod_MCF( R3B , submod.get() , iPM , iPA ) )
     ok = false;
 
-  // now close the opened channels or un-nest them
-  if( par2chnl( issuePMod ) )
-   R3B->un_nest_channel( par2chnl( issuePMod ) );
-  else
-   R3B->close_channel( par2chnl( iPM ) );
-  if( par2chnl( issueAMod ) )
-   R3B->un_nest_channel( par2chnl( issueAMod ) );
-  else
-   R3B->close_channel( par2chnl( iPA ) );
+  // close / un-nest newly the opened channels
+  R3B->close_channel( par2chnl( iPA ) );
+  R3B->close_channel( par2chnl( iPM ) );
   }
  else  // any other Modification: just make the call
   ok = guts_of_guts_of_map_f_Mod_MCF( R3B , mod , issuePMod , issueAMod );
@@ -4407,32 +4490,29 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
     break;
 
    case( CapacitatedFacilityLocationBlockMod::eChgTCost ):  //- - - - - - - -
-    if( s == f + 1 )
-     R3B->chg_cost( (v_t_cost.data())[ f ] , f + f_n_facilities ,
+    guts_of_chg_tcost_MCF( R3B , tmod->rng() , issuePMod , issueAMod );
+    break;
+
+   case( CapacitatedFacilityLocationBlockMod::eChgCap ):  //- - - - - - - - -
+    if( s == f + 1 ) {
+     R3B->chg_ucap( v_capacity[ f ] , f , issuePMod , issueAMod );
+     R3B->chg_cost( v_f_cost[ f ] / v_capacity[ f ] , f ,
 		    issuePMod , issueAMod );
-    else{
+      }
+    else {
+     R3B->chg_ucaps( v_capacity.begin() + f , tmod->rng() ,
+		     issuePMod , issueAMod );
      MCFBlock::Vec_CNumber NC( s - f );
      auto NCit = NC.begin();
      for( Index i = f ; i < s ; ++i )
-      *(NCit++) = (v_t_cost.data())[ i ]; 
-     R3B->chg_costs( NC.begin() , Range( f + f_n_facilities ,
-					 s + f_n_facilities ) ,
-		     issuePMod , issueAMod );
+      *(NCit++) = v_f_cost[ i ] / v_capacity[ i ];
+     R3B->chg_costs( NC.begin() , tmod->rng() , issuePMod , issueAMod );
      }
 
     break;
 
-   case( CapacitatedFacilityLocationBlockMod::eChgCap ):  //- - - - - - - - -
-    if( s == f + 1 )
-     R3B->chg_ucap( v_capacity[ f ] , f , issuePMod , issueAMod );
-    else
-     R3B->chg_ucaps( v_capacity.begin() + f , tmod->rng() ,
-		     issuePMod , issueAMod );
-    break;
-
    case( CapacitatedFacilityLocationBlockMod::eChgDem ):  //- - - - - - - - -
-    guts_of_chg_dem_MCF( R3B , v_demand.begin() + f , tmod->rng() ,
-			 issuePMod , issueAMod );
+    guts_of_chg_dem_MCF( R3B , tmod->rng() , issuePMod , issueAMod );
     break;
 
    case( CapacitatedFacilityLocationBlockMod::eCloseF ):  //- - - - - - - - -
@@ -4485,36 +4565,30 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
      }
 
     break;
-    
+
    case( CapacitatedFacilityLocationBlockMod::eChgTCost ):  //- - - - - - - -
-    if( tmod->nms().size() == 1 )
-     R3B->chg_cost( (v_t_cost.data())[ tmod->nms().front() ] ,
-		    tmod->nms().front() + f_n_facilities ,
-		    issuePMod , issueAMod );
-    else {
-     MCFBlock::Vec_CNumber NC( tmod->nms().size() );
-     Subset nnms( tmod->nms() );
-     auto NCit = NC.begin();
-     for( auto & i : nnms ) {
-      *(NCit++) = (v_t_cost.data())[ i ];
-      i += f_n_facilities;
-      }
-     R3B->chg_costs( NC.begin() , std::move( nnms ) , true ,
-		     issuePMod , issueAMod );
-     }
- 
+    guts_of_chg_tcost_MCF( R3B , tmod->nms() , issuePMod , issueAMod );
     break;
 
    case( CapacitatedFacilityLocationBlockMod::eChgCap ):  //- - - - - - - - -
-    if( tmod->nms().size() == 1 )
-     R3B->chg_ucap( v_capacity[ tmod->nms().front() ] , tmod->nms().front() ,
+    if( tmod->nms().size() == 1 ) {
+     Index f = tmod->nms().front();
+     R3B->chg_ucap( v_capacity[ f ] , f , issuePMod , issueAMod );
+     R3B->chg_cost( v_f_cost[ f ] / v_capacity[ f ] , f ,
 		    issuePMod , issueAMod );
+     }
     else {
-     MCFBlock::Vec_FNumber NC( tmod->nms().size() );
-     auto NCit = NC.begin();
-     for( auto i : tmod->nms() )
-      *(NCit++) = v_capacity[ i ]; 
-     R3B->chg_ucaps( NC.begin() , Subset( tmod->nms() ) , true ,
+     MCFBlock::Vec_FNumber NCP( tmod->nms().size() );
+     MCFBlock::Vec_CNumber NCS( tmod->nms().size() );
+     auto NCPit = NCP.begin();
+     auto NCSit = NCS.begin();
+     for( auto i : tmod->nms() ) {
+      *(NCPit++) = v_capacity[ i ];
+      *(NCSit++) = v_f_cost[ i ] / v_capacity[ i ];
+      }
+     R3B->chg_ucaps( NCP.begin() , Subset( tmod->nms() ) , true ,
+		     issuePMod , issueAMod );
+     R3B->chg_costs( NCS.begin() , Subset( tmod->nms() ) , true ,
 		     issuePMod , issueAMod );
      }
 
@@ -4526,8 +4600,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
     for( auto i : tmod->nms() )
      *(NDit++) = v_demand[ i ]; 
 
-    guts_of_chg_dem_MCF( R3B , ND.begin() , tmod->nms() ,
-			 issuePMod , issueAMod );
+    guts_of_chg_dem_MCF( R3B , tmod->nms() , issuePMod , issueAMod );
     break;
     }
 
@@ -4930,50 +5003,6 @@ void CapacitatedFacilityLocationBlock::set_x(
 
  }  // end( set_x( Subset ) )
  
-/*--------------------------------------------------------------------------*/
-
-ModParam CapacitatedFacilityLocationBlock::make_amod_param(
-					     ModParam issueAMod , Index num )
-{
- if( ! num )
-  return( issueAMod );
-
- if( issue_mod( issueAMod ) ) {
-  ChnlName chnl = par2chnl( issueAMod );
-  if( num > 1 ) {            // more than one Modification have to be issued
-    if( chnl )               // and a channel is already provided
-     nest_channel( chnl );   // nest it
-    else                     // it was being sent to default channel
-     chnl = open_channel();  // open a new channel
-                             // note that the GroupModification will
-     // automatically be a "physical Modification" (i.e., concerns_Block()
-     // == false) since such will be all the Modification there inside: in
-     // fact, they will all be issued with the return value, which is eNoBlck
-   }
-
-  return( make_par( eNoBlck , chnl ) );
-  }
- else
-  return( eNoMod );
- }
-
-/*--------------------------------------------------------------------------*/
-
-void CapacitatedFacilityLocationBlock::unmake_amod_param( ModParam oldiAM ,
-						ModParam newiAM , Index num )
-{
- if( ( newiAM == eNoMod ) || ( ! num ) )
-  return;
-
- ChnlName chnl = par2chnl( newiAM );
- if( num > 1 ) {               // a channel had been opened/nested
-  if( par2chnl( oldiAM ) )     // that's "nested"
-   un_nest_channel( chnl );    // un-nest it
-  else                         // that's "opened"
-   close_channel( chnl );      // close it
-  }
- }
-
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG

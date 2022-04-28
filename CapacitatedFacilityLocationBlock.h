@@ -1842,11 +1842,17 @@ public:
  void guts_of_destructor( void );
 
  void guts_of_get_R3B_MCF( MCFBlock * mcfb , int wR3B );
+
+ void guts_of_chg_tcost_MCF( MCFBlock * mcfb , Range rng ,
+			     ModParam issueMod , ModParam issueAMod );
+
+ void guts_of_chg_tcost_MCF( MCFBlock * mcfb , c_Subset & nms ,
+			     ModParam issueMod , ModParam issueAMod );
  
- void guts_of_chg_dem_MCF( MCFBlock * mcfb , c_DV_it NDem , Range rng ,
+ void guts_of_chg_dem_MCF( MCFBlock * mcfb , Range rng ,
 			   ModParam issueMod , ModParam issueAMod );
 
- void guts_of_chg_dem_MCF( MCFBlock * mcfb , c_DV_it NDem , c_Subset & nms ,
+ void guts_of_chg_dem_MCF( MCFBlock * mcfb , c_Subset & nms ,
 			   ModParam issueMod , ModParam issueAMod );
 
  void guts_of_add_ModificationSF( c_p_Mod mod , ChnlName chnl );
