@@ -490,25 +490,28 @@ public:
   *   The linking constraints (1) are the only static group of Constraint
   *   in the CapacitatedFacilityLocationBlock.
   *
-  * - wf & 3 == 2: the Benders-friendly "flow formulation" (FF). In this case,
+  * - wf & 3 >= 2: the Benders-friendly "flow formulation" (FF). In this case,
   *   CapacitatedFacilityLocationBlock "grows" two sub-Block. The first one
   *   only has f_n_facilities kBinary variables corresponding with the
   *   design ones Y[ i ]. The second is instead a MCFBlock representing the
   *   continuous relaxation of the problem as produced by get_R3_Block()
-  *   with wr3b == 2 (see), except the costs of the "facility arcs" are set
-  *   to 0. Then, the CapacitatedFacilityLocationBlock contains the linking
-  *   constraints
+  *   with wr3b == ( wf & 3 ) - 1, except the costs of the "facility arcs"
+  *   are set to 0. Then, the CapacitatedFacilityLocationBlock contains the
+  *   linking constraints
   *   \f[
   *     arc_flow[ i ] \leq Q[ i ] Y[ i ]                       i \in I
   *   \f]
   *   where arc_flow[ i ] is the flow on the "facility arc" corresponding to
-  *   facility i in the MCFBlock. In this case, setting wf & 4 true
-  *   (wf == 6) is not supported in that the flows in the MCFBlock are scaled
-  *   and there is no (simple) way to include the required integrality
-  *   constraints.
-  *
-  * - wf & 3 == 3: currently unused, but it may be an explicit pattern-based
-  *   formulation amenable to a direct Column Generation approach. */
+  *   facility i in the MCFBlock. The difference between wf & 3 == 2 (i.e.,
+  *   wr3b == 1) and wf & 3 == 3 (i.e., wr3b == 2) is that in the former
+  *   case the reformulation is "exact" (the problem is completely equivalent
+  *   to that of all the other formulations), while in the second it is
+  *   "approximate" in that wr3b == 2 causes the addition of extra high-cost
+  *   "slack arcs" that ensure that the instance is always feasible even if
+  *   the aggregate demand is larger than the aggregate facility capacity
+  *   (see get_R3_Block() for details). In this case, setting wf & 4 true
+  *   is not supported in that the flows in the MCFBlock are scaled and there
+  *   is no (simple) way to include the required integrality constraints. */
 
  void generate_abstract_variables( Configuration *stvv = nullptr ) override;
 
@@ -1846,13 +1849,13 @@ public:
  void guts_of_chg_tcost_MCF( MCFBlock * mcfb , Range rng ,
 			     ModParam issueMod , ModParam issueAMod );
 
- void guts_of_chg_tcost_MCF( MCFBlock * mcfb , c_Subset & nms ,
+ void guts_of_chg_tcost_MCF( MCFBlock * mcfb , c_Subset & nms , bool ordered ,
 			     ModParam issueMod , ModParam issueAMod );
  
  void guts_of_chg_dem_MCF( MCFBlock * mcfb , Range rng ,
 			   ModParam issueMod , ModParam issueAMod );
 
- void guts_of_chg_dem_MCF( MCFBlock * mcfb , c_Subset & nms ,
+ void guts_of_chg_dem_MCF( MCFBlock * mcfb , c_Subset & nms , bool ordered ,
 			   ModParam issueMod , ModParam issueAMod );
 
  void guts_of_add_ModificationSF( c_p_Mod mod , ChnlName chnl );
