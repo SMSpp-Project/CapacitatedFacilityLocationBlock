@@ -91,6 +91,12 @@ static constexpr unsigned char HasCapCns = 64;
 static constexpr unsigned char HasStrngCns = 128;
 // 8th bit of AR == 1 if the strong Linking Constraints are separated
 
+static constexpr unsigned char yFree = 0;  // facility is free
+
+static constexpr unsigned char yFxd0 = 1;  // facility is closed
+
+static constexpr unsigned char yFxd1 = 2;  // facility is fixed-open
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- FUNCTIONS -------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -230,6 +236,9 @@ void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
  v_t_cost.resize( boost::extents[ m ][ n ] );
  v_t_cost = std::move( C );
 
+ v_fxd.resize( m );
+ std::fill( v_fxd.begin() , v_fxd.end() , yFree );
+
  f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
 
  // throw Modification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -274,6 +283,8 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input ,
  v_f_cost.resize( f_n_facilities );
  v_demand.resize( f_n_customers );
  v_t_cost.resize( boost::extents[ f_n_facilities ][ f_n_customers ] );
+ v_fxd.resize( f_n_facilities );
+ std::fill( v_fxd.begin() , v_fxd.end() , yFree );
 
  // now the format-specific parts
  switch( std::toupper( frmt ) ) {
@@ -470,6 +481,17 @@ void CapacitatedFacilityLocationBlock::deserialize(
  tc.getVar( std::vector< std::size_t >( 2 , 0 ) , tcs ,
 	    v_t_cost.data() );
 
+ v_fxd.resize( f_n_facilities );
+ auto ff = group.getVar( "FacilityFix" );
+ if( ff.isNull() )
+  std::fill( v_fxd.begin() , v_fxd.end() , yFree );
+ else {
+  auto ffs = ::get_sizes_dimensions( ff );
+  if( ( ffs.size() != 1 ) || ( ffs[ 0 ] != f_n_facilities ) )
+   throw( std::logic_error( _prfx + "FacilityFix has wrong size" ) );
+  ff.getVar( v_fxd.data() );
+  }
+
  f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
 
  // call the method of Block- - - - - - - - - - - - - - - - - - - - - - - - -
@@ -501,8 +523,14 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
                        // - - - - - - - - - - - - - - - - - - - - - - - - - -
   // AR |= StdForm;  does nothing
   v_y.resize( f_n_facilities );
-  for( auto & yi : v_y )
+  auto fxdit = v_fxd.begin();
+  for( auto & yi : v_y ) {
    yi.set_type( ColVariable::kBinary );
+   if( auto fi = *(fxdit++) ) {
+    yi.set_value( fi == yFxd0 ? 0 : 1 );
+    yi.is_fixed( true , eNoMod );
+    }
+   }
   add_static_variable( v_y , "y" );
 
   v_x.resize( boost::extents[ f_n_facilities ][ f_n_customers ] );
@@ -555,9 +583,12 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
    W[ f_n_customers ] = - v_capacity[ i ];
    P[ f_n_customers ] = v_f_cost[ i ];
 
-   BKB( v_Block[ i ] )->load( f_n_customers + 1 , 0 , W , P , I );
-   BKB( v_Block[ i ] )->set_objective_sense( false , eNoMod , eNoMod );
-   v_Block[ i ]->generate_abstract_variables();
+   auto bi = BKB( v_Block[ i ] );
+   bi->load( f_n_customers + 1 , 0 , W , P , I );
+   if( v_fxd[ i ] != yFree )
+    bi->fix_x(  v_fxd[ i ] == yFxd1 , i , eNoMod , eNoMod );    
+   bi->set_objective_sense( false , eNoMod , eNoMod );
+   bi->generate_abstract_variables();
    }
 
   return;
@@ -574,8 +605,14 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   v_Block[ 0 ] = ab;
 
   v_y.resize( f_n_facilities );
-  for( auto & yi : v_y )
+  auto fxdit = v_fxd.begin();
+  for( auto & yi : v_y ) {
    yi.set_type( ColVariable::kBinary );
+   if( auto fi = *(fxdit++) ) {
+    yi.set_value( fi == yFxd0 ? 0 : 1 );
+    yi.is_fixed( true , eNoMod );
+    }
+   }
   ab->add_static_variable( v_y , "y" );
 
   // the second Block is a MCFBlock as constructed by get_R3_Block
@@ -808,7 +845,7 @@ void CapacitatedFacilityLocationBlock::generate_dynamic_constraints(
  for( Index i = 0 ; i < f_n_facilities ; ++i ) {  // for each i
   // construct the list of [FRow]Constraint corresponding to y_i
   std::list< FRowConstraint > lst;
-  ColVariable * yi = & get_y( i );
+  auto * yi = get_y( i );
   while( ( fit != found.end() ) && ( std::get< 1 >( *fit ) == i ) ) {
    std::list< FRowConstraint > li( 1 );
    li.back().set_rhs( 0 );
@@ -822,7 +859,7 @@ void CapacitatedFacilityLocationBlock::generate_dynamic_constraints(
    // x_{ij} - v_demand[ j ] y_i <= 0
    p[ 0 ] = std::make_pair( yi , ( AR & FormMsk ) == FlwForm
 			         ? - v_demand[ j ] : -1 );
-   p[ 1 ] = std::make_pair( & get_x( i , j ) , 1 );
+   p[ 1 ] = std::make_pair( get_x( i , j ) , 1 );
 
    /*!!
    std::cerr << std::endl << "i = " << i << ", j = " << j << ", y_i = "
@@ -935,12 +972,12 @@ bool CapacitatedFacilityLocationBlock::is_feasible( bool useabstract ,
 
  // check variable feasibility
  for( Index i = 0 ; i < f_n_facilities ; ++i )
-  if( ! get_y( i ).is_feasible( eps ) )
+  if( ! get_y( i )->is_feasible( eps ) )
    return( false );
 
  for( Index i = 0 ; i < f_n_facilities ; ++i )
   for( Index j = 0 ; j < f_n_customers ; ++j )
-   if( ! get_x( i , j ).is_feasible( eps ) )
+   if( ! get_x( i , j )->is_feasible( eps ) )
     return( false );
 
  return( customer_feasible( eps , useabstract ) &&
@@ -982,7 +1019,7 @@ bool CapacitatedFacilityLocationBlock::customer_feasible( double eps ,
   for( Index j = 0 ; j < f_n_customers ; ++j ) {
    double tot = 0;
    for( Index i = 0 ; i < f_n_facilities ; ++i )
-    tot += get_x( i , j ).get_value();
+    tot += get_x( i , j )->get_value();
 
    if( std::abs( 1 - tot ) > eps )
     return( false );
@@ -1032,9 +1069,9 @@ bool CapacitatedFacilityLocationBlock::facility_feasible( double eps ,
   // do it using the physical representation- - - - - - - - - - - - - - - - -
 
   for( Index i = 0 ; i < f_n_facilities ; ++i ) {
-   auto tot = v_capacity[ i ] * get_y( i ).get_value();
+   auto tot = v_capacity[ i ] * get_y( i )->get_value();
    for( Index j = 0 ; j < f_n_customers ; ++j )
-    tot -= v_demand[ j ] * get_x( i , j ).get_value();
+    tot -= v_demand[ j ] * get_x( i , j )->get_value();
 
    if( tot < - eps * v_capacity[ i ] )
     return( false );
@@ -1064,6 +1101,7 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
  if( ! wR3B ) {  // "copy" R3B- - - - - - - - - - - - - - - - - - - - - - - -
                  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+  // create the CapacitatedFacilityLocationBlock or take it from base
   CapacitatedFacilityLocationBlock * CFLB;
   if( base ) {
    CFLB = dynamic_cast< CapacitatedFacilityLocationBlock * >( base );
@@ -1074,9 +1112,32 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
   else
    CFLB = new CapacitatedFacilityLocationBlock( father );
 
+  // load the data of the problem
   CFLB->load( f_n_facilities , f_n_customers , v_capacity , v_f_cost ,
 	      v_demand , v_t_cost );
- 
+
+  // now copy over the fixed-to-0 status, if any
+  if( auto nf = std::count_if( v_fxd.begin() , v_fxd.end() ,
+			       []( auto el ) { return( el == yFxd0 ); } ) ) {
+   Subset tfx( nf );
+   auto tfxit = tfx.begin();
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    if( v_fxd[ i ] == yFxd0 )
+     *(tfxit++) = i;
+   CFLB->close_facilities( std::move( tfx ) , true , eNoMod , eNoMod );
+   }
+
+  // now copy over the fixed-to-1 status, if any
+  if( auto nf = std::count_if( v_fxd.begin() , v_fxd.end() ,
+			       []( auto el ) { return( el == yFxd1 ); } ) ) {
+   Subset tfx( nf );
+   auto tfxit = tfx.begin();
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    if( v_fxd[ i ] == yFxd1 )
+     *(tfxit++) = i;
+   CFLB->fix_open_facilities( std::move( tfx ) , true , eNoMod , eNoMod );
+   }
+
   return( CFLB );
   }
 
@@ -1628,7 +1689,7 @@ void CapacitatedFacilityLocationBlock::add_Modification( sp_Mod mod ,
 void CapacitatedFacilityLocationBlock::print( std::ostream & output ,
 					      char vlvl ) const
 {
- if( vlvl != 'C' ) {  // non-complete version
+ if( std::tolower( vlvl ) != 'c' ) {  // non-complete version
   // only basic information 
   output << "CapacitatedFacilityLocationBlock with: " << f_n_facilities
 	 << " facilities and " << f_n_customers << " customers" << std::endl;
@@ -1680,6 +1741,11 @@ void CapacitatedFacilityLocationBlock::serialize( netCDF::NcGroup & group )
 
  ::serialize( group , "TransportationCost" , netCDF::NcDouble() ,
               { nf , nc } , v_t_cost );
+
+ if( std::any_of( v_fxd.begin() , v_fxd.end() ,
+		  []( auto fi ) { return( fi != yFree ); } ) )
+  ( group.addVar( "FacilityFix" , netCDF::NcChar() , nf )
+    ).putVar( v_fxd.data() );
 
  }  // end( CapacitatedFacilityLocationBlock::serialize )
 
@@ -1987,7 +2053,6 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
      tNC = oNC.begin();
      ordered = true;
      }
-    
 
     Index i = nms.front() / f_n_customers;
     if( ( nms.back() / f_n_customers ) == i ) {
@@ -2527,23 +2592,16 @@ void CapacitatedFacilityLocationBlock::close_facilities( Range rng ,
  if( rng.second <= rng.first )  // nothing to change
   return;                       // cowardly (and silently) return
 
- if( ! ( AR & HasVar ) )
-  throw( std::logic_error(
-	       "close_facilities unavailable if Variable not generated" ) );
-
  // TODO: if some changes are "fake", restrict the range
  Index cnt = 0;
  for( Index i = rng.first ; i < rng.second ; ++i )
-  if( ! get_y( i ).is_fixed() )
+  if( v_fxd[ i ] != yFree )
    ++cnt;
 
  if( ! cnt )  // all facilities are fixed already
   return;     // nothing to do
 
- // since the physical and abstract representation are the same, anything
- // that has to do with the abstract representation is skipped in the
- // "dry run" case; but the "phisical Modification" is issued anyway
- if( not_dry_run( issueAMod ) ) {
+ if( ( AR & HasVar ) && not_dry_run( issueAMod ) ) {
 
   // if appropriate, open a new channel to bunch up all abstract Modification
   not_ModBlock( issueAMod );
@@ -2551,21 +2609,30 @@ void CapacitatedFacilityLocationBlock::close_facilities( Range rng ,
 
   if( ( AR & FormMsk ) != KskForm ) {
    for( Index i = rng.first ; i < rng.second ; ++i )
-    if( ! v_y[ i ].is_fixed() ) {
+    if( v_fxd[ i ] == yFree ) {
+     v_fxd[ i ] = yFxd0;
      v_y[ i ].set_value( 0 );
      v_y[ i ].is_fixed( true , iAM );
      }
    }
   else {
    f_mod_skip = true;
-   for( Index i = rng.first ; i < rng.second ; ++i )
+   for( Index i = rng.first ; i < rng.second ; ++i ) {
+    if( v_fxd[ i ] == yFree )
+     v_fxd[ i ] = yFxd0;
     BKB( v_Block[ i ] )->fix_x( false , f_n_customers , issueMod , iAM );
+    }
    f_mod_skip = false;
    }
 
   // if a new channel had been opened, close it
   close_if_needed( iAM , cnt );
   }
+ else
+  if( not_dry_run( issueMod ) )
+   for( Index i = rng.first ; i < rng.second ; ++i )
+    if( v_fxd[ i ] == yFree )
+     v_fxd[ i ] = yFxd0;
 
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not and therefore they are not (reset)
@@ -2590,10 +2657,6 @@ void CapacitatedFacilityLocationBlock::close_facilities( Subset && nms ,
  if( nms.empty() )  // nothing to change
   return;           // cowardly (and silently) return
 
- if( ! ( AR & HasVar ) )
-  throw( std::logic_error(
-	       "close_facilities unavailable if Variable not generated" ) );
-
  // ensure the names are ordered even if they were not so originally
  if( ! ordered )
   std::sort( nms.begin() , nms.end() );
@@ -2604,16 +2667,13 @@ void CapacitatedFacilityLocationBlock::close_facilities( Subset && nms ,
  // TODO: if some changes are "fake", restrict the subset
  Index cnt = 0;
  for( auto i : nms )
-  if( ! get_y( i ).is_fixed() )
+  if( v_fxd[ i ] != yFree )
    ++cnt;
 
  if( ! cnt )  // all facilities are fixed already
   return;     // nothing to do
 
- // since the physical and abstract representation are the same, anything
- // that has to do with the abstract representation is skipped in the
- // "dry run" case; but the "phisical Modification" is issued anyway
- if( not_dry_run( issueAMod ) ) {
+ if( ( AR & HasVar ) && not_dry_run( issueAMod ) ) {
 
   // if appropriate, open a new channel to bunch up all abstract Modification
   not_ModBlock( issueAMod );
@@ -2621,21 +2681,30 @@ void CapacitatedFacilityLocationBlock::close_facilities( Subset && nms ,
 
   if( ( AR & FormMsk ) != KskForm ) {
    for( auto i : nms )
-    if( ! v_y[ i ].is_fixed() ) {
+    if( v_fxd[ i ] == yFree ) {
+     v_fxd[ i ] = yFxd0;
      v_y[ i ].set_value( 0 );
      v_y[ i ].is_fixed( true , iAM );
      }
    }
   else {
    f_mod_skip = true;
-   for( auto i : nms )
+   for( auto i : nms ) {
+    if( v_fxd[ i ] == yFree )
+     v_fxd[ i ] = yFxd0;
     BKB( v_Block[ i ] )->fix_x( false , f_n_customers , issueMod , iAM );
+    }
    f_mod_skip = false;
    }
 
   // if a new channel had been opened, close it
   close_if_needed( iAM , cnt );
   }
+ else
+  if( not_dry_run( issueMod ) )
+   for( auto i : nms )
+    if( v_fxd[ i ] == yFree )
+     v_fxd[ i ] = yFxd0;
 
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not and therefore they are not (reset)
@@ -2660,17 +2729,11 @@ void CapacitatedFacilityLocationBlock::close_facility( Index i ,
  if( i >= f_n_facilities )
  throw( std::invalid_argument( "invalid facility name" ) );
 
- if( ! ( AR & HasVar ) )
-  throw( std::logic_error(
-	       "close_facilities unavailable if Variable not generated" ) );
+ if( v_fxd[ i ] != yFree )  // fixed already
+  return;                   // nothing to do
 
- if( get_y( i ).is_fixed() )  // fixed already
-  return;                     // nothing to do
-
- // since the physical and abstract representation are the same, anything
- // that has to do with the abstract representation is skipped in the
- // "dry run" case; but the "phisical Modification" is issued anyway
- if( not_dry_run( issueAMod ) ) {
+ if( ( AR & HasVar ) && not_dry_run( issueAMod ) ) {
+  v_fxd[ i ] = yFxd0;
 
   if( ( AR & FormMsk ) != KskForm ) {
    v_y[ i ].set_value( 0 );
@@ -2682,6 +2745,9 @@ void CapacitatedFacilityLocationBlock::close_facility( Index i ,
    f_mod_skip = false;
    }
   }
+ else
+  if( not_dry_run( issueMod ) )
+   v_fxd[ i ] = yFxd0;
 
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not and therefore they are not (reset)
@@ -2707,41 +2773,45 @@ void CapacitatedFacilityLocationBlock::open_facilities( Range rng ,
  if( rng.second <= rng.first )  // nothing to change
   return;                       // cowardly (and silently) return
 
- if( ! ( AR & HasVar ) )
-  throw( std::logic_error(
-	       "open_facilities unavailable if Variable not generated" ) );
-
  // TODO: if some changes are "fake", restrict the range
  Index cnt = 0;
  for( Index i = rng.first ; i < rng.second ; ++i )
-  if( get_y( i ).is_fixed() )
+  if( v_fxd[ i ] != yFree )
    ++cnt;
 
  if( ! cnt )  // all facilities are open already
   return;     // nothing to do
 
- // since the physical and abstract representation are the same, anything
- // that has to do with the abstract representation is skipped in the
- // "dry run" case; but the "phisical Modification" is issued anyway
- if( not_dry_run( issueAMod ) ) {
+ if( ( AR & HasVar ) && not_dry_run( issueAMod ) ) {
 
   // if appropriate, open a new channel to bunch up all abstract Modification
   not_ModBlock( issueAMod );
   auto iAM = open_if_needed( issueAMod , cnt );
 
-  if( ( AR & FormMsk ) != KskForm )
+  if( ( AR & FormMsk ) != KskForm ) {
    for( Index i = rng.first ; i < rng.second ; ++i )
-    v_y[ i ].is_fixed( false , iAM );
+    if( v_fxd[ i ] != yFree ) {
+     v_fxd[ i ] = yFree;
+     v_y[ i ].is_fixed( false , iAM );
+     }
+   }
   else {
    f_mod_skip = true;
    for( Index i = rng.first ; i < rng.second ; ++i )
-    BKB( v_Block[ i ] )->unfix_x( f_n_customers , issueMod , iAM );
+    if( v_fxd[ i ] != yFree ) {
+     v_fxd[ i ] = yFree;
+     BKB( v_Block[ i ] )->unfix_x( f_n_customers , issueMod , iAM );
+     }
    f_mod_skip = false;
    }
 
   // if a new channel had been opened, close it
   close_if_needed( iAM , cnt );
   }
+ else
+  if( not_dry_run( issueMod ) )
+   for( Index i = rng.first ; i < rng.second ; ++i )
+    v_fxd[ i ] = yFree;
 
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not and therefore they are not (reset)
@@ -2766,10 +2836,6 @@ void CapacitatedFacilityLocationBlock::open_facilities( Subset && nms ,
  if( nms.empty() )  // nothing to change
   return;           // cowardly (and silently) return
 
- if( ! ( AR & HasVar ) )
-  throw( std::logic_error(
-	        "open_facilities unavailable if Variable not generated" ) );
-
  // ensure the names are ordered even if they were not so originally
  if( ! ordered )
   std::sort( nms.begin() , nms.end() );
@@ -2780,34 +2846,42 @@ void CapacitatedFacilityLocationBlock::open_facilities( Subset && nms ,
  // TODO: if some changes are "fake", restrict the subset
  Index cnt = 0;
  for( auto i : nms )
-  if( get_y( i ).is_fixed() )
+  if( v_fxd[ i ] != yFree )
    ++cnt;
 
  if( ! cnt )  // all facilities are open already
   return;     // nothing to do
 
- // since the physical and abstract representation are the same, anything
- // that has to do with the abstract representation is skipped in the
- // "dry run" case; but the "phisical Modification" is issued anyway
- if( not_dry_run( issueAMod ) ) {
+ if( ( AR & HasVar ) && not_dry_run( issueAMod ) ) {
 
   // if appropriate, open a new channel to bunch up all abstract Modification
   not_ModBlock( issueAMod );
   auto iAM = open_if_needed( issueAMod , cnt );
 
-  if( ( AR & FormMsk ) != KskForm )
+  if( ( AR & FormMsk ) != KskForm ) {
    for( auto i : nms )
-    v_y[ i ].is_fixed( false , iAM );
+    if( v_fxd[ i ] != yFree ) {
+     v_fxd[ i ] = yFree;
+     v_y[ i ].is_fixed( false , iAM );
+     }
+   }
   else {
    f_mod_skip = true;
    for( auto i : nms )
-    BKB( v_Block[ i ] )->unfix_x( f_n_customers , issueMod , iAM );
+    if( v_fxd[ i ] != yFree ) {
+     v_fxd[ i ] = yFree;
+     BKB( v_Block[ i ] )->unfix_x( f_n_customers , issueMod , iAM );
+     }
    f_mod_skip = false;
    }
 
   // if a new channel had been opened, close it
   close_if_needed( iAM , cnt );
   }
+ else
+  if( not_dry_run( issueMod ) )
+   for( auto i : nms )
+    v_fxd[ i ] = yFree;
 
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not and therefore they are not (reset)
@@ -2832,17 +2906,11 @@ void CapacitatedFacilityLocationBlock::open_facility( Index i ,
  if( i >= f_n_facilities )
  throw( std::invalid_argument( "invalid facility name" ) );
 
- if( ! ( AR & HasVar ) )
-  throw( std::logic_error(
-	       "open_facilities unavailable if Variable not generated" ) );
+ if( v_fxd[ i ] == yFree )  // open already
+  return;                   // nothing to do
 
- if( ! get_y( i ).is_fixed() )  // fixed already
-  return;                       // nothing to do
-
- // since the physical and abstract representation are the same, anything
- // that has to do with the abstract representation is skipped in the
- // "dry run" case; but the "phisical Modification" is issued anyway
- if( not_dry_run( issueAMod ) ) {
+ if( ( AR & HasVar ) && not_dry_run( issueAMod ) ) {
+  v_fxd[ i ] = yFree;
 
   if( ( AR & FormMsk ) != KskForm )
    v_y[ i ].is_fixed( false , un_ModBlock( issueAMod ) );
@@ -2852,6 +2920,9 @@ void CapacitatedFacilityLocationBlock::open_facility( Index i ,
    f_mod_skip = false;
    }
   }
+ else
+  if( not_dry_run( issueMod ) )
+   v_fxd[ i ] = yFree;
 
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not and therefore they are not (reset)
@@ -2877,23 +2948,16 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Range rng ,
  if( rng.second <= rng.first )  // nothing to change
   return;                       // cowardly (and silently) return
 
- if( ! ( AR & HasVar ) )
-  throw( std::logic_error(
-	     "fix_open_facilities unavailable if Variable not generated" ) );
-
  // TODO: if some changes are "fake", restrict the range
  Index cnt = 0;
  for( Index i = rng.first ; i < rng.second ; ++i )
-  if( ! get_y( i ).is_fixed() )
+  if( v_fxd[ i ] == yFree )
    ++cnt;
 
  if( ! cnt )  // all facilities are fixed already
   return;     // nothing to do
 
- // since the physical and abstract representation are the same, anything
- // that has to do with the abstract representation is skipped in the
- // "dry run" case; but the "phisical Modification" is issued anyway
- if( not_dry_run( issueAMod ) ) {
+ if( ( AR & HasVar ) && not_dry_run( issueAMod ) ) {
 
   // if appropriate, open a new channel to bunch up all abstract Modification
   not_ModBlock( issueAMod );
@@ -2901,21 +2965,30 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Range rng ,
 
   if( ( AR & FormMsk ) != KskForm )
    for( Index i = rng.first ; i < rng.second ; ++i ) {
-    if( ! v_y[ i ].is_fixed() ) {
+    if( v_fxd[ i ] == yFree ) {
+     v_fxd[ i ] = yFxd1;
      v_y[ i ].set_value( 1 );
      v_y[ i ].is_fixed( true , iAM );
      }
     }
   else {
    f_mod_skip = true;
-   for( Index i = rng.first ; i < rng.second ; ++i )
+   for( Index i = rng.first ; i < rng.second ; ++i ) {
+    if( v_fxd[ i ] == yFree )
+     v_fxd[ i ] = yFxd1;
     BKB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , iAM );
+    }
    f_mod_skip = true;
    }
 
   // if a new channel had been opened, close it
   close_if_needed( iAM , cnt );
   }
+ else
+  if( not_dry_run( issueAMod ) )
+   for( Index i = rng.first ; i < rng.second ; ++i )
+    if( v_fxd[ i ] == yFree )
+     v_fxd[ i ] = yFxd1;
 
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not and therefore they are not (reset)
@@ -2940,10 +3013,6 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Subset && nms ,
  if( nms.empty() )  // nothing to change
   return;           // cowardly (and silently) return
 
- if( ! ( AR & HasVar ) )
-  throw( std::logic_error(
-	     "fix_open_facilities unavailable if Variable not generated" ) );
-
  // ensure the names are ordered even if they were not so originally
  if( ! ordered )
   std::sort( nms.begin() , nms.end() );
@@ -2954,16 +3023,13 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Subset && nms ,
  // TODO: if some changes are "fake", restrict the subset
  Index cnt = 0;
  for( auto i : nms )
-  if( ! get_y( i ).is_fixed() )
+  if( v_fxd[ i ] == yFree )
    ++cnt;
 
  if( ! cnt )  // all facilities are fixed already
   return;     // nothing to do
 
- // since the physical and abstract representation are the same, anything
- // that has to do with the abstract representation is skipped in the
- // "dry run" case; but the "phisical Modification" is issued anyway
- if( not_dry_run( issueAMod ) ) {
+ if( ( AR & HasVar ) && not_dry_run( issueAMod ) ) {
 
   // if appropriate, open a new channel to bunch up all abstract Modification
   not_ModBlock( issueAMod );
@@ -2971,21 +3037,31 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Subset && nms ,
 
   if( ( AR & FormMsk ) != KskForm ) {
    for( auto i : nms )
-    if( ! v_y[ i ].is_fixed() ) {
+    if( v_fxd[ i ] == yFree ) {
+     v_fxd[ i ] = yFxd1;
      v_y[ i ].set_value( 1 );
      v_y[ i ].is_fixed( true , iAM );
      }
    }
   else {
    f_mod_skip = true;
-   for( auto i : nms )
+   for( auto i : nms ) {
+    if( v_fxd[ i ] == yFree )
+     v_fxd[ i ] = yFxd1;
     BKB( v_Block[ i ] )->fix_x( true , f_n_customers , issueMod , iAM );
+    }
    f_mod_skip = false;
    }
 
   // if a new channel had been opened, close it
   close_if_needed( iAM , cnt );
   }
+ else
+  if( not_dry_run( issueMod ) )
+   for( auto i : nms )
+    if( v_fxd[ i ] == yFree )
+     v_fxd[ i ] = yFxd1;
+   
 
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not and therefore they are not (reset)
@@ -3010,18 +3086,12 @@ void CapacitatedFacilityLocationBlock::fix_open_facility( Index i ,
  if( i >= f_n_facilities )
  throw( std::invalid_argument( "invalid facility name" ) );
 
- if( ! ( AR & HasVar ) )
-  throw( std::logic_error(
-	       "close_facilities unavailable if Variable not generated" ) );
+ if( v_fxd[ i ] != yFree )  // fixed already
+  return;                   // nothing to do
 
- if( get_y( i ).is_fixed() )  // fixed already
-  return;                     // nothing to do
-
- // since the physical and abstract representation are the same, anything
- // that has to do with the abstract representation is skipped in the
- // "dry run" case; but the "phisical Modification" is issued anyway
- if( not_dry_run( issueAMod ) ) {
-
+ if( ( AR & HasVar ) && not_dry_run( issueAMod ) ) {
+  v_fxd[ i ] = yFxd1;
+ 
   if( ( AR & FormMsk ) != KskForm ) {
    v_y[ i ].set_value( 1 );
    v_y[ i ].is_fixed( true , un_ModBlock( issueAMod ) );
@@ -3032,6 +3102,9 @@ void CapacitatedFacilityLocationBlock::fix_open_facility( Index i ,
    f_mod_skip = false;
    }
   }
+ else
+  if( not_dry_run( issueMod ) )
+   v_fxd[ i ] = yFxd1;
 
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not and therefore they are not (reset)
@@ -3173,7 +3246,8 @@ void CapacitatedFacilityLocationBlock::guts_of_get_R3B_MCF( MCFBlock * mcfb ,
   SN[ a ] = ss;
   EN[ a ] = i + 1;
   U[ a ] = v_capacity[ i ];
-  C[ a++ ] = v_f_cost[ i ] / v_capacity[ i ];
+  // arcs corresponding to fixed-open facilities have 0 cost
+  C[ a++ ] = v_fxd[ i ] != yFxd1 ? v_f_cost[ i ] / v_capacity[ i ] : 0;
   }
 
  // now the facility -> customers arcs
@@ -3207,6 +3281,15 @@ void CapacitatedFacilityLocationBlock::guts_of_get_R3B_MCF( MCFBlock * mcfb ,
 
  mcfb->load( NN , NA , EN , SN , U , C , B );
 
+ if( auto nf = std::count_if( v_fxd.begin() ,  v_fxd.end() ,
+			      [] ( auto el ) { return( el == yFxd0 ); } ) ) {
+  Subset tfx( nf );
+  auto tfxit = tfx.begin();
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   if( v_fxd[ i ] == yFxd0 )
+    *(tfxit++) = i;
+  mcfb->close_arcs( std::move( tfx ) , true , eNoMod , eNoMod );
+  }
  }  // end( CapacitatedFacilityLocationBlock::guts_of_get_R3B_MCF )
 
 /*--------------------------------------------------------------------------*/

@@ -401,7 +401,15 @@ public:
   *   is assumed to contain the *total* cost of serving customer i from
   *   facility j
   *
-  * All the dimensions and variables are mandatory. */
+  * All the dimensions and variables are mandatory. However, the optional
+  *
+  * - variable "FacilityFix", of type char and indexed over the dimension
+  *   "NFacilities"; the j-th entry of the variable is assumed to contain
+  *   0 (yFree) if the facility is not fixed, 1 (yFix0) if the facility is
+  *   closed, and 2 (yFix1) if the facility is fixed open
+  *
+  * may also be present to represent if any of the facilities is either
+  * closed or fixed open (if not, all facilities are considered free). */
 
  void deserialize( const netCDF::NcGroup & group ) override;
 
@@ -744,6 +752,27 @@ public:
   return( v_t_cost[ facility ][ customer ] );
   }
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// given an index i return true if the corresponding facility is fixed
+
+ bool is_fixed( Index i ) const {
+  return( v_fxd[ i ] != 0 );  // 0 == yFree
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// given an index i return true if the corresponding facility is closed
+
+ bool is_closed( Index i ) const {
+  return( v_fxd[ i ] == 1 );  // 1 == yFxd0
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// given an index i return true if the corresponding facility is fixed open
+
+ bool is_fixed_open( Index i ) const {
+  return( v_fxd[ i ] == 2 );  // 2 == yFxd1
+  }
+
 /** @} ---------------------------------------------------------------------*/
 /*--------------------- Methods for checking the Block ---------------------*/
 /*--------------------------------------------------------------------------*/
@@ -1005,31 +1034,32 @@ public:
 			  bool emptys = true ) override;
 
 /*--------------------------------------------------------------------------*/
- /// gets (a reference to) the y[] variable corresponding to facility i
- /** Gets a reference to the ColVariable representing whether or not facility
-  * i is constructed. */
+ /// gets (a pointer to) the y[] variable corresponding to facility i
+ /** Gets a pointer to the ColVariable representing whether or not facility
+  * i is constructed; returns nullptr if the abstract representation has not
+  * been constructed (yet). */
 
- ColVariable & get_y( Index i ) const {
-  #ifndef NDEBUG
-   if( ! ( AR & 8 ) )  // 8 == HasVar
-    throw( std::logic_error( "get_y: variables not generated" ) );
-   if( i >= f_n_facilities )
-    throw( std::logic_error( "get_y: invalid facility index" ) );
-  #endif
+ ColVariable * get_y( Index i ) const {
+  if( ! ( AR & 8 ) )  // 8 == HasVar
+   return( nullptr );
+
+  if( i >= f_n_facilities )
+   throw( std::logic_error( "get_y: invalid facility index" ) );
 
   if( ( AR & 3 ) == 1 )  // 3 = FormMsk , 1 = KskForm
-   return( * static_cast< BinaryKnapsackBlock * >(
+   return( static_cast< BinaryKnapsackBlock * >(
 				   v_Block[ i ] )->get_Var( f_n_customers ) );
 
   // note the need for the const_cast as all fields of the class are const
   // inside of a const method (this is const)
-  return( const_cast< ColVariable & >( v_y[ i ] ) );
+  return( const_cast< ColVariable * >( & v_y[ i ] ) );
   }
 
 /*--------------------------------------------------------------------------*/
- /// gets (a reference to) the x[ i ][ j ] variable
- /** Gets a reference to the ColVariable representing how much of the demand
-  * of the customer j is served by facility i.
+ /// gets (a pointer to) the x[ i ][ j ] variable
+ /** Gets a pointer to the ColVariable representing how much of the demand
+  * of the customer j is served by facility i; returns nullptr if the
+  * abstract representation has not been constructed (yet).
   *
   * Important note: in the Standard and Knapsack Formulation the variable
   *                 is in [ 0 , 1 ] and represents the fraction of the
@@ -1039,26 +1069,25 @@ public:
   *                 get the actual value in [ 0 , 1 ] one must divide its
   *                 value by the demand of j. */
 
- ColVariable & get_x( Index i , Index j ) const {
-  #ifndef NDEBUG
-   if( ! ( AR & 8 ) )  // 8 == HasVar
-    throw( std::logic_error( "get_x: variables not generated" ) );
+ ColVariable * get_x( Index i , Index j ) const {
+  if( ! ( AR & 8 ) )  // 8 == HasVar
+   return( nullptr );
+
   if( i >= f_n_facilities )
-    throw( std::logic_error( "get_x: invalid facility index" ) );
+   throw( std::logic_error( "get_x: invalid facility index" ) );
   if( j >= f_n_customers )
-    throw( std::logic_error( "get_x: invalid customer index" ) );
-  #endif
+   throw( std::logic_error( "get_x: invalid customer index" ) );
 
   if( ( AR & 3 ) == 0 )  // 3 = FormMsk, 0 = StdForm
-   return( const_cast< ColVariable & >( v_x[ i ][ j ] ) );
+   return( const_cast< ColVariable * >( & v_x[ i ][ j ] ) );
    // note the need for the const_cast as all fields of the class are const
    // inside of a const method (this is const)
 
   if( ( AR & 3 ) == 1 )  // 3 = FormMsk, 0 = StdForm
-   return( * static_cast< BinaryKnapsackBlock * >(
+   return( static_cast< BinaryKnapsackBlock * >(
 				              v_Block[ i ] )->get_Var( j ) );
 
-  return( * static_cast< MCFBlock * >( v_Block[ 1 ] )->i2p_x(
+  return( static_cast< MCFBlock * >( v_Block[ 1 ] )->i2p_x(
 			          f_n_facilities + i * f_n_customers + j ) );
   }
 
@@ -1662,6 +1691,11 @@ public:
                         /**< The matrix of transportation costs is arranged
 			 * facility-wise, i.e., v_t_cost[ i ][ j ] is the
   * *total* transportation cost between facility i and customer j. */
+
+ std::vector< unsigned char > v_fxd;  ///< vector saying how the y are fixed
+                                      /**< f_fxd[ i ] indicates if y_i is
+				       * fixed, with the following encoding:
+  * 0 = not fixed, 1 = fixed to 0 (closed), 2 = fixed to 1 (fixed_open) */
 
  // abstract representation stuff - - - - - - - - - - - - - - - - - - - - - -
 
