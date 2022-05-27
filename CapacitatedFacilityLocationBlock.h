@@ -1081,9 +1081,9 @@ public:
   if( ( AR & 3 ) == 0 )  // 3 = FormMsk, 0 = StdForm
    return( const_cast< ColVariable * >( & v_x[ i ][ j ] ) );
    // note the need for the const_cast as all fields of the class are const
-   // inside of a const method (this is const)
+   // inside of a const method like this one is
 
-  if( ( AR & 3 ) == 1 )  // 3 = FormMsk, 0 = StdForm
+  if( ( AR & 3 ) == 1 )  // 3 = FormMsk , 1 = KskForm
    return( static_cast< BinaryKnapsackBlock * >(
 				              v_Block[ i ] )->get_Var( j ) );
 

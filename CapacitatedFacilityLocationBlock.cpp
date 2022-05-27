@@ -980,6 +980,7 @@ bool CapacitatedFacilityLocationBlock::is_feasible( bool useabstract ,
    if( ! get_x( i , j )->is_feasible( eps ) )
     return( false );
 
+ // now check constraints feasibility
  return( customer_feasible( eps , useabstract ) &&
 	 facility_feasible( eps , useabstract ) );
 
@@ -1001,9 +1002,11 @@ bool CapacitatedFacilityLocationBlock::customer_feasible( double eps ,
 
   if( ( ( AR & FormMsk ) == StdForm ) ||
       ( ( AR & FormMsk ) == KskForm ) ) {
-   for( const auto & cnst : v_sat )
+   for( auto & cnst : v_sat ) {
+    cnst.compute();
     if( cnst.rel_viol() > eps )
      return( false );
+    }
 
    return( true );
    }
@@ -1046,9 +1049,11 @@ bool CapacitatedFacilityLocationBlock::facility_feasible( double eps ,
 
   if( ( ( AR & FormMsk ) == StdForm ) ||
       ( ( AR & FormMsk ) == FlwForm ) ) {
-   for( const auto & cnst : v_cap )
+   for( auto & cnst : v_cap ) {
+    cnst.compute();
     if( cnst.rel_viol() > eps )
      return( false );
+    }
 
    return( true );
    }
@@ -4797,7 +4802,7 @@ void CapacitatedFacilityLocationBlock::get_y(
 
  if( ( AR & FormMsk ) == KskForm ) {  // knapsack formulation- - - - - - - - -
   for( Index i = rng.first ; i < rng.second ; )
-   *(Sol++) = BKB( v_Block[ i ] )->get_x( f_n_customers );
+   *(Sol++) = BKB( v_Block[ i++ ] )->get_x( f_n_customers );
   return;
   }
 
@@ -4869,16 +4874,19 @@ void CapacitatedFacilityLocationBlock::get_x(
 					    rng.second % f_n_customers ) );
    return;
    }
-  // it's at least two facilities
-  for( Index h = rng.first ; h < rng.second ; ++h , ++i ) {
-   Index scnd = std::min( rng.second - h , f_n_customers );
-   BKB( v_Block[ i ] )->get_x( Sol , Range( frst , scnd ) );
-   if( scnd < f_n_customers )
+  // it's at least two facilities: deal with the first
+  BKB( v_Block[ i++ ] )->get_x( Sol , Range( frst , f_n_customers ) );
+  Index k = f_n_customers - frst;
+  Index h = rng.first + k;
+  Sol += k;
+  // now from the second on
+  while( h < rng.second ) {
+   k = std::min( rng.second - h , f_n_customers );
+   BKB( v_Block[ i++ ] )->get_x( Sol , Range( 0 , k ) );
+   if( k < f_n_customers )
     break;
-   scnd -= frst;
-   frst = 0;
-   h += scnd;
-   Sol += scnd;
+   h += f_n_customers;
+   Sol += f_n_customers;
    }
   return;
   }
@@ -4963,7 +4971,7 @@ void CapacitatedFacilityLocationBlock::set_y(
 
  if( ( AR & FormMsk ) == KskForm ) {  // knapsack formulation- - - - - - - - -
   for( Index i = rng.first ; i < rng.second ; )
-   BKB( v_Block[ i ] )->set_x( f_n_customers , *(Sol++) );
+   BKB( v_Block[ i++ ] )->set_x( f_n_customers , *(Sol++) );
   return;
   }
 
@@ -5035,16 +5043,19 @@ void CapacitatedFacilityLocationBlock::set_x(
 					    rng.second % f_n_customers ) );
    return;
    }
-  // it's at least two facilities
-  for( Index h = rng.first ; h < rng.second ; ++h , ++i ) {
-   Index scnd = std::min( rng.second - h , f_n_customers );
-   BKB( v_Block[ i ] )->set_x( Sol , Range( frst , scnd ) );
-   if( scnd < f_n_customers )
+  // it's at least two facilities: deal with the first
+  BKB( v_Block[ i++ ] )->set_x( Sol , Range( frst , f_n_customers ) );
+  Index k = f_n_customers - frst;
+  Index h = rng.first + k;
+  Sol += k;
+  // now from the second on
+  while( h < rng.second ) {
+   k = std::min( rng.second - h , f_n_customers );
+   BKB( v_Block[ i++ ] )->set_x( Sol , Range( 0 , k ) );
+   if( k < f_n_customers )
     break;
-   scnd -= frst;
-   frst = 0;
-   h += scnd;
-   Sol += scnd;
+   h += f_n_customers;
+   Sol += f_n_customers;
    }
   return;
   }
