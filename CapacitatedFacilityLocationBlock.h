@@ -138,17 +138,17 @@ namespace SMSpp_di_unipi_it
  *
  * - CapacitatedFacilityLocationBlock supports a number of different
  *   formulations of the problem, among which ones suitable for the use of
- *   decomposition approaches;
+ *   decomposition approaches; see the comments to
+ *   generate_abstract_variables();
  *
  * - CapacitatedFacilityLocationBlock supports reformulations/relaxations of
- *   the problem via the "R3Block" mechanism;
- *
- * - ... possibly others.
+ *   the problem via the "R3Block" mechanism; see the comments to
+ *   get_R3_Block().
  *
  * The current implementation of the class is only an initial version, and
  * features are expected to be added along time.
  *
- * As such, the class currently only supports only a subset of the possible
+ * As such, the class currently1 only supports only a subset of the possible
  * operations on the data of the problem. This starts with the fact that
  *
  *     THE SIZE OF THE PROBLEM IS STATIC AND CAN NEVER BE CHANGED
@@ -163,7 +163,20 @@ namespace SMSpp_di_unipi_it
  *   that all the changes happen at the same time and that the corresponding
  *   Modification are bunched together in a GroupModification, which is
  *   possible but complex and not implemented yet. The change is instead
- *   possible in the Flow Formulation where demands are node deficits. */
+ *   possible in the Flow Formulation where demands are node deficits.
+ *
+ * - Changing the splittable/unsplittable form of the problem, i.e., the
+ *   integrality of all variables x[ i ][ j ], via the abstract
+ *   representation is never allowed.
+ *
+ * - The unsplittable version of the problem cannot be represented when
+ *   using the Flow Formulaition (this is inherent and unlikely to ever
+ *   change).
+ *
+ * - The Modification corresponding to changing the type of the problem are
+ *   ignored in map_forward_Modification() to a MCF R3Block, since this
+ *   represents a continuous relaxation of the original CFL and therefore it
+ *   is identical in the splittable and unsplittable case. */
 
 class CapacitatedFacilityLocationBlock : public Block
 {
@@ -250,14 +263,14 @@ public:
  explicit CapacitatedFacilityLocationBlock( Block *father = nullptr )
   : Block( father ) , f_n_facilities( 0 ) , f_n_customers( 0 ) ,
     f_unsplittable( false ) , AR( 0 ) , f_cond_lower( dNaN ) ,
-  f_cond_upper( dNaN ) , f_mod_skip( false ) {}
+    f_cond_upper( dNaN ) , f_mod_skip( false ) {}
 
 /*--------------------------------------------------------------------------*/
  /// destructor; deletes the abstract representation, if any
 
  virtual ~CapacitatedFacilityLocationBlock() { guts_of_destructor(); }
 
-/**@} ----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Other initializations
@@ -266,24 +279,27 @@ public:
  /// loads the CFL instance from memory, moving the input data
  /** Loads the CFL instance from memory. The parameters are what you expect:
   *
-  * - m    is the number of facilities
+  * - m is the number of facilities
   *
-  * - n    is the number of customers
+  * - n is the number of customers
   *
-  * - Q    is the std::vector< Demand > of the facility capacities, that
-  *        must have exactly size() == m
+  * - Q is the std::vector< Demand > of the facility capacities, that must
+  *   have exactly size() == m
   *
-  * - F    is the std::vector< FCost > of the facility opening costs, that
-  *        must have exactly size() == m
+  * - F is the std::vector< FCost > of the facility opening costs, that must
+  *   have exactly size() == m
   *
-  * - D    is the std::vector< Demand > of the customers demand, that must
-  *        have exactly size() == n
+  * - D is the std::vector< Demand > of the customers demand, that must have
+  *   exactly size() == n
   *
-  * - C    is the boost::multi_array< TCost , 2 > matrix of transportation
-  *        costs, arranged facility-wise; this means that C[ i ] for i \in I
-  *        is a n-vector so that C[ i ][ j ] is the total transportation cost
-  *        between facility i and customer j, i.e., the cost of serving all
-  *        the demand D[ j ] of customer j out of facility i.
+  * - C is the boost::multi_array< TCost , 2 > matrix of transportation costs,
+  *   arranged facility-wise; this means that C[ i ] for i \in I is a n-vector
+  *   so that C[ i ][ j ] is the total transportation cost between facility i
+  *   and customer j, i.e., the cost of serving all the demand D[ j ] of
+  *   customer j out of facility i.
+  *
+  * - unsplt is the bool that, if true [default], denotes that the
+  *   unsplittable version of of the problem needs be solved.
   *
   * As the && tells, all the data becomes property of the
   * CapacitatedFacilityLocationBlock.
@@ -293,7 +309,7 @@ public:
   * option") is issued. */
 
  void load( Index m , Index n , DVector && Q , CVector && F ,
-	    DVector && D , CMatrix && C );
+	    DVector && D , CMatrix && C , bool unsplt = false );
 
 /*--------------------------------------------------------------------------*/
  /// loads the CFL instance from memory, copying the input data
@@ -302,8 +318,9 @@ public:
   * the vectors/metrices are copied rather than moved.  */
 
  void load( Index m , Index n , c_DVector & Q , c_CVector & F ,
-	    c_DVector & D , c_CMatrix & C ) {
-  load( m , n , DVector( Q ) , CVector( F ) , DVector( D ) , CMatrix( C ) );
+	    c_DVector & D , c_CMatrix & C , bool unsplt = false ) {
+  load( m , n , DVector( Q ) , CVector( F ) , DVector( D ) , CMatrix( C ),
+	unsplt );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -369,7 +386,11 @@ public:
   *
   * Like load( memory ), if there is any Solver attached to this
   * CapacitatedFacilityLocationBlock then a NBModification (the "nuclear
-  * option") is issued. */
+  * option") is issued.
+  *
+  * Note that the text input format does not allow to specify whether the
+  * splittable or unsplittable version of the problem is solved; by default
+  * the splittable one is assumed. */
 
  void load( std::istream & input , char frmt = 0 ) override;
 
@@ -409,7 +430,16 @@ public:
   *   closed, and 2 (yFix1) if the facility is fixed open
   *
   * may also be present to represent if any of the facilities is either
-  * closed or fixed open (if not, all facilities are considered free). */
+  * closed or fixed open (if not, all facilities are considered free). Also,
+  * the optional
+  *
+  * - dimension "UnSplittable" can be present; if so, and it contains a
+  *   nonzero value, then the problem is considered an unsplittable one
+  *   (each customer must be served by one and only one facility).
+  *
+  * Otherwise (the dimension is not there or it contains zero) then the
+  * problem is considered an splittable one (customer can be served by any
+  * number of facilities). */
 
  void deserialize( const netCDF::NcGroup & group ) override;
 
@@ -651,9 +681,9 @@ public:
  *  @{ */
 
 /*--------------------------------------------------------------------------*/
- /// getting the current sense of the Objective, which is minimization
+ /// getting the current sense of the Objective, which is always minimization
 
- int get_objective_sense( void ) const override {
+ [[nodiscard]] int get_objective_sense( void ) const override {
   return( Objective::eMin );
   }
   
@@ -664,7 +694,7 @@ public:
   * j \in J, the term \f$ C[ i , j ] \f$ corresponding to the maximum
   * \f$ C[ i , j ] \f$ among all possible i \in I. */
 
- double get_valid_upper_bound( bool conditional = false )
+ [[nodiscard]] double get_valid_upper_bound( bool conditional = false )
   override final {
   if( ! conditional )
    return( + Inf<double>() );
@@ -682,7 +712,7 @@ public:
   * j \in J, the term \f$ C[ i , j ] \f$ corresponding to the minimum
   * \f$ C[ i , j ] \f$ among all possible i \in I. */
 
- double get_valid_lower_bound( bool conditional = false )
+ [[nodiscard]] double get_valid_lower_bound( bool conditional = false )
   override final {
   if( std::isnan( f_cond_lower ) )
    compute_conditional_bounds();
@@ -693,47 +723,65 @@ public:
 /*--------------------------------------------------------------------------*/
  /// get the number of facilities
 
- Index get_NFacilities( void ) const { return( f_n_facilities ); }
+ [[nodiscard]] Index get_NFacilities( void ) const {
+  return( f_n_facilities );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the number of customers
 
- Index get_NCustomers( void ) const { return( f_n_customers ); }
+ [[nodiscard]] Index get_NCustomers( void ) const {
+  return( f_n_customers );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the splittable/unsplittale status
 
- bool get_Unsplittable( void ) const { return( f_unsplittable ); }
+ [[nodiscard]] bool get_UnSplittable( void ) const {
+  return( f_unsplittable );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the vector of facility capacities
 
- c_DVector & get_Capacities( void ) const { return( v_capacity ); }
+ [[nodiscard]] c_DVector & get_Capacities( void ) const {
+  return( v_capacity );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the capacity of facility i (0 <= i < get_NFacilities())
 
- Demand get_Capacity( Index i ) const { return( v_capacity[ i ] ); }
+ [[nodiscard]] Demand get_Capacity( Index i ) const {
+  return( v_capacity[ i ] );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the vector of facility fixed costs
 
- c_CVector & get_Fixed_Costs( void ) const { return( v_f_cost ); }
+ [[nodiscard]] c_CVector & get_Fixed_Costs( void ) const {
+  return( v_f_cost );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the fixed cost of facility i (0 <= i < get_NFacilities())
 
- Cost get_Fixed_Cost( Index i ) const { return( v_f_cost[ i ] ); }
+ [[nodiscard]] Cost get_Fixed_Cost( Index i ) const {
+  return( v_f_cost[ i ] );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the vector of customers' demands
 
- c_DVector & get_Demands( void ) const { return( v_demand ); }
+ [[nodiscard]] c_DVector & get_Demands( void ) const {
+  return( v_demand );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the demands of customer i (0 <= i < get_NCustomers())
 
- Demand get_Demand( Index i ) const { return( v_demand[ i ] ); }
+ [[nodiscard]] Demand get_Demand( Index i ) const {
+  return( v_demand[ i ] );
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the matrix of transportation costs
@@ -741,35 +789,36 @@ public:
   * element [ i ][ j ] is the *unitary* transportation cost between facility
   * i and customer j. */
 
- c_CMatrix & get_Transportation_Costs( void ) const {
+ [[nodiscard]] c_CMatrix & get_Transportation_Costs( void ) const {
   return( v_t_cost );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the transportation cost for a given pair ( facility , customer )
 
- Cost get_Transportation_Cost( Index facility , Index customer ) const {
+ [[nodiscard]] Cost get_Transportation_Cost( Index facility , Index customer )
+  const {
   return( v_t_cost[ facility ][ customer ] );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// given an index i return true if the corresponding facility is fixed
 
- bool is_fixed( Index i ) const {
+ [[nodiscard]] bool is_fixed( Index i ) const {
   return( v_fxd[ i ] != 0 );  // 0 == yFree
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// given an index i return true if the corresponding facility is closed
 
- bool is_closed( Index i ) const {
+ [[nodiscard]] bool is_closed( Index i ) const {
   return( v_fxd[ i ] == 1 );  // 1 == yFxd0
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// given an index i return true if the corresponding facility is fixed open
 
- bool is_fixed_open( Index i ) const {
+ [[nodiscard]] bool is_fixed_open( Index i ) const {
   return( v_fxd[ i ] == 2 );  // 2 == yFxd1
   }
 
@@ -893,9 +942,9 @@ public:
   *
   * - any other value: not supported (exception is thrown) */
 
- Block * get_R3_Block( Configuration * r3bc = nullptr ,
-		       Block * base = nullptr , Block * father = nullptr )
-  override;
+ [[nodiscard]] Block * get_R3_Block( Configuration * r3bc = nullptr ,
+				     Block * base = nullptr ,
+				     Block * father = nullptr ) override;
 
 /*--------------------------------------------------------------------------*/
  /// maps back the solution from a R3Block
@@ -979,8 +1028,11 @@ public:
  /** Maps back Modification from a R3Block; the r3bc has the same meaning as
   * in get_R3_Block() and specifies what kind of R3Block R3B is.
   *
-  * Comments to be completed.
-  */
+  * Currently, this is only implemented for the "copy" R3Block (dur to the
+  * fantastically dirty trick whereby, since the two objects are copies,
+  * mapping back a Modification to this from R3B is the same as mapping
+  * forward a Modification from R3B to this); it will always return false
+  * otherwise. */
 
  bool map_back_Modification( Block * R3B , c_p_Mod mod ,
 			     Configuration * r3bc = nullptr ,
@@ -1030,8 +1082,8 @@ public:
   * CapacitatedFacilityLocationBlock because the former uses some type
   * information declared in the latter. */ 
 
- Solution * get_Solution( Configuration * solc = nullptr ,
-			  bool emptys = true ) override;
+ [[nodiscard]]  Solution * get_Solution( Configuration * solc = nullptr ,
+					 bool emptys = true ) override;
 
 /*--------------------------------------------------------------------------*/
  /// gets (a pointer to) the y[] variable corresponding to facility i
@@ -1039,7 +1091,7 @@ public:
   * i is constructed; returns nullptr if the abstract representation has not
   * been constructed (yet). */
 
- ColVariable * get_y( Index i ) const {
+ [[nodiscard]] ColVariable * get_y( Index i ) const {
   if( ! ( AR & 8 ) )  // 8 == HasVar
    return( nullptr );
 
@@ -1069,7 +1121,7 @@ public:
   *                 get the actual value in [ 0 , 1 ] one must divide its
   *                 value by the demand of j. */
 
- ColVariable * get_x( Index i , Index j ) const {
+ [[nodiscard]] ColVariable * get_x( Index i , Index j ) const {
   if( ! ( AR & 8 ) )  // 8 == HasVar
    return( nullptr );
 
@@ -1176,7 +1228,7 @@ public:
 /*--------------------------------------------------------------------------*/
  /// returns the objective value of the current solution
 
- RealObjective::OFValue get_objective_value( void );
+ [[nodiscard]] RealObjective::OFValue get_objective_value( void );
 
 /*--------------------------------------------------------------------------*/
  /// sets a contiguous interval of the (integer) facility solution
@@ -1265,30 +1317,6 @@ public:
 /** @name Methods for handling Modification
  *  @{ */
 
- /// returns true if there is any Solver "listening to me"
- /** Returns true if there is any Solver "listening to me", or if the
-  * CapacitatedFacilityLocationBlock has to "listen" anyway because the
-  * "abstract" representation is constructed, and therefore "abstract"
-  * Modification have to be generated anyway to keep the two representations
-  * in sync.
-  *
-  * No, this should not be needed. In fact, if the "abstract" representation
-  * is modified with the default eModBlck value of issueMod, it is issued
-  * irrespectively to the value of anyone_there(); see Observer::issue_mod().
-  * If the value of issueMod is anything else the  "abstract" representation
-  * has been modified already and there is no point in issuing the
-  * Modification.
-  * Note that that Observer::issue_mod() does not check if the "abstract"
-  * representation has been constructed, but this is clearly not
-  * necessary, as the Modification we are speaking of are issued while
-  * changing the "abstract" representation, if that has not been
-  * constructed then it cannot issue Modification
-
- bool anyone_there( void ) const override {
-  return( ( AR & 7 ) ? true : Block::anyone_there() );
-  }
- */
-/*--------------------------------------------------------------------------*/
  /// adding a new Modification to the CapacitatedFacilityLocationBlock
  /** Method for handling Modification.
   *
@@ -1657,6 +1685,21 @@ public:
  void fix_open_facility( Index i , ModParam issueMod = eNoBlck ,
 			           ModParam issueAMod = eNoBlck );
 
+/*--------------------------------------------------------------------------*/
+ /// changes the splittable/unsplittale status of the problem
+ /** If \p unsplt == true [default], sets the problem to be the unsplittable
+  * version, where each customer need be served by exactly one facility;
+  * otherwise sets the problem to be the splittable version, where each
+  * customer can be served by any number of facilities).
+  *
+  * The unsplittable version of the problem cannot be represented when
+  * using the Flow Formulaition (this is inherent since flow variables are
+  * scaled), so calling chg_UnSplittable( true  ) will result in an exception
+  * been thrown. */
+
+ void chg_UnSplittable( bool unsplt = true , ModParam issueMod = eNoBlck ,
+			                     ModParam issueAMod = eNoBlck   );
+
 /** @} ---------------------------------------------------------------------*/
 /*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -1976,17 +2019,19 @@ public:
 /*--------------------------------------------------------------------------*/
 /// Modification for changes to a CapacitatedFacilityLocationBlock
 /** Derived class from Modification to describe changes to a
- * CapacitatedFacilityLocationBlock. This is acutally "sort of abstract",
- * since it does not say exactly what is changed, this being demanded to
- * derived classes (which do this in different ways). Note that it is derived
- * from Modification rather than, say, BlockMod (which has the same structure)
- * because this is a class of "physical Modification". This means that a
- * CapacitatedFacilityLocationBlockMod refers to changes in the "physical
- * representation" of the CapacitatedFacilityLocationBlock; the corresponding
- * changes in the "abstract representation" (if any) are dealt with by means
- * of "abstract Modification", i.e., derived classes from AModification (as
- * is BlockMod, which is why CapacitatedFacilityLocationBlockMod is not
- * derived from BlockMod). */
+ * CapacitatedFacilityLocationBlock. This is "almost abstract", since it is
+ * only directly used to communicate changes "without data", i.e., the
+ * problem type to be set to splittable/unsplittable, while most of the
+ * changes involve specifying which (part of the) data has changed, and this
+ * is demanded to derived classes (which do this in different ways). Note
+ * that it is derived from Modification rather than, say, BlockMod (which has
+ * the same structure) because this is a class of "physical Modification".
+ * This means that a CapacitatedFacilityLocationBlockMod refers to changes in
+ * the "physical representation" of the CapacitatedFacilityLocationBlock; the
+ * corresponding changes in the "abstract representation" (if any) are dealt
+ * with by means of "abstract Modification", i.e., derived classes from
+ * AModification (as is BlockMod, which is why
+ * CapacitatedFacilityLocationBlockMod is not derived from BlockMod). */
 
 class CapacitatedFacilityLocationBlockMod : public Modification
 {
@@ -2004,7 +2049,9 @@ class CapacitatedFacilityLocationBlockMod : public Modification
   eChgDem       ,   ///< change the customers demands
   eCloseF       ,   ///< close facilities
   eOpenF        ,   ///< re-open facilities
-  eBuyF             ///< fix open facilities
+  eBuyF         ,   ///< fix open facilities
+  eChgUnSplt    ,   ///< change problem type to unspliitable
+  eChgSplt          ///< change problem type to spliitable
   };
 
 /*---------------------- CONSTRUCTOR & DESTRUCTOR --------------------------*/

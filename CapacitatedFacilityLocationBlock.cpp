@@ -43,17 +43,6 @@ using namespace SMSpp_di_unipi_it;
 /*-------------------------------- TYPES -----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-/*
-using Index = Block::Index;
-using c_Index = Block::c_Index;
-
-using Range = Block::Range;
-using c_Range = Block::c_Range;
-
-using Subset = Block::Subset;
-using c_Subset = Block::c_Subset;
-*/
-
 using v_coeff_pair = LinearFunction::v_coeff_pair;
 
 /*--------------------------------------------------------------------------*/
@@ -153,18 +142,7 @@ static void copyidx( T * vec , Block::c_Subset & nms ,
   *( vec + nm ) = *(cpy++);
  }
 
-/*----------------------------------------------------------------------------
-// re-order the parallel vec and nms in increasing order of nms
-
-template< typename T >
-static void copyidx( std::vector< T > & vec , c_Subset & nms ,
-		     typename std::vector< T >::const_iterator cpy )
-{
- for( auto nm : nms )
-  vec[ nm ] = *(cpy++);
- }
-
-----------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -184,7 +162,8 @@ SMSpp_insert_in_factory_cpp_1( CapacitatedFacilityLocationSolution );
 
 void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
 					     DVector && Q , CVector && F ,
-					     DVector && D , CMatrix && C )
+					     DVector && D , CMatrix && C ,
+					     bool unsplt )
 {
  static const std::string _prfx = "CapacitatedFacilityLocationBlock::load: ";
 
@@ -240,6 +219,8 @@ void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
  std::fill( v_fxd.begin() , v_fxd.end() , yFree );
 
  f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
+
+ f_unsplittable = unsplt;
 
  // throw Modification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // note: this is a NBModification, the "nuclear option"
@@ -389,6 +370,7 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input ,
      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
+ f_unsplittable = false;
 
  // issue Modification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // note: this is a NBModification, the "nuclear option"
@@ -492,8 +474,14 @@ void CapacitatedFacilityLocationBlock::deserialize(
   ff.getVar( v_fxd.data() );
   }
 
- f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
+ f_unsplittable = false;
 
+ auto unsplt = group.getDim( "UnSplittable" );
+ if( ! unsplt.isNull() )
+  f_unsplittable = ( unsplt.getSize() > 0 );
+
+ f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
+ 
  // call the method of Block- - - - - - - - - - - - - - - - - - - - - - - - -
  // inside this the NBModification, the "nuclear option",  is issued
 
@@ -596,6 +584,10 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
 
  if( ( wf & 3 ) >= 2 ) {  // "flow formulation" (FF)- - - - - - - - - - - - -
                           //- - - - - - - - - - - - - - - - - - - - - - - - -
+  if( f_unsplittable )
+   throw( std::invalid_argument(
+	   "unsplittable prblem not supported with the Flow Formulation" ) );
+  
   AR |= FlwForm;
 
   v_Block.resize( 2 );  // exactly two sub-Block
@@ -875,7 +867,7 @@ void CapacitatedFacilityLocationBlock::generate_dynamic_constraints(
   // note the "eNoBlck", which makes sense because this is an "abstract
   // representation only matter" and therefore there is no point in having
   // the corresponding BlockModAdd< FRowConstraint > to be scanned inside
-  // add_Modification()
+  // CapacitatedFacilityLocationBlock::add_Modification()
   if( ! lst.empty() )
    add_dynamic_constraints( v_sfc[ i ] , lst , eNoBlck );
 
@@ -967,8 +959,8 @@ bool CapacitatedFacilityLocationBlock::is_feasible( bool useabstract ,
   eps = tfsbc->f_value;
 
  if( ! ( AR & HasVar ) )
-  throw( std::logic_error( "CapacitatedFacilityLocationBlock::is_feasible"
-			   "generate_abstract_variables not called" ) );
+  throw( std::logic_error( "CapacitatedFacilityLocationBlock::is_feasible:"
+			   " generate_abstract_variables not called" ) );
 
  // check variable feasibility
  for( Index i = 0 ; i < f_n_facilities ; ++i )
@@ -1119,7 +1111,7 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
 
   // load the data of the problem
   CFLB->load( f_n_facilities , f_n_customers , v_capacity , v_f_cost ,
-	      v_demand , v_t_cost );
+	      v_demand , v_t_cost , f_unsplittable );
 
   // now copy over the fixed-to-0 status, if any
   if( auto nf = std::count_if( v_fxd.begin() , v_fxd.end() ,
@@ -1751,6 +1743,9 @@ void CapacitatedFacilityLocationBlock::serialize( netCDF::NcGroup & group )
 		  []( auto fi ) { return( fi != yFree ); } ) )
   ( group.addVar( "FacilityFix" , netCDF::NcChar() , nf )
     ).putVar( v_fxd.data() );
+
+ if( f_unsplittable )
+  group.addDim( "UnSplittable" , 1 );
 
  }  // end( CapacitatedFacilityLocationBlock::serialize )
 
@@ -2893,7 +2888,7 @@ void CapacitatedFacilityLocationBlock::open_facilities( Subset && nms ,
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
-			   CapacitatedFacilityLocationBlockSbstMod>( this ,
+			   CapacitatedFacilityLocationBlockSbstMod >( this ,
 			     CapacitatedFacilityLocationBlockMod::eOpenF ,
 			     std::move( nms ) ) ,
 			   Observer::par2chnl( issueMod ) );
@@ -3125,6 +3120,63 @@ void CapacitatedFacilityLocationBlock::fix_open_facility( Index i ,
  #endif
 
  }  // end( CapacitatedFacilityLocationBlock::fix_open_facility )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::chg_UnSplittable( bool unsplt ,
+							 ModParam issueMod  ,
+							 ModParam issueAMod )
+{
+ if( unsplt == f_unsplittable )  // changing to the same value
+  return;                        // nothing to do
+
+ // TODO: properly package the possibly very many individual Modification in
+ //       some approproate GroupModification
+ 
+ if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
+  // change abstract and physical representation together - - - - - - - - - -
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // in the meantime, if so instructed also issue abstract Modification
+  f_unsplittable = unsplt;
+
+  switch( AR & FormMsk ) {
+   case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    auto xit = v_x.data();
+    for( const auto xend = xit + f_n_facilities * f_n_customers ; xit != xend ;
+	 )
+     (xit++)->is_integer( unsplt , issueMod );
+    break;
+    }
+   case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
+    BinaryKnapsackBlock::boolVec vI( f_n_customers );
+    std::fill( vI.begin() , vI.end() , unsplt );
+    f_mod_skip = true;
+    for( auto bi : v_Block )
+     BKB( bi )->chg_integrality( vI.begin() , Range( 0 , f_n_customers ) ,
+				 issueMod , issueAMod );
+    f_mod_skip = false;
+    break;
+    }
+   default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    throw( std::invalid_argument(
+	   "unsplittable prblem not supported with the Flow Formulation" ) );
+   }
+  }
+ else
+  // only change the physical representation- - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  if( not_dry_run( issueMod ) )
+   f_unsplittable = unsplt;
+
+ if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+  Block::add_Modification( std::make_shared<
+			   CapacitatedFacilityLocationBlockMod >( this ,
+								  unsplt
+			   ? CapacitatedFacilityLocationBlockMod::eChgUnSplt
+			   : CapacitatedFacilityLocationBlockMod::eChgSplt ) ,
+			   Observer::par2chnl( issueMod ) );
+
+ }  // end( CapacitatedFacilityLocationBlock::chg_UnSplittable )
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
@@ -4516,6 +4568,31 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
   return( true );
   }
 
+ // CapacitatedFacilityLocationBlockMod - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // since the *Rngd and *Sbst versions derive from
+ // CapacitatedFacilityLocationBlockMod this dynamic_cast<> would suceed on
+ // these; but here we only want to catch the base class, so this has to be
+ // done after the derived classes
+ 
+ if( auto tmod = dynamic_cast<
+                    const CapacitatedFacilityLocationBlockMod * >( mod ) ) {
+
+  switch( tmod->type() ) {
+   case( CapacitatedFacilityLocationBlockMod::eChgUnSplt ):  //- - - - - - -
+    R3B->chg_UnSplittable( true , issuePMod , issueAMod );
+    break;
+   case( CapacitatedFacilityLocationBlockMod::eChgSplt ):  //- - - - - - - -
+    R3B->chg_UnSplittable( false , issuePMod , issueAMod );
+    break;
+   default:
+    throw( std::invalid_argument(
+		  "invalid type in CapacitatedFacilityLocationBlockMod" ) );
+   }
+
+  return( true );
+  }
+
  // NBModification- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // this is the "nuclear option": the CapacitatedFacilityLocationBlock has
@@ -4751,8 +4828,32 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
   return( true );
   }
 
+ // CapacitatedFacilityLocationBlockMod - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // since the *Rngd and *Sbst versions derive from
+ // CapacitatedFacilityLocationBlockMod this dynamic_cast<> would suceed on
+ // these; but here we only want to catch the base class, so this has to be
+ // done after the derived classes
+ // the Modification corresponding to changing the type of the problem are
+ // ignored here since the MCF R3Block represents a continuous relaxation of
+ // the original CFL and therefore it is identical in the splittable and
+ // unsplittable case
+
+ if( auto tmod = dynamic_cast<
+                    const CapacitatedFacilityLocationBlockMod * >( mod ) ) {
+
+  switch( tmod->type() ) {
+   case( CapacitatedFacilityLocationBlockMod::eChgUnSplt ):  //- - - - - - -
+   case( CapacitatedFacilityLocationBlockMod::eChgSplt ):  //- - - - - - - -
+    break;    // nothing to do, although it's a weird case
+   default:
+    throw( std::invalid_argument(
+		  "invalid type in CapacitatedFacilityLocationBlockMod" ) );
+   }
+  }
+
  return( false );  // any other Modification is not mapped
- 
+
  }  // end( CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF )
 
 /*--------------------------------------------------------------------------*/

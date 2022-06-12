@@ -1,16 +1,22 @@
+#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # CapacitatedFacilityLocationBlock
 
-This project centers on CapacitatedFacilityLocationBlock, an
-implementation of the Block concept for a "pretty basic version" of
-the Capacitated Facility Location (CFL) problem, a.k.a. the
-Capacitated Warehouse Location (CWL) problem.
+This project centers on CapacitatedFacilityLocationBlock, an implementation
+of the Block concept for a "pretty basic version" of the Capacitated
+Facility Location (CFL) problem, a.k.a. the Capacitated Warehouse Location
+(CWL) problem.
 
-This class only represent the "basic version" of CFL and it is
-primarily intended as a "didactic" implementation for showing some
-of the features of SMS++, among which:
+This class only represent the "basic version" of CFL and it is primarily
+intended as a "didactic" implementation for showing some of the features of
+SMS++, among which:
 
-- CapacitatedFacilityLocationBlock supports a number of different
-  formulations of the problem, among which ones suitable for the
+- CapacitatedFacilityLocationBlock supports three different formulations of
+  the problem:
+
+  * - wf & 3 == 0 is the "natural formulation" (NF) always comprising
+
+
+among which ones suitable for the
   use of decomposition approaches;
 
 - CapacitatedFacilityLocationBlock supports
