@@ -1,4 +1,3 @@
-#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # CapacitatedFacilityLocationBlock
 
 This project provides `CapacitatedFacilityLocationBlock`, an implementation
