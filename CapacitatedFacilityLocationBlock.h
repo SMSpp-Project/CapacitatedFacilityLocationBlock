@@ -169,7 +169,7 @@ namespace SMSpp_di_unipi_it
  *   integrality of all variables x[ i ][ j ], via the abstract
  *   representation is never allowed.
  *
- * - map_[forward/back]_[Modification/Solution]() are fully implemented fo
+ * - map_[forward/back]_[Modification/Solution]() are fully implemented for   
  *   both types of R3Block, excapt "back Modification" that is not
  *   implemented for the MCF R3Block.
  *
