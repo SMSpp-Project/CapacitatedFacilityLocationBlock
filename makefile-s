@@ -1,9 +1,9 @@
 ##############################################################################
-################################ makefile-c ##################################
+################################ makefile-s ##################################
 ##############################################################################
-#									     #
+#                                                                            #
 #   complete makefile of CapacitatedFacilityLocationBlock                    #
-#									     #
+#                                                                            #
 #   The makefile defines internally all external libraries required by       #
 #   CapacitatedFacilityLocationBlock, exluding the SMS++ core ones whose     #
 #   symbols are assumed to have been defined already (typically by including #
@@ -28,7 +28,7 @@
 #                              Antonio Frangioni                             #
 #                         Dipartimento di Informatica                        #
 #                             Universita' di Pisa                            #
-#									     #
+#                                                                            #
 ##############################################################################
 
 # define & include the necessary modules- - - - - - - - - - - - - - - - - - -
