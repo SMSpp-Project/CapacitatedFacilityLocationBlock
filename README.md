@@ -260,7 +260,7 @@ code of conduct, and the process for submitting merge requests to us.
 
 - **Antonio Frangioni**  
   Dipartimento di Informatica  
-  Universita' di Pisa
+  Università di Pisa
 
 ### Contributors
 
