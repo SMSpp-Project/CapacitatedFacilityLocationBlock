@@ -56,7 +56,7 @@ namespace SMSpp_di_unipi_it
  class MCFBlock;     // forward declaration of MCFBlock
 
  class MCFBlockMod;  // forward declaration of MCFBlockMod
- 
+
 /*--------------------------------------------------------------------------*/
 /*------------------------------- CLASSES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
