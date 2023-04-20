@@ -27,7 +27,7 @@
 #ifndef NDEBUG
  #define CHECK_DS 0
  /* Perform long and costly checks on the data structures representing the
-  * astract and the physical representations agree. */
+  * abstract and the physical representations agree. */
 #else
  #define CHECK_DS 0
  // never change this
@@ -536,7 +536,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   return;
   }
 
- if( ( wf & 3 ) == 1 ) {  // "knapasck formulation" (KF)- - - - - - - - - - -
+ if( ( wf & 3 ) == 1 ) {  // "knapsack formulation" (KF)- - - - - - - - - - -
                           //- - - - - - - - - - - - - - - - - - - - - - - - -
   AR |= KskForm;
   // construct one knapsack problem for each facility
@@ -586,7 +586,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
                           //- - - - - - - - - - - - - - - - - - - - - - - - -
   if( f_unsplittable )
    throw( std::invalid_argument(
-	   "unsplittable prblem not supported with the Flow Formulation" ) );
+	   "unsplittable problem not supported with the Flow Formulation" ) );
   
   AR |= FlwForm;
 
@@ -612,7 +612,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   auto mcfb = static_cast< MCFBlock * >( get_R3_Block( & r3bc ) );
   v_Block[ 1 ] = mcfb;
 
-  // ... except the cost of the facility arcs are zerod
+  // ... except the cost of the facility arcs are zeros
   MCFBlock::Vec_CNumber zero( f_n_facilities , 0 );
   mcfb->chg_costs( zero.begin() , Range( 0 , f_n_facilities ),
 		   eNoMod , eNoMod );
@@ -1034,7 +1034,7 @@ bool CapacitatedFacilityLocationBlock::facility_feasible( double eps ,
                      "CapacitatedFacilityLocationBlock::capacity_feasible: ";
 
  if( ! ( AR & HasCapCns ) )  // if capacity constraints are not defined
-  useabstract = false;       // you cannot use them to chek feasibility
+  useabstract = false;       // you cannot use them to check feasibility
 
  if( useabstract ) {
   // do it using the abstract representation- - - - - - - - - - - - - - - - -
@@ -1522,7 +1522,7 @@ RealObjective::OFValue
 
  // else it is the "flow formulation" (FF)- - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // the objctive is split between the two sub-Block
+ // the objective is split between the two sub-Block
 
  f_obj.compute();
  return( f_obj.value() + MCFB( v_Block[ 1 ] )->get_objective_value() );
@@ -1589,11 +1589,11 @@ void CapacitatedFacilityLocationBlock::add_Modification( sp_Mod mod ,
   *     IT ALSO USES "PHYSICAL Modification" TO UPDATE THE ABSTRACT
   *     REPRESENTATION
   *
-  * The issue is that in the KF and FF part of the abtract representation of
+  * The issue is that in the KF and FF part of the abstract representation of
   * the CapacitatedFacilityLocationBlock actually "lives" inside the inner
   * BinaryKnapsackBlock or MCFBlock. Indeed, said BinaryKnapsackBlock or
   * MCFBlock are themselves the "abstract representation" of the
-  * CapacitatedFacilityLocationBlock rather thsn the "physical" one.
+  * CapacitatedFacilityLocationBlock rather than the "physical" one.
   *
   * Anyhow, any change in the abstract representation of the
   * BinaryKnapsackBlock or MCFBlock is "intercepted" by these :Block, which
@@ -1647,7 +1647,7 @@ void CapacitatedFacilityLocationBlock::add_Modification( sp_Mod mod ,
     throw( std::invalid_argument(
 	   "unsupported Modification to CapacitatedFacilityLocationBlock" ) );
 
-   // it can't be a physical Moification coming from the "root" Block
+   // it can't be a physical Modification coming from the "root" Block
    // either since these won't pass from here, hence it must be coming
    // from some BinaryKnapsackBlockMod
    if( auto bmod = dynamic_cast< BinaryKnapsackBlockMod * >( mod.get() ) )
@@ -1943,14 +1943,14 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
     not_ModBlock( issueAMod );
     auto iAM = open_if_needed( issueAMod , 2 );
 
-    // the range of the first facility does not necessarily start from 0
+    // the range of the first facility does not necessarily start from 0,
     // but it surely ends at f_n_customers
     BKB( v_Block[ i++ ] )->chg_profits( NCost , Range( l , f_n_customers ) ,
 					issueMod , iAM );
     NCost += ( f_n_customers - l );
     f += ( f_n_customers - l );
  
-    // the range of all other facilities starts from 0 but it does not
+    // the range of all other facilities starts from 0, but it does not
     // necessarily end at f_n_customers
     for( ; ; ++i , NCost += f_n_customers ) {
      Index nf = f + f_n_customers;
@@ -2635,7 +2635,7 @@ void CapacitatedFacilityLocationBlock::close_facilities( Range rng ,
      v_fxd[ i ] = yFxd0;
 
  // conditional bounds could be reset if they were computed looking at
- // facilities fixings, but they are not and therefore they are not (reset)
+ // facilities fixings, but they are not, and therefore they are not (reset)
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
@@ -2707,7 +2707,7 @@ void CapacitatedFacilityLocationBlock::close_facilities( Subset && nms ,
      v_fxd[ i ] = yFxd0;
 
  // conditional bounds could be reset if they were computed looking at
- // facilities fixings, but they are not and therefore they are not (reset)
+ // facilities fixings, but they are not, and therefore they are not (reset)
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
@@ -2750,7 +2750,7 @@ void CapacitatedFacilityLocationBlock::close_facility( Index i ,
    v_fxd[ i ] = yFxd0;
 
  // conditional bounds could be reset if they were computed looking at
- // facilities fixings, but they are not and therefore they are not (reset)
+ // facilities fixings, but they are not, and therefore they are not (reset)
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
@@ -2814,7 +2814,7 @@ void CapacitatedFacilityLocationBlock::open_facilities( Range rng ,
     v_fxd[ i ] = yFree;
 
  // conditional bounds could be reset if they were computed looking at
- // facilities fixings, but they are not and therefore they are not (reset)
+ // facilities fixings, but they are not, and therefore they are not (reset)
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
@@ -2884,7 +2884,7 @@ void CapacitatedFacilityLocationBlock::open_facilities( Subset && nms ,
     v_fxd[ i ] = yFree;
 
  // conditional bounds could be reset if they were computed looking at
- // facilities fixings, but they are not and therefore they are not (reset)
+ // facilities fixings, but they are not, and therefore they are not (reset)
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
@@ -2925,7 +2925,7 @@ void CapacitatedFacilityLocationBlock::open_facility( Index i ,
    v_fxd[ i ] = yFree;
 
  // conditional bounds could be reset if they were computed looking at
- // facilities fixings, but they are not and therefore they are not (reset)
+ // facilities fixings, but they are not, and therefore they are not (reset)
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
@@ -2991,7 +2991,7 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Range rng ,
      v_fxd[ i ] = yFxd1;
 
  // conditional bounds could be reset if they were computed looking at
- // facilities fixings, but they are not and therefore they are not (reset)
+ // facilities fixings, but they are not, and therefore they are not (reset)
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
@@ -3064,7 +3064,7 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Subset && nms ,
    
 
  // conditional bounds could be reset if they were computed looking at
- // facilities fixings, but they are not and therefore they are not (reset)
+ // facilities fixings, but they are not, and therefore they are not (reset)
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
@@ -3107,7 +3107,7 @@ void CapacitatedFacilityLocationBlock::fix_open_facility( Index i ,
    v_fxd[ i ] = yFxd1;
 
  // conditional bounds could be reset if they were computed looking at
- // facilities fixings, but they are not and therefore they are not (reset)
+ // facilities fixings, but they are not, and therefore they are not (reset)
 
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
@@ -3131,7 +3131,7 @@ void CapacitatedFacilityLocationBlock::chg_UnSplittable( bool unsplt ,
   return;                        // nothing to do
 
  // TODO: properly package the possibly very many individual Modification in
- //       some approproate GroupModification
+ //       some appropriate GroupModification
  
  if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
   // change abstract and physical representation together - - - - - - - - - -
@@ -3159,7 +3159,7 @@ void CapacitatedFacilityLocationBlock::chg_UnSplittable( bool unsplt ,
     }
    default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
     throw( std::invalid_argument(
-	   "unsplittable prblem not supported with the Flow Formulation" ) );
+	   "unsplittable problem not supported with the Flow Formulation" ) );
    }
   }
  else
@@ -3192,8 +3192,8 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
   * representation" in case a nwe instance is loaded in the object; yet, even
   * in this case mo Modification pertaining to Variable and Constraint being
   * removed is necessary, because a NBModification is issued immediately
-  * afterwards which means that any listening Observer already knows that
-  * none of the previus Variable and Constraint are valid any longer. */
+  * afterward which means that any listening Observer already knows that
+  * none of the previous Variable and Constraint are valid any longer. */
 
  for( auto & lst : v_sfc )  // clear the strong forcing constraints
   for( auto & cnst : lst )
@@ -3430,7 +3430,7 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
 			  rng.second + f_n_facilities ) , issueMod , iAM );
 
  // note the "Demand( 0 )": without it, std::accumulate() may decide to
- // accumulate on the integers, causing unfeasiility
+ // accumulate on the integers, causing unfeasibility
  mcfb->chg_dfct( - std::accumulate( v_demand.begin() , v_demand.end() ,
 				    Demand( 0 ) ) ,
 		 f_n_facilities + f_n_customers , issueMod , iAM );
@@ -3476,7 +3476,7 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
   }
 
  // note the "Demand( 0 )": without it, std::accumulate() may decide to
- // accumulate on the integers, causing unfeasiility
+ // accumulate on the integers, causing unfeasibility
  ND.back() = - std::accumulate( v_demand.begin() , v_demand.end() ,
 				Demand( 0 ) );
  nnms.back() = f_n_facilities + f_n_customers;
@@ -3735,7 +3735,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
   * deal with GroupModification, since these can be produced by
   * Block::add_Modification() in the sub-Block. While this is not directly
   * dealt with here (but in the *G version of the method), the consequence
-  * is that GroupModification may introduce arbotrary delay between the
+  * is that GroupModification may introduce arbitrary delay between the
   * moment in which the Modification is produced and the one in which it is
   * processed, which would in principle complicate the logic. However
   *
@@ -3801,7 +3801,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
    case( BinaryKnapsackBlockMod::eFixX ):  // - - - - - - - - - - - - - - - -
 
     if( f < f_n_customers )
-     throw( std::invalid_argument( "unsupportd variable fixing" ) );
+     throw( std::invalid_argument( "unsupported variable fixing" ) );
 
     if( bkb->get_Var( f_n_customers )->get_value() == 1 )
      fix_open_facility( i , make_par( eNoBlck , chnl ) , eDryRun );
@@ -3813,7 +3813,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
    case( BinaryKnapsackBlockMod::eUnfixX ):  // - - - - - - - - - - - - - - -
 
     if( f < f_n_customers )
-     throw( std::invalid_argument( "unsupportd variable unfixing" ) );
+     throw( std::invalid_argument( "unsupported variable unfixing" ) );
 
     open_facility( i , make_par( eNoBlck , chnl ) , eDryRun );
 
@@ -3821,7 +3821,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
 
    default:  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-    throw( std::invalid_argument( "unsupportd BinaryKnapsackBlockRngdMod" ) );
+    throw( std::invalid_argument( "unsupported BinaryKnapsackBlockRngdMod" ) );
 
    }  // end( switch )
   }  // end( BinaryKnapsackBlockRngdMod )
@@ -3875,7 +3875,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
    case( BinaryKnapsackBlockMod::eFixX ):  // - - - - - - - - - - - - - - - -
 
     if( ( nms.size() != 1 ) || ( nms.back() < f_n_customers ) )
-     throw( std::invalid_argument( "unsupportd variable fixing" ) );
+     throw( std::invalid_argument( "unsupported variable fixing" ) );
 
     if( bkb->get_Var( f_n_customers )->get_value() == 1 )
      fix_open_facility( i , make_par( eNoBlck , chnl ) , eDryRun );
@@ -3887,7 +3887,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
    case( BinaryKnapsackBlockMod::eUnfixX ):  // - - - - - - - - - - - - - - -
 
     if( ( nms.size() != 1 ) || ( nms.back() < f_n_customers ) )
-     throw( std::invalid_argument( "unsupportd variable unfixing" ) );
+     throw( std::invalid_argument( "unsupported variable unfixing" ) );
 
     open_facility( i , make_par( eNoBlck , chnl ) , eDryRun );
 
@@ -3895,7 +3895,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
 
    default:  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-    throw( std::invalid_argument( "unsupportd BinaryKnapsackBlockSbstMod" ) );
+    throw( std::invalid_argument( "unsupported BinaryKnapsackBlockSbstMod" ) );
 
    }  // end( switch )
   }  // end( BinaryKnapsackBlockSbstMod )
@@ -3913,7 +3913,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFA(
   *
   * This method only deals with the "abstract Modification" from either the
   * "root" CapacitatedFacilityLocationBlock or the "design AbstractBlock",
-  * which arrive with concerns_Block() == true. Thise coming from the "root"
+  * which arrive with concerns_Block() == true. This coming from the "root"
   * Block do so "directly", and therefore cannot be GroupModification, but
   * those from the AbstractBlock pass from Block::add_Modification() and
   * therefore can be GroupModification. This introduces delay between the
@@ -3923,7 +3923,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFA(
   *     CapacitatedFacilityLocationBlock IS A "STATIC" Block IN WHICH THE
   *     SIZE OF THE STUFF NEVER CHANGES (save if it is re-loaded whole)
   *
-  * This means that the indices, sanges and subsets found in the Modification
+  * This means that the indices, ranges and subsets found in the Modification
   * are always still valid, which drastically simplifies some of the logic. */
 
  // GroupModification - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -4134,14 +4134,14 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
   * deal with GroupModification, since these can be produced by
   * Block::add_Modification() in the sub-Block. While this is not directly
   * dealt with here (but in the *G version of the method), the consequence
-  * is that GroupModification may introduce arbotrary delay between the
+  * is that GroupModification may introduce arbitrary delay between the
   * moment in which the Modification is produced and the one in which it is
   * processed, which would in principle complicate the logic. However
   *
   *     CapacitatedFacilityLocationBlock IS A "STATIC" Block IN WHICH THE
   *     SIZE OF THE STUFF NEVER CHANGES (save if it is re-loaded whole)
   *
-  * This means that the indices, sanges and subsets found in the Modification
+  * This means that the indices, ranges and subsets found in the Modification
   * are always still valid, which drastically simplifies some of the logic. */
 
  // MCFBlockRngdMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -4157,11 +4157,11 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
  //   independently, which is a bit wasteful but the second call to
  //   chg_facility_capacity() will do nothing as the capacity value is the
  //   same, so it's acceptable
- // - we expect changes of node deficits to eventually mantain the
+ // - we expect changes of node deficits to eventually maintain the
  //   zero-total property necessary for feasibility, but this may be true
  //   only at the end of the series of changes rather than at any point;
  //   hence, we disregard any change in the deficit of the super-source
- //   assuming that eventually it'll be what it necessarily need be
+ //   assuming that eventually it'll be what it necessarily needs be
  if( auto tmod = dynamic_cast< const MCFBlockRngdMod * >( mod ) ) {
   c_Index f = tmod->rng().first;
   Index s = tmod->rng().second;
@@ -4223,7 +4223,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 
    default:  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-    throw( std::invalid_argument( "unsupportd MCFBlockRngdMod" ) );
+    throw( std::invalid_argument( "unsupported MCFBlockRngdMod" ) );
 
    }  // end( switch )
   }  // end( MCFBlockRngdMod )
@@ -4332,7 +4332,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 
    default:  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-    throw( std::invalid_argument( "unsupportd MCFBlockRngdMod" ) );
+    throw( std::invalid_argument( "unsupported MCFBlockRngdMod" ) );
 
    }  // end( switch )
   }  // end( MCFBlockSbstMod )
@@ -4571,7 +4571,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
  // CapacitatedFacilityLocationBlockMod - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // since the *Rngd and *Sbst versions derive from
- // CapacitatedFacilityLocationBlockMod this dynamic_cast<> would suceed on
+ // CapacitatedFacilityLocationBlockMod this dynamic_cast<> would succeed on
  // these; but here we only want to catch the base class, so this has to be
  // done after the derived classes
  
@@ -4831,12 +4831,12 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
  // CapacitatedFacilityLocationBlockMod - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // since the *Rngd and *Sbst versions derive from
- // CapacitatedFacilityLocationBlockMod this dynamic_cast<> would suceed on
+ // CapacitatedFacilityLocationBlockMod this dynamic_cast<> would succeed on
  // these; but here we only want to catch the base class, so this has to be
  // done after the derived classes
  // the Modification corresponding to changing the type of the problem are
  // ignored here since the MCF R3Block represents a continuous relaxation of
- // the original CFL and therefore it is identical in the splittable and
+ // the original CFL, and therefore it is identical in the splittable and
  // unsplittable case
 
  if( auto tmod = dynamic_cast<
@@ -4892,8 +4892,7 @@ void CapacitatedFacilityLocationBlock::get_y(
 {
  #ifndef NDEBUG
   if( ! ( AR & HasVar ) )
-   throw( std::logic_error( "get_facility_solution: variables not generated"
-			    ) );
+   throw( std::logic_error( "get_facility_solution: variables not generated" ) );
  #endif
 
  if( rng.second > f_n_facilities )
