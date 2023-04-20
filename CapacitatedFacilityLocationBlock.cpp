@@ -637,8 +637,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
          "CapacitatedFacilityLocationBlock::generate_abstract_constraints: ";
 
  if( ! ( AR & HasVar ) )
-  throw( std::logic_error( _prfx + "generate_abstract_variables not called"
-			   ) );
+  throw( std::logic_error( _prfx + "generate_abstract_variables not called" ) );
  Index wc = 3;
  if( ( ! stcc ) && f_BlockConfig )
   stcc = f_BlockConfig->f_static_constraints_Configuration;
@@ -888,8 +887,7 @@ void CapacitatedFacilityLocationBlock::generate_objective(
   return;           // cowardly (and silently) return
 
  if( ! ( AR & HasVar ) )
-  throw( std::logic_error( _prfx + "generate_abstract_variables not called"
-			   ) );
+  throw( std::logic_error( _prfx + "generate_abstract_variables not called" ) );
  
  AR |= HasObj;      // Objective will be constructed now once and for all
 
@@ -1103,8 +1101,8 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
   if( base ) {
    CFLB = dynamic_cast< CapacitatedFacilityLocationBlock * >( base );
    if( ! CFLB )
-    throw( std::invalid_argument( _prfx +
-			"base is not a CapacitatedFacilityLocationBlock" ) );
+    throw( std::invalid_argument(
+     _prfx + "base is not a CapacitatedFacilityLocationBlock" ) );
    }
   else
    CFLB = new CapacitatedFacilityLocationBlock( father );

@@ -170,11 +170,11 @@ namespace SMSpp_di_unipi_it
  *   representation is never allowed.
  *
  * - map_[forward/back]_[Modification/Solution]() are fully implemented for   
- *   both types of R3Block, excapt "back Modification" that is not
+ *   both types of R3Block, except "back Modification" that is not
  *   implemented for the MCF R3Block.
  *
  * - The unsplittable version of the problem cannot be represented when
- *   using the Flow Formulaition (this is inherent and unlikely to ever
+ *   using the Flow Formulation (this is inherent and unlikely to ever
  *   change).
  *
  * - The Modification corresponding to changing the type of the problem are
@@ -261,7 +261,7 @@ public:
 
  /// constructor, taking a pointer to the father (generic) Block
  /** Constructor. It accepts a pointer to the father Block, which can be of
-  * any type, defaulting to nullpt so that this can also be used as the void
+  * any type, defaulting to nullptr so that this can also be used as the void
   * constructor. */
 
  explicit CapacitatedFacilityLocationBlock( Block *father = nullptr )
@@ -319,7 +319,7 @@ public:
  /// loads the CFL instance from memory, copying the input data
  /** Loads the CFL instance from memory. The parameters are the same as
   * the other form of load() except that (by being const & rather than &&)
-  * the vectors/metrices are copied rather than moved.  */
+  * the vectors/matrices are copied rather than moved.  */
 
  void load( Index m , Index n , c_DVector & Q , c_CVector & F ,
 	    c_DVector & D , c_CMatrix & C , bool unsplt = false ) {
@@ -575,7 +575,7 @@ public:
   * - otherwise, wc is 3
   *
   * The meaning of wc is bit-wise: the first bit being 1 means that the
-  * customers satisfation constraints are constructed, while the second bit
+  * customers satisfaction constraints are constructed, while the second bit
   * being 1 means that the capacity constraints are constructed.
   * Note that "constraints X constructed" has different meanings according
   * to which formulation is used, as decided by generate_abstract_variables():
@@ -585,7 +585,7 @@ public:
   *   of the "natural formulation", i.e.,
   *
   *   = "sat", a std::vector< FRowConstraint > of size f_n_customers
-  *     imposing the satisfation of customers' demands (1)
+  *     imposing the satisfaction of customers' demands (1)
   *
   *   = "cap", a std::vector< FRowConstraint > of size f_n_facilities
   *     imposing the maximum capacity of facilities as well as the logical
@@ -598,7 +598,7 @@ public:
   * - If the "knapsack formulation" (KF) is used, then there is only one
   *   explicit groups of "linear constraints", the "sat" one with a
   *   std::vector< FRowConstraint > of size f_n_facilities imposing the
-  *   satisfation of customers' demands (1), which is constructed unless
+  *   satisfaction of customers' demands (1), which is constructed unless
   *   ( wc & 1 ) == true; the capacity constraints are inside the
   *   BinaryKnapsackBlock sub-Block, and the corresponding constraints are
   *   constructed unless ( wc & 2 ) == true.
@@ -609,13 +609,13 @@ public:
   *   linking between the Y[] variables in the first sub-Block and the
   *   (appropriate) arc flow variables in the MCFBlock sub-Block; this
   *   is constructed unless ( wc & 2 ) == true, while the constraints in
-  *   the MCFBlock sub-Block (which impose the satisfation of customers'
+  *   the MCFBlock sub-Block (which impose the satisfaction of customers'
   *   demands, although they also are a part of the capacity ones) are
   *   constructed unless ( wc & 1 ) == true.
   *
   * Finally, if the third bit of ws is 1, then an appropriately arranged
   * group of dynamic Constraint is added that support the separation of
-  * the "strong linking" contraints x_{ij} \leq y_i. If this is done,
+  * the "strong linking" constraints x_{ij} \leq y_i. If this is done,
   * then generate_dynamic_constraints() implements this separation. Note
   * that, whatever the formulation, che corresponding "strong" group of
   * dynamic Constraint is always added to the "root"
@@ -739,7 +739,7 @@ public:
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// get the splittable/unsplittale status
+ /// get the splittable/unsplittable status
 
  [[nodiscard]] bool get_UnSplittable( void ) const {
   return( f_unsplittable );
@@ -935,7 +935,7 @@ public:
   *
   *   When the value is 2, f_n_customers "artificial" arcs are also added
   *   from the super source to each customer, with capacity == infinite
-  *   (Inf< (MCFBlock::FNumber >()) and a very large cost (somethng like
+  *   (Inf< (MCFBlock::FNumber >()) and a very large cost (something like
   *   100 * ( max facility cost + max transportation cost from any
   *   facility to the customer). Note that
   *
@@ -1359,7 +1359,7 @@ public:
   *   case there cannot be any Modification to handle here;
   *
   * - VariableMod fixing and un-fixing a flow ColVariable; however, note
-  *   that *fixing is only permitted if the value() of the ColVvariable is
+  *   that *fixing is only permitted if the value() of the ColVariable is
   *   zero*, because that corresponds to closing the arc, exception being
   *   thrown otherwise.
   *
@@ -1400,7 +1400,7 @@ public:
 /** @} ---------------------------------------------------------------------*/
 /*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
 /*--------------------------------------------------------------------------*/
-/** @name Changing the data of the Capacitated Facility Location instabnce
+/** @name Changing the data of the Capacitated Facility Location instance
  *
  * All the methods in this section have two parameters issueMod and issueAMod
  * which control if and how the, respectively, "physical Modification" and
@@ -1433,8 +1433,8 @@ public:
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
  void chg_facility_costs( c_CV_it NCost , Range rng = INFRange ,
-			  ModParam issueMod = eNoBlck ,
-			  ModParam issueAMod = eNoBlck );
+                          ModParam issueMod = eNoBlck ,
+                          ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// change the facility_costs of an arbitrary subset of facilities
@@ -1446,16 +1446,16 @@ public:
   * that is issued. */
 
  void chg_facility_costs( c_CV_it NCost ,
-			  Subset && nms , bool ordered = false ,
-			  ModParam issueMod = eNoBlck ,
-			  ModParam issueAMod = eNoBlck );
+                          Subset && nms , bool ordered = false ,
+                          ModParam issueMod = eNoBlck ,
+                          ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// changes the cost of the given facility
 
  void chg_facility_cost( Cost NCost , Index i ,
-			 ModParam issueMod = eNoBlck ,
-			 ModParam issueAMod = eNoBlck );
+                         ModParam issueMod = eNoBlck ,
+                         ModParam issueAMod = eNoBlck );
 
 /*--------------------------------------------------------------------------*/
  /// change the transportation costs of a contiguous interval
@@ -1474,8 +1474,8 @@ public:
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
  void chg_transportation_costs( c_CV_it NCost , Range rng = INFRange ,
-				ModParam issueMod = eNoBlck ,
-				ModParam issueAMod = eNoBlck );
+                                ModParam issueMod = eNoBlck ,
+                                ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// change the transportation costs of an arbitrary subset
@@ -1489,9 +1489,9 @@ public:
   * sense. */
 
  void chg_transportation_costs( c_CV_it NCost ,
-				Subset && nms , bool ordered = false ,
-				ModParam issueMod = eNoBlck ,
-				ModParam issueAMod = eNoBlck );
+                                Subset && nms , bool ordered = false ,
+                                ModParam issueMod = eNoBlck ,
+                                ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// changes the transportation of the given pair ( facility , customer )
@@ -1500,8 +1500,8 @@ public:
   * customer = p % get_NCustomers(). */
 
  void chg_transportation_cost( Cost NCost , Index p ,
-			       ModParam issueMod = eNoBlck ,
-			       ModParam issueAMod = eNoBlck );
+                               ModParam issueMod = eNoBlck ,
+                               ModParam issueAMod = eNoBlck );
 
 /*--------------------------------------------------------------------------*/
  /// change the capacities of a contiguous interval of facilities
@@ -1514,8 +1514,8 @@ public:
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
  void chg_facility_capacities( c_DV_it NCap , Range rng = INFRange ,
-			       ModParam issueMod = eNoBlck ,
-			       ModParam issueAMod = eNoBlck );
+                               ModParam issueMod = eNoBlck ,
+                               ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// change the capacities of an arbitrary subset of facilities
@@ -1527,16 +1527,16 @@ public:
   * CapacitatedFacilityLocationBlockSbstMod that is issued. */
 
  void chg_facility_capacities( c_DV_it NCap ,
-			       Subset && nms , bool ordered = false ,
-			       ModParam issueMod = eNoBlck ,
-			       ModParam issueAMod = eNoBlck );
+                               Subset && nms , bool ordered = false ,
+                               ModParam issueMod = eNoBlck ,
+                               ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// changes the capacity of the given facility
 
  void chg_facility_capacity( Demand NCap , Index i ,
-			     ModParam issueMod = eNoBlck ,
-			     ModParam issueAMod = eNoBlck );
+                             ModParam issueMod = eNoBlck ,
+                             ModParam issueAMod = eNoBlck );
 
 /*--------------------------------------------------------------------------*/
  /// change the demands of a contiguous interval of customers
@@ -1549,8 +1549,8 @@ public:
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
  void chg_customer_demands( c_DV_it NDem , Range rng = INFRange ,
-			    ModParam issueMod = eNoBlck ,
-			    ModParam issueAMod = eNoBlck );
+                            ModParam issueMod = eNoBlck ,
+                            ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// change the demands of an arbitrary subset of customers
@@ -1562,16 +1562,16 @@ public:
   * CapacitatedFacilityLocationBlockSbstMod that is issued. */
 
  void chg_customer_demands( c_DV_it NDem ,
-			    Subset && nms , bool ordered = false ,
-			    ModParam issueMod = eNoBlck ,
-			    ModParam issueAMod = eNoBlck );
+                            Subset && nms , bool ordered = false ,
+                            ModParam issueMod = eNoBlck ,
+                            ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// changes the demand of the given customer
 
  void chg_customer_demand( Demand NDem , Index j ,
-			   ModParam issueMod = eNoBlck ,
-			   ModParam issueAMod = eNoBlck );
+                           ModParam issueMod = eNoBlck ,
+                           ModParam issueAMod = eNoBlck );
 
 /*--------------------------------------------------------------------------*/
  /// closes a contiguous interval of facilities
@@ -1585,8 +1585,8 @@ public:
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
  void close_facilities( Range rng = INFRange ,
-			ModParam issueMod = eNoBlck ,
-			ModParam issueAMod = eNoBlck );
+                        ModParam issueMod = eNoBlck ,
+                        ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// closes an arbitrary subset of facilities
@@ -1599,8 +1599,8 @@ public:
   * CapacitatedFacilityLocationBlockSbstMod object. */
 
  void close_facilities( Subset && nms , bool ordered = false ,
-			ModParam issueMod = eNoBlck ,
-			ModParam issueAMod = eNoBlck );
+                        ModParam issueMod = eNoBlck ,
+                        ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// closes the given facility
@@ -1609,7 +1609,7 @@ public:
   * override the fixed-open status. */
 
  void close_facility( Index i , ModParam issueMod = eNoBlck ,
-		                ModParam issueAMod = eNoBlck );
+                      ModParam issueAMod = eNoBlck );
 
 /*--------------------------------------------------------------------------*/
  /// re-opens a contiguous interval of facilities
@@ -1624,8 +1624,8 @@ public:
   * CapacitatedFacilityLocationBlockRngdMod is issued. */
 
  void open_facilities( Range rng = INFRange ,
-		       ModParam issueMod = eNoBlck ,
-		       ModParam issueAMod = eNoBlck );
+                       ModParam issueMod = eNoBlck ,
+                       ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// re-opens an arbitrary subset of facilities
@@ -1638,14 +1638,14 @@ public:
   * CapacitatedFacilityLocationBlockSbstMod object. */
 
  void open_facilities( Subset && nms , bool ordered = false ,
-			ModParam issueMod = eNoBlck ,
-			ModParam issueAMod = eNoBlck );
+                       ModParam issueMod = eNoBlck ,
+                       ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// re-opens the given facility
 
  void open_facility( Index i , ModParam issueMod = eNoBlck ,
-		               ModParam issueAMod = eNoBlck );
+                     ModParam issueAMod = eNoBlck );
 
 /*--------------------------------------------------------------------------*/
  /// fix open a contiguous interval of facilities
@@ -1690,19 +1690,20 @@ public:
 			           ModParam issueAMod = eNoBlck );
 
 /*--------------------------------------------------------------------------*/
- /// changes the splittable/unsplittale status of the problem
+ /// changes the splittable/unsplittable status of the problem
  /** If \p unsplt == true [default], sets the problem to be the unsplittable
   * version, where each customer need be served by exactly one facility;
   * otherwise sets the problem to be the splittable version, where each
   * customer can be served by any number of facilities).
   *
   * The unsplittable version of the problem cannot be represented when
-  * using the Flow Formulaition (this is inherent since flow variables are
+  * using the Flow Formulation (this is inherent since flow variables are
   * scaled), so calling chg_UnSplittable( true  ) will result in an exception
   * been thrown. */
 
- void chg_UnSplittable( bool unsplt = true , ModParam issueMod = eNoBlck ,
-			                     ModParam issueAMod = eNoBlck   );
+ void chg_UnSplittable( bool unsplt = true ,
+                        ModParam issueMod = eNoBlck ,
+                        ModParam issueAMod = eNoBlck );
 
 /** @} ---------------------------------------------------------------------*/
 /*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
@@ -1752,7 +1753,7 @@ public:
   * already, as well as *which formulation* is used.
   * The second part is coded in the first three bits of AR, as follows.
   * The first part is coded in the first three bits of AR, as follows:
-  * The first two bits encode the "large-scale shape" of the formulatio:
+  * The first two bits encode the "large-scale shape" of the formulation:
   *
   * - ( AR & FormMsk ) == StdForm: the "standard" formulation is used
   * - ( AR & FormMsk ) == KskForm: the "knapsack" formulation is used
@@ -1780,7 +1781,7 @@ public:
  boost::multi_array< ColVariable , 2 > v_x;  ///< the flow variables
                                              /**< x is a bi-dimensional array
 				              * of ColVariable representing
-  * transportation; thay is, v_x[ i ][ j ] is the fraction of demand of
+  * transportation; that is, v_x[ i ][ j ] is the fraction of demand of
   * customer j served by facility i. */
 
  std::vector< ColVariable > v_y;  ///< the design variables
@@ -2054,8 +2055,8 @@ class CapacitatedFacilityLocationBlockMod : public Modification
   eCloseF       ,   ///< close facilities
   eOpenF        ,   ///< re-open facilities
   eBuyF         ,   ///< fix open facilities
-  eChgUnSplt    ,   ///< change problem type to unspliitable
-  eChgSplt          ///< change problem type to spliitable
+  eChgUnSplt    ,   ///< change problem type to unsplittable
+  eChgSplt          ///< change problem type to splittable
   };
 
 /*---------------------- CONSTRUCTOR & DESTRUCTOR --------------------------*/
