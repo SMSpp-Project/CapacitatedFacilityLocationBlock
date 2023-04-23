@@ -638,6 +638,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
 
  if( ! ( AR & HasVar ) )
   throw( std::logic_error( _prfx + "generate_abstract_variables not called" ) );
+
  Index wc = 3;
  if( ( ! stcc ) && f_BlockConfig )
   stcc = f_BlockConfig->f_static_constraints_Configuration;
