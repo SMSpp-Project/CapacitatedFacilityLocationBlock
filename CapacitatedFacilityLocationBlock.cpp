@@ -676,7 +676,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
     coeffs[ f_n_customers ] = std::make_pair( & v_y[ i ] ,
 					      - v_capacity[ i ] );
     v_cap[ i ].set_rhs( 0 );
-    v_cap[ i ].set_lhs( - Inf< RowConstraint::RHSValue >() );
+    v_cap[ i ].set_lhs( -Inf< RowConstraint::RHSValue >() );
     v_cap[ i ].set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
     }
 
@@ -744,7 +744,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
    coeffs[ 1 ] = std::make_pair( & v_y[ i ] , - v_capacity[ i ] );
 
    v_cap[ i ].set_rhs( 0 );
-   v_cap[ i ].set_lhs( - Inf< RowConstraint::RHSValue >() );
+   v_cap[ i ].set_lhs( -Inf< RowConstraint::RHSValue >() );
    v_cap[ i ].set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
    }
 
@@ -841,7 +841,7 @@ void CapacitatedFacilityLocationBlock::generate_dynamic_constraints(
   while( ( fit != found.end() ) && ( std::get< 1 >( *fit ) == i ) ) {
    std::list< FRowConstraint > li( 1 );
    li.back().set_rhs( 0 );
-   li.back().set_lhs( - Inf< RowConstraint::RHSValue >() );
+   li.back().set_lhs( -Inf< RowConstraint::RHSValue >() );
 
    Index j = std::get< 2 >( *(fit++) );
    v_coeff_pair p( 2 );
@@ -4869,7 +4869,7 @@ void CapacitatedFacilityLocationBlock::compute_conditional_bounds( void )
 
  for( Index j = 0 ; j < f_n_customers ; ++j ) {
   auto minj = Inf< Cost >();
-  auto maxj = - Inf< Cost >();
+  auto maxj = -Inf< Cost >();
 
   for( Index i = 0 ; i < f_n_facilities ; ++i ) {
    if( minj > v_t_cost[ j ][ i ] )
