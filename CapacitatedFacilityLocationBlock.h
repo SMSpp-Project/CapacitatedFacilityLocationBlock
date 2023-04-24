@@ -959,9 +959,9 @@ public:
   * If not nullptr, solc is assumed to be a SimpleConfiguration< int > whose
   * f_value encodes bit-wise which part of the solution is mapped back:
   *
-  * - bit 0 (+1): the design solution (y) is mqpped back
+  * - bit 0 (+1): the design solution (y) is mapped back
   *
-  * - bit 1 (+2): the transportation solution (x) is mqpped back
+  * - bit 1 (+2): the transportation solution (x) is mapped back
   *
   * If solc == nullptr, the value of 3 (map back everything) is assumed. */
 
@@ -978,9 +978,9 @@ public:
   * If not nullptr, solc is assumed to be a SimpleConfiguration< int > whose
   * f_value encodes bit-wise which part of the solution is mapped forward:
   *
-  * - bit 0 (+1): the design solution (y) is mqpped forward
+  * - bit 0 (+1): the design solution (y) is mapped forward
   *
-  * - bit 1 (+2): the transportation solution (x) is mqpped forward
+  * - bit 1 (+2): the transportation solution (x) is mapped forward
   *
   * If solc == nullptr, the value of 3 (map forward everything) is assumed.
   */
