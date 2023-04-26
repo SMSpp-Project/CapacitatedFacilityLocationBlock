@@ -786,8 +786,8 @@ void CapacitatedFacilityLocationBlock::generate_dynamic_constraints(
  int max = -1;
  if( ( ! dycc ) && f_BlockConfig )
   dycc = f_BlockConfig->f_dynamic_constraints_Configuration;
- if( auto sc = dynamic_cast< SimpleConfiguration< std::pair< int , double >
-                                                             > * >( dycc ) ) {
+ if( auto sc =
+  dynamic_cast< SimpleConfiguration< std::pair< int , double > > * >( dycc ) ) {
   max = sc->f_value.first;
   if( max == 0 )  // weird
    return;        // what else?
