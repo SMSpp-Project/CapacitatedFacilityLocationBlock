@@ -498,7 +498,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   return;           // nothing to do
 
  AR |= HasVar;      // variables will be constructed now once and for all
- 
+
  Index wf = 0;
  if( ( ! stvv ) && f_BlockConfig )
   stvv = f_BlockConfig->f_static_variables_Configuration;
@@ -507,8 +507,8 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
 
  f_unsplittable = wf & UnSpltF;
 
- if( ! ( wf & 3 ) ) {  // "natural formulation" (NF)- - - - - - - - - - - - -
-                       // - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( ! ( wf & FormMsk ) ) {  // "natural formulation" (NF)- - - - - - - - - -
+                             // - - - - - - - - - - - - - - - - - - - - - - -
   // AR |= StdForm;  does nothing
   v_y.resize( f_n_facilities );
   auto fxdit = v_fxd.begin();
@@ -536,8 +536,8 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   return;
   }
 
- if( ( wf & 3 ) == 1 ) {  // "knapsack formulation" (KF)- - - - - - - - - - -
-                          //- - - - - - - - - - - - - - - - - - - - - - - - -
+ if( ( wf & FormMsk ) == 1 ) {  // "knapsack formulation" (KF)- - - - - - - -
+                                //- - - - - - - - - - - - - - - - - - - - - -
   AR |= KskForm;
   // construct one knapsack problem for each facility
   v_Block.resize( f_n_facilities );
@@ -582,8 +582,8 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   return;
   }
 
- if( ( wf & 3 ) >= 2 ) {  // "flow formulation" (FF)- - - - - - - - - - - - -
-                          //- - - - - - - - - - - - - - - - - - - - - - - - -
+ if( ( wf & FormMsk ) >= 2 ) {  // "flow formulation" (FF)- - - - - - - - - -
+                                //- - - - - - - - - - - - - - - - - - - - - -
   if( f_unsplittable )
    throw( std::invalid_argument(
 	   "unsplittable problem not supported with the Flow Formulation" ) );
@@ -608,7 +608,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   ab->add_static_variable( v_y , "y" );
 
   // the second Block is a MCFBlock as constructed by get_R3_Block
-  SimpleConfiguration< int > r3bc( ( wf & 3 ) - 1 );
+  SimpleConfiguration< int > r3bc( ( wf & FormMsk ) - 1 );
   auto mcfb = static_cast< MCFBlock * >( get_R3_Block( & r3bc ) );
   v_Block[ 1 ] = mcfb;
 
@@ -1170,8 +1170,8 @@ void CapacitatedFacilityLocationBlock::map_back_solution( Block * R3B ,
  if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( solc ) )
   ws = tcfg->f_value;
 
- if( ! ( ws & 3 ) )  // actually nothing to map back
-  return;            // silently (and cowardly) return
+ if( ! ( ws & FormMsk ) )  // actually nothing to map back
+  return;                  // silently (and cowardly) return
 
  int wR3B = 0;
  if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( r3bc ) )
@@ -1257,8 +1257,8 @@ void CapacitatedFacilityLocationBlock::map_forward_solution( Block * R3B ,
  if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( solc ) )
   ws = tcfg->f_value;
 
- if( ! ( ws & 3 ) )  // actually nothing to map forward
-  return;            // silently (and cowardly) return
+ if( ! ( ws & FormMsk ) )  // actually nothing to map forward
+  return;                  // silently (and cowardly) return
 
  int wR3B = 0;
  if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( r3bc ) )
