@@ -1,5 +1,5 @@
 # --------------------------------------------------------------------------- #
-#    Main CMake file for SMS++ MCFBlock                                       #
+#    Main CMake file for SMS++ CapacitatedFacilityLocationBlock               #
 #                                                                             #
 #    This file allows one to build the library using CMake.                   #
 #    To do so, you can use the following commands:                            #
@@ -18,59 +18,45 @@
 #                         Dipartimento di Informatica                         #
 #                             Universita' di Pisa                             #
 # --------------------------------------------------------------------------- #
-cmake_minimum_required(VERSION 3.11)
-project(MCFBlock
+cmake_minimum_required(VERSION 3.12)
+project(CapacitatedFacilityLocationBlock
         VERSION 0.4.0
-        DESCRIPTION "SMS++ MCFBlock module"
-        HOMEPAGE_URL https://gitlab.com/smspp/mcfblock
+        DESCRIPTION "SMS++ CapacitatedFacilityLocationBlock module"
+        HOMEPAGE_URL https://gitlab.com/smspp/capacitatedfacilitylocationblock
         LANGUAGES C CXX)
 
 # These variables make the code harder to read but easier to change.
 set(modName ${PROJECT_NAME})
 set(modNamespace "SMS++")
-set(modHeader "${modName}Config.h")
-set(modTargets "${modName}Targets")
 
 # Find out if it's being called by the umbrella.
 get_directory_property(hasParent PARENT_DIRECTORY)
+
+# This adds the cmake directory to the module search paths,
+# allowing us to use our modules.
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 # ----- Settings ------------------------------------------------------------ #
 # This creates an ENABLE_TESTING option (default: ON) and enables the testing
 # using the ctest executable.
 # See: https://cmake.org/cmake/help/latest/manual/ctest.1.html
-include(CTest)
+#include(CTest)
 
-# This will set an user-settable cache variable.
-# The value of the variable is propagated to consuming libraries via the
-# *Config.cmake file.
-set(${modName}_SOLVER "cplex" CACHE STRING "Solver used by ${modName}.")
-set_property(CACHE ${modName}_SOLVER PROPERTY STRINGS relax cplex mfsmx sptree)
-
-if (${modName}_SOLVER STREQUAL "relax")
-    message(STATUS "${modName}: using RelaxIV solver")
-    add_compile_definitions(HAVE_RELAX)
-elseif (${modName}_SOLVER STREQUAL "cplex")
-    message(STATUS "${modName}: using CPLEX solver")
-    add_compile_definitions(HAVE_CPLEX)
-elseif (${modName}_SOLVER STREQUAL "mfsmx")
-    message(STATUS "${modName}: using Simplex solver")
-    add_compile_definitions(HAVE_MFSMX)
-elseif (${modName}_SOLVER STREQUAL "sptree")
-    message(STATUS "${modName}: using Shortest Path Tree solver")
-    add_compile_definitions(HAVE_SPTRE)
-endif ()
+# Sets the default build type (if none was specified).
+# See: https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html
+include(BuildType)
 
 # ----- Requirements -------------------------------------------------------- #
-find_package(SMSpp REQUIRED)
-find_package(MCFClass REQUIRED)
-
-if (${modName}_SOLVER STREQUAL "cplex" AND NOT MCFClass_USE_CPLEX)
-    message(FATAL_ERROR "${modName} solver is \"CPLEX\" but MCFCplex was not built")
-endif ()
+# If it's not being called by the umbrella, we need to
+# look for the system-installed libraries.
+if (NOT hasParent)
+    find_package(MCFBlock REQUIRED)
+    find_package(BinaryKnapsackBlock REQUIRED)
+endif()
 
 # ----- Configuration header ------------------------------------------------ #
 # This will generate a *Config.h header in the build directory.
-configure_file(cmake/${modHeader}.in ${modHeader})
+configure_file(cmake/${modName}Config.h.in ${modName}Config.h)
 
 # ----- Library ------------------------------------------------------------- #
 # With the BUILD_SHARED_LIBS variable we can specify if the library will
@@ -84,9 +70,7 @@ target_compile_features(${modName} PUBLIC cxx_std_17)
 # INTERFACE can be used for sources that should not be added to this library
 # but should be added to anything that links to it.
 # Note: do not GLOB files here.
-target_sources(${modName} PRIVATE
-               src/MCFSolver.cpp
-               src/MCFBlock.cpp)
+target_sources(${modName} PRIVATE CapacitatedFacilityLocationBlock.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
@@ -100,7 +84,7 @@ target_sources(${modName} PRIVATE
 # installed in the system will look into the INSTALL_INTERFACE path.
 target_include_directories(
         ${modName} PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<INSTALL_INTERFACE:include/${modNamespace}>)
 
 # When linking other targets to the library with target_link_libraries(),
@@ -109,8 +93,8 @@ target_include_directories(
 # library, INTERFACE means they will be linked only to the targets that depend
 # on this library.
 target_link_libraries(${modName} PUBLIC
-                      ${modNamespace}::SMSpp
-                      MCFClass::MCFClass)
+                      ${modNamespace}::MCFBlock
+                      ${modNamespace}::BinaryKnapsackBlock)
 
 # This alias is defined so that executables in this same project can use
 # the library with this notation.
@@ -118,10 +102,6 @@ add_library(${modNamespace}::${modName} ALIAS ${modName})
 
 # ----- Subdirectories ------------------------------------------------------ #
 add_subdirectory(tools)
-
-if (BUILD_TESTING)
-    add_subdirectory(test)
-endif ()
 
 # ----- Install instructions ------------------------------------------------ #
 # The following commands are used when installing the library
@@ -132,12 +112,12 @@ include(GNUInstallDirs)
 
 # Install the library
 install(TARGETS ${modName}
-        EXPORT ${modTargets}
+        EXPORT ${modName}Targets
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 # Install the headers
-install(DIRECTORY include/
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/CapacitatedFacilityLocationBlock.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace})
 
 # Install the auto-generated configuration header (see above).
@@ -146,7 +126,7 @@ install(FILES ${PROJECT_BINARY_DIR}/${modName}Config.h
 
 # (Generate and) install the target import file, that allows other
 # CMake projects to import the target.
-install(EXPORT ${modTargets}
+install(EXPORT ${modName}Targets
         NAMESPACE ${modNamespace}::
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${modName})
 
@@ -177,33 +157,13 @@ install(FILES
         ${CMAKE_CURRENT_LIST_DIR}/LICENSE
         DESTINATION ${CMAKE_INSTALL_DATADIR}/${modName})
 
-# ----- Export from the build tree ------------------------------------------ #
-# The following commands are needed so other projects can find the library
-# in a local build directory. They use CMake's User Package Registry
-# (located in ~/.cmake/registry) to do so.
-# See: https://cmake.org/cmake/help/latest/manual/cmake-packages.7.html
-# They don't affect the installation.
-
-# CMAKE_EXPORT_PACKAGE_REGISTRY is OFF by default.
-# It may be ON if the project is included by the SMS++ umbrella project.
-if (CMAKE_EXPORT_PACKAGE_REGISTRY)
-
-    # Generate the target import file, that allows other
-    # CMake projects to import the target.
-    export(EXPORT ${modTargets}
-           FILE ${CMAKE_CURRENT_BINARY_DIR}/${modTargets}.cmake
-           NAMESPACE ${modNamespace}::)
-
-    # Add the binary directory to RPATH, so executables that use
-    # dynamic loading will look into it.
-    if (hasParent)
-        set(SMSPP_BUILD_RPATH
-            "${SMSPP_BUILD_RPATH};${CMAKE_CURRENT_BINARY_DIR}"
-            PARENT_SCOPE)
-    endif ()
-
-    # Export the package in user's package registry
-    export(PACKAGE ${modName})
+# ----- Add the build tree to RPATH------------------------------------------ #
+# Add the binary directory to RPATH, so executables that use
+# dynamic loading will look into it.
+if (hasParent)
+    set(SMSPP_BUILD_RPATH
+        "${SMSPP_BUILD_RPATH};${CMAKE_CURRENT_BINARY_DIR}"
+        PARENT_SCOPE)
 endif ()
 
 # ----- Packaging support --------------------------------------------------- #
@@ -223,5 +183,9 @@ if (NOT hasParent)
         \\\\.gitattributes$)
     include(CPack)
 endif ()
+
+# --------------------------------------------------------------------------- #
+# Remove from the search paths the cmake directory we added at the beginning.
+list(REMOVE_AT CMAKE_MODULE_PATH -1)
 
 # --------------------------------------------------------------------------- #

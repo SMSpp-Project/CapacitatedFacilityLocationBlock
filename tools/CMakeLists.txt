@@ -1,5 +1,5 @@
 # --------------------------------------------------------------------------- #
-#    CMake file for tools                                                     #
+#    CMake file for CapacitatedFacilityLocationBlock/tools                    #
 # --------------------------------------------------------------------------- #
 
 # This is needed for setting the runtime path when installing.
@@ -16,9 +16,9 @@ if (NOT BUILD_SHARED_LIBS)
     endif ()
 endif ()
 
-# ----- dmx2nc4 ------------------------------------------------------------- #
+# ----- txt2nc4 ------------------------------------------------------------- #
 add_executable(txt2nc4 txt2nc4.cpp)
-target_link_libraries(dmx2nc4 PRIVATE SMS++::MCFBlock)
+target_link_libraries(txt2nc4 PRIVATE SMS++::CapacitatedFacilityLocationBlock)
 
 # ----- Install instructions ------------------------------------------------ #
 include(GNUInstallDirs)

@@ -16,12 +16,9 @@
 get_filename_component(@modName@_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 include(CMakeFindDependencyMacro)
 
-# ----- Settings ------------------------------------------------------------ #
-set(MCFBlock_SOLVER "@MCFBlock_SOLVER@")
-
 # ----- Requirements -------------------------------------------------------- #
-find_dependency(SMSpp)
-find_dependency(MCFClass)
+find_dependency(MCFBlock)
+find_dependency(BinaryKnapsackBlock)
 
 # ----- Import target ------------------------------------------------------- #
 if (NOT TARGET @modNamespace@::@modName@)
@@ -29,3 +26,5 @@ if (NOT TARGET @modNamespace@::@modName@)
 endif()
 
 set(@modName@_LIBRARIES @modNamespace@::@modName@)
+
+# --------------------------------------------------------------------------- #
