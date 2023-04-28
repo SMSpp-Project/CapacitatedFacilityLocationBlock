@@ -5280,7 +5280,7 @@ void CapacitatedFacilityLocationSolution::deserialize(
 
 void CapacitatedFacilityLocationSolution::read( const Block * block )
 {
- auto CFLB = dynamic_cast<const CapacitatedFacilityLocationBlock * >( block );
+ auto CFLB = dynamic_cast< const CapacitatedFacilityLocationBlock * >( block );
  if( ! CFLB )
   throw( std::invalid_argument(
 		        "block is not a CapacitatedFacilityLocationBlock" ) );
