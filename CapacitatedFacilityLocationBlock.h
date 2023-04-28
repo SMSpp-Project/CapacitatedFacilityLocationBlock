@@ -701,7 +701,7 @@ public:
  [[nodiscard]] double get_valid_upper_bound( bool conditional = false )
   override final {
   if( ! conditional )
-   return( + Inf<double>() );
+   return( Inf< double >() );
    
   if( std::isnan( f_cond_upper ) )
    compute_conditional_bounds();
@@ -930,7 +930,7 @@ public:
   *   = arcs f_n_facilities ... f_n_facilities * ( f_n_customers + 1 ) - 1:
   *     from facilities to customers, arranged facility-wise (first all the
   *     arcs of the first facilities, then all the arcs of the second, ...),
-  *     capacity == infinite (Inf<MCFBlock:: FNumber >()), cost ==
+  *     capacity == infinite (Inf< MCFBlock::FNumber >()), cost ==
   *     unitary transportation cost between facility and customer
   *
   *   When the value is 2, f_n_customers "artificial" arcs are also added
