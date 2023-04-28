@@ -538,8 +538,8 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   return;
   }
 
- if( ( wf & FormMsk ) == 1 ) {  // "knapsack formulation" (KF)- - - - - - - -
-                                //- - - - - - - - - - - - - - - - - - - - - -
+ if( ( wf & FormMsk ) == KskForm ) {  // "knapsack formulation" (KF)- - - - -
+                                      //- - - - - - - - - - - - - - - - - - -
   AR |= KskForm;
   // construct one knapsack problem for each facility
   v_Block.resize( f_n_facilities );
@@ -584,8 +584,8 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   return;
   }
 
- if( ( wf & FormMsk ) >= 2 ) {  // "flow formulation" (FF)- - - - - - - - - -
-                                //- - - - - - - - - - - - - - - - - - - - - -
+ if( ( wf & FormMsk ) >= FlwForm ) {  // "flow formulation" (FF)- - - - - - -
+                                      //- - - - - - - - - - - - - - - - - - -
   if( f_unsplittable )
    throw( std::invalid_argument(
 	   "unsplittable problem not supported with the Flow Formulation" ) );
