@@ -2475,7 +2475,7 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
   f_mod_skip = true;
 
   switch( AR & FormMsk ) {
-   case( StdForm ):    // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( StdForm ):    // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto & capi : v_cap )
      LF( capi.get_function()
 	 )->modify_coefficients( DVector( NDem , NDem + nms.size() ) ,
