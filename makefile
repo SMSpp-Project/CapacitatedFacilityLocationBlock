@@ -39,7 +39,7 @@
 ##############################################################################
 
 
-# macroes to be exported- - - - - - - - - - - - - - - - - - - - - - - - - - -
+# macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 CFLBkOBJ = $(CFLBkSDR)/CapacitatedFacilityLocationBlock.o
 
