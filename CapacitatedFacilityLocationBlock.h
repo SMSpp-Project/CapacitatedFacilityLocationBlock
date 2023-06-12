@@ -694,7 +694,7 @@ public:
 /*--------------------------------------------------------------------------*/
  /// getting upper bounds on the value of the Objective
  /** An upper bound on the optimal value of the problem is computed as
-  * \f$ \sum_{ i \in I } : F[ i ] > 0 } F[ i ] \f$ plus, for each customer
+  * \f$ \sum_{ i \in I } : F[ i ] > 0 F[ i ] \f$ plus, for each customer
   * j \in J, the term \f$ C[ i , j ] \f$ corresponding to the maximum
   * \f$ C[ i , j ] \f$ among all possible i \in I. */
 
