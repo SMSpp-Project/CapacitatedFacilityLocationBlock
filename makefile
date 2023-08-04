@@ -50,7 +50,7 @@ CFLBkH   = $(CFLBkSDR)/CapacitatedFacilityLocationBlock.h
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 clean::
-	rm -f $(CFLBkOBJ) $(CFLBkSDR)*~
+	rm -f $(CFLBkOBJ) $(CFLBkSDR)/*~
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 

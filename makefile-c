@@ -36,16 +36,16 @@
 # *INC is the -I<include directories>
 
 # define input macros for SMS++ complete makefile, then include it
-SMS++SDR = $(CFLBkSDR)../SMS++/
+SMS++SDR = $(CFLBkSDR)/../SMS++
 include $(SMS++SDR)lib/makefile-inc
 
 # define input macros for MCFBlock complete makefile sans SMS++, include it
-MCFBkSDR = $(CFLBkSDR)../MCFBlock/
-include $(MCFBkSDR)makefile-s
+MCFBkSDR = $(CFLBkSDR)/../MCFBlock
+include $(MCFBkSDR)/makefile-s
 
 # define input macros for BinaryKnapsackBlock makefile, include it
-BKBkSDR = $(CFLBkSDR)../BinaryKnapsackBlock/
-include $(BKBkSDR)makefile
+BKBkSDR = $(CFLBkSDR)/../BinaryKnapsackBlock
+include $(BKBkSDR)/makefile
 
 # include the makefile requiring all external modules in input
 include $(CFLBkSDR)/makefile
