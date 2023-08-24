@@ -168,8 +168,8 @@ unwilling to use CMake. General instructions are:
   everyone. Setting the
 
 ```make
-lib*INC = -I<paths to include files directories>
-lib*LIB = -L<paths to lib files directories> -l<libs>
+lib*INC = -I< paths to include files directories >
+lib*LIB = -L< paths to lib files directories > -l< libs >
 ```
 
   in each allows one to set any non-standard path if the library is

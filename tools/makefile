@@ -40,9 +40,9 @@ clean::
 # corresponding include line
 # each module outputs some macros to be used here:
 # *OBJ is the final object(s) / library
-# *LIB is the external libreries + -L<libdirs>
+# *LIB is the external libraries + -L< libdirs >
 # *H   is the list of all include files
-# *INC is the -I<include directories>
+# *INC is the -I< include directories >
 
 # CapacitatedFacilityLocationBlock
 CFLBkSDR = ../
@@ -53,7 +53,7 @@ include $(CFLBkSDR)makefile-c
 # object files
 MOBJ =  $(CFLBkOBJ)
 
-# libreries
+# libraries
 MLIB =  $(CFLBkLIB)
 
 $(NAME): $(MOBJ) $(DIR)$(NAME).o

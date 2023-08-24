@@ -5,11 +5,11 @@
 #   complete makefile of CapacitatedFacilityLocationBlock                    #
 #                                                                            #
 #   The makefile defines internally all external libraries required by       #
-#   CapacitatedFacilityLocationBlock, exluding the SMS++ core ones whose     #
+#   CapacitatedFacilityLocationBlock, excluding the SMS++ core ones whose    #
 #   symbols are assumed to have been defined already (typically by including #
 #   SMS++/lib/makefile). Accordingly, all necessary OBJ, H, -I directives,   #
-#   external libraries  + -L<libdirs> are added to the corresponding MCFBk*  #
-#   macros.                                                                  #
+#   external libraries  + -L< libdirs > are added to the corresponding       #
+#   MCFBk* macros.                                                           #
 #                                                                            #
 #   Input:  $(CC)       = compiler command                                   #
 #           $(SW)       = compiler options                                   #
@@ -20,7 +20,7 @@
 #           $(CFLBkODR) = the directory where the objects have to be put     #
 #                                                                            #
 #   Output: $(CFLBkOBJ) = the final object(s) / library                      #
-#           $(CFLBkLIB) = external libraries + -L<libdirs>                   #
+#           $(CFLBkLIB) = external libraries + -L< libdirs >                 #
 #           $(CFLBkH)   = the .h files to include for MCFBlock / MCFSolver   #
 #           $(CFLBkINC) = the -I$( CapacitatedFacilityLocationBlock          #
 #                         directory )                                        #
@@ -57,7 +57,7 @@ include $(CFLBkSDR)/makefile
 CFLBkOBJ := $(CFLBkOBJ) $(MCFBkOBJ) $(BKBkOBJ) $(SMS++OBJ)
 CFLBkINC := $(CFLBkINC) $(MCFBkINC) $(BKBkINC) $(SMS++INC)
 
-# external libreries for CapacitatedFacilityLocationBlock
+# external libraries for CapacitatedFacilityLocationBlock
 CFLBkLIB = $(MCFBkLIB) $(BKBkLIB) $(SMS++LIB)
 
 ############################ End of makefile #################################
