@@ -15,8 +15,6 @@ if (NOT BUILD_SHARED_LIBS)
         else ()
             add_link_options("-Wl,--whole-archive,--allow-multiple-definition")
         endif ()
-    else () # Windows
-        add_link_options("/WHOLEARCHIVE")
     endif ()
 endif ()
 
