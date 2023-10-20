@@ -2,8 +2,9 @@
 
 # ORLib instances (ORLib format == C)
 
-for size in 102 103 104 111 112 113 114 121 122 123 124 131 132 134 41 42 43 44 51 61 62 63 64 71 72 73 74 81 82 84 91 \
-  92 93 94 a1 a2 a3 a4 b1 b2 b3 b4 c1 c2 c3 c4; do
+for size in 102 103 104 111 112 113 114 121 122 123 124 131 132 134 \
+            41 42 43 44 51 61 62 63 64 71 72 73 74 81 82 84 91 92 93 94 \
+            a1 a2 a3 a4 b1 b2 b3 b4 c1 c2 c3 c4; do
   ./txt2nc4 ../data/txt/ORLib/cap${size}.txt C ../data/nc4/ORLib/cap${size}.nc4
 done
 
