@@ -37,7 +37,7 @@
 
 # define input macros for SMS++ complete makefile, then include it
 SMS++SDR = $(CFLBkSDR)/../SMS++
-include $(SMS++SDR)lib/makefile-inc
+include $(SMS++SDR)/lib/makefile-inc
 
 # define input macros for MCFBlock complete makefile sans SMS++, include it
 MCFBkSDR = $(CFLBkSDR)/../MCFBlock
