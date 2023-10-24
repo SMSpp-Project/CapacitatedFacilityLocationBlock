@@ -14,7 +14,7 @@
 NAME = txt2nc4
 
 # basic directory
-DIR = ./
+DIR = .
 
 # debug switches
 #SW = -g -glldb -fno-inline -std=c++17 -ferror-limit=1
@@ -33,7 +33,7 @@ default: $(NAME)
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 clean::
-	rm -f $(DIR)*.o $(DIR)*~ $(NAME)
+	rm -f $(DIR)/*.o $(DIR)/*~ $(NAME)
 
 # define & include the necessary modules- - - - - - - - - - - - - - - - - - -
 # if a module is not used in the current configuration, just comment out the
@@ -56,8 +56,8 @@ MOBJ =  $(CFLBkOBJ)
 # libraries
 MLIB =  $(CFLBkLIB)
 
-$(NAME): $(MOBJ) $(DIR)$(NAME).o
-	$(CC) -o $(NAME) $(DIR)$(NAME).o $(MOBJ) $(MLIB) $(SW)
+$(NAME): $(MOBJ) $(DIR)/$(NAME).o
+	$(CC) -o $(NAME) $(DIR)/$(NAME).o $(MOBJ) $(MLIB) $(SW)
 
 # dependencies: every .o from its .C + every recursively included .h- - - - -
 
@@ -69,7 +69,7 @@ MH =    $(CFLBkH)
 
 # compile command
 
-$(DIR)$(NAME).o: $(DIR)$(NAME).cpp $(MH)
+$(DIR)/$(NAME).o: $(DIR)/$(NAME).cpp $(MH)
 	$(CC) -c $*.cpp -o $@ $(MINC) $(SW)
 
 ############################ End of makefile #################################
