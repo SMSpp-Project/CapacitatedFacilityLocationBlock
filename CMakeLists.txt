@@ -19,7 +19,7 @@
 #                         Dipartimento di Informatica                         #
 #                             Universita' di Pisa                             #
 # --------------------------------------------------------------------------- #
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.19)
 project(CapacitatedFacilityLocationBlock
         VERSION 0.4.0
         DESCRIPTION "SMS++ CapacitatedFacilityLocationBlock module"
