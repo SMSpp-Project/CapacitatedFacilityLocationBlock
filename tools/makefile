@@ -45,8 +45,8 @@ clean::
 # *INC is the -I< include directories >
 
 # CapacitatedFacilityLocationBlock
-CFLBkSDR = ../
-include $(CFLBkSDR)makefile-c
+CFLBkSDR = ..
+include $(CFLBkSDR)/makefile-c
 
 # main module (linking phase) - - - - - - - - - - - - - - - - - - - - - - - -
 
