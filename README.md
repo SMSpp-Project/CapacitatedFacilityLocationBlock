@@ -112,7 +112,7 @@ your system.
 
 - [MCFBlock](https://gitlab.com/smspp/mcfblock) and its requirements.
 
-- [BinaryKnapsackBlock](https://gitlab.com/smspp/binaryknapsackblock).
+- [BinaryKnapsackBlock](https://gitlab.com/smspp/binaryknapsackblock)
 
 
 ### Build and install with CMake
