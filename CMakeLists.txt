@@ -104,6 +104,70 @@ add_library(${modNamespace}::${modName} ALIAS ${modName})
 # ----- Subdirectories ------------------------------------------------------ #
 add_subdirectory(tools)
 
+# ----- Custom commands and targets ----------------------------------------- #
+
+# Custom command to extract the txt.tgz archive if the .extracted file does not exist
+if (UNIX)
+    add_custom_command(
+            OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
+            COMMAND tar --warning=no-unknown-keyword -xzf ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz
+            COMMAND touch ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
+            COMMENT "Extracting txt.tgz"
+            VERBATIM
+            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz
+    )
+elseif (WIN32)
+    add_custom_command(
+            OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
+            COMMAND powershell -Command "
+            if (!(Test-Path -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt' -PathType Container)) {
+                New-Item -ItemType Directory -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt'
+            }
+            if (-Not (Get-ChildItem -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt' -Recurse | Measure-Object).Count) {
+                Expand-Archive -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz' -DestinationPath '${CMAKE_CURRENT_SOURCE_DIR}/data/txt'
+                New-Item -ItemType File -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted'
+            }"
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
+            COMMENT "Extracting txt.tgz"
+            VERBATIM
+            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz
+    )
+endif ()
+
+# Create custom targets to run the txt extraction
+add_custom_target(extract_txt ALL
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
+)
+
+# Custom command to run tools/batch with the txt2nc4 exe if the .generated file does not exist
+if (UNIX)
+    add_custom_command(
+            OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/batch ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4
+            COMMAND touch ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
+            COMMENT "Generating nc4 files from txt"
+            VERBATIM
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4 ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
+    )
+elseif (WIN32)
+    add_custom_command(
+            OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated"
+            COMMAND powershell -Command "& '${CMAKE_CURRENT_SOURCE_DIR}/tools/batch' '${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4.exe'"
+            COMMAND New-Item -ItemType File -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated'
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tools"
+            COMMENT "Generating nc4 files from txt"
+            VERBATIM
+            DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4.exe" "${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted"
+    )
+endif ()
+
+# Create custom targets to run the nc4 generation
+add_custom_target(run_txt2nc4 ALL
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+)
+
 # ----- Install instructions ------------------------------------------------ #
 # The following commands are used when installing the library
 # and its CMake configuration files on the system.

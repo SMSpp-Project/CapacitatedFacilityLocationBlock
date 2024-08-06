@@ -6,6 +6,7 @@ tools/txt2nc4
 
 # uncompressed instances in txt format
 data/txt
+data/nc4/.generated
 
 ### C/C++ template
 # Prerequisites
