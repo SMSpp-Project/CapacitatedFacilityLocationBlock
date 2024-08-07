@@ -133,7 +133,7 @@ if (UNIX)
     add_custom_command(
             OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
             COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/batch ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4
-            COMMAND touch ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+            COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
             COMMENT "Running txt2nc4"
             VERBATIM
@@ -143,12 +143,12 @@ elseif (WIN32)
     add_custom_command(
             OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
             COMMAND "C:/Program Files/Git/bin/bash.exe" -c  # using Git for Windows that includes Git Bash
-                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/batch ${CMAKE_CURRENT_BINARY_DIR}/tools/${CMAKE_BUILD_TYPE_INIT}/txt2nc4.exe"
-            COMMAND echo. > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/batch $<TARGET_FILE:txt2nc4>"
+            COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
             COMMENT "Running txt2nc4"
             VERBATIM
-            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/${CMAKE_BUILD_TYPE_INIT}/txt2nc4.exe ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
+            DEPENDS $<TARGET_FILE:txt2nc4> ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
     )
 endif ()
 
