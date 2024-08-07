@@ -108,32 +108,20 @@ add_subdirectory(tools)
 
 # Custom command to extract the txt.tgz archive if the .extracted file does not exist
 if (UNIX)
-    add_custom_command(
-            OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
-            COMMAND tar --warning=no-unknown-keyword -xzf ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz
-            COMMAND touch ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
-            COMMENT "Extracting txt.tgz"
-            VERBATIM
-            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz
-    )
+    set(TAR_FLAGS --warning=no-unknown-keyword -xzf)
 elseif (WIN32)
-    add_custom_command(
-            OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
-            COMMAND powershell -Command "
-            if (-not (Test-Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt' -PathType Container)) {
-                New-Item -ItemType Directory -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt'
-            }
-            if (-not (Get-ChildItem -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt' -Recurse | Measure-Object).Count) {
-                Expand-Archive -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz' -DestinationPath '${CMAKE_CURRENT_SOURCE_DIR}/data/txt'
-                New-Item -ItemType File -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted'
-            }"
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
-            COMMENT "Extracting txt.tgz"
-            VERBATIM
-            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz
-    )
+    set(TAR_FLAGS xzf)
 endif ()
+
+add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
+        COMMAND tar ${TAR_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz
+        COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
+        COMMENT "Extracting txt.tgz"
+        VERBATIM
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz
+)
 
 # Create custom targets to run the txt extraction
 add_custom_target(extract_txt ALL
@@ -147,19 +135,20 @@ if (UNIX)
             COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/batch ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4
             COMMAND touch ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
-            COMMENT "Generating nc4 files from txt"
+            COMMENT "Running txt2nc4"
             VERBATIM
             DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4 ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
     )
 elseif (WIN32)
     add_custom_command(
-            OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated"
-            COMMAND powershell -Command "& '${CMAKE_CURRENT_SOURCE_DIR}/tools/batch' '${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4.exe'"
-            COMMAND New-Item -ItemType File -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated'
-            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tools"
-            COMMENT "Generating nc4 files from txt"
+            OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+            COMMAND "C:/Program Files/Git/bin/bash.exe" -c  # using Git for Windows that includes Git Bash
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/batch ${CMAKE_CURRENT_BINARY_DIR}/tools/${CMAKE_BUILD_TYPE}/txt2nc4.exe"
+            COMMAND echo. > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
+            COMMENT "Running txt2nc4"
             VERBATIM
-            DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4.exe" "${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted"
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/${CMAKE_BUILD_TYPE}/txt2nc4.exe ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
     )
 endif ()
 
@@ -167,6 +156,9 @@ endif ()
 add_custom_target(run_txt2nc4 ALL
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
 )
+
+# Ensure that run_txt2nc4 is executed after the build
+add_dependencies(run_txt2nc4 txt2nc4)
 
 # ----- Install instructions ------------------------------------------------ #
 # The following commands are used when installing the library
