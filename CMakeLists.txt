@@ -121,10 +121,10 @@ elseif (WIN32)
     add_custom_command(
             OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
             COMMAND powershell -Command "
-            if (!(Test-Path -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt' -PathType Container)) {
+            if (-not (Test-Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt' -PathType Container)) {
                 New-Item -ItemType Directory -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt'
             }
-            if (-Not (Get-ChildItem -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt' -Recurse | Measure-Object).Count) {
+            if (-not (Get-ChildItem -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt' -Recurse | Measure-Object).Count) {
                 Expand-Archive -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz' -DestinationPath '${CMAKE_CURRENT_SOURCE_DIR}/data/txt'
                 New-Item -ItemType File -Path '${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted'
             }"
