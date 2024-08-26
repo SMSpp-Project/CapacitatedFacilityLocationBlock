@@ -16,21 +16,44 @@ NAME = txt2nc4
 # basic directory
 DIR = .
 
+# common flags
+COMMON_SW = -std=c++17 -ferror-limit=1
+
 # debug switches
-#SW = -g -glldb -fno-inline -std=c++17 -ferror-limit=1
+SW_DEBUG = -g -glldb -fno-inline $(COMMON_SW)
 # debug switches with address sanitizer and extra pedantic warning
-#SW = -g3 -glldb -fno-inline -std=c++17 -ferror-limit=1 -fsanitize=undefined -fsanitize=address -fno-omit-frame-pointer -Wpedantic -Wextra -Wno-unused-parameter -Wno-enum-compare -DCLANG_1200_0_32_27_PATCH
+SW_DEBUG_ASAN = -g3 -glldb -fno-inline $(COMMON_SW) -fsanitize=undefined -fsanitize=address -fno-omit-frame-pointer -Wpedantic -Wextra -Wno-unused-parameter -Wno-enum-compare -DCLANG_1200_0_32_27_PATCH
 # production switches
-SW = -O3 -std=c++17 -DNDEBUG -ferror-limit=1 -DCLANG_1200_0_32_27_PATCH
+SW_RELEASE = -O3 $(COMMON_SW) -DNDEBUG -DCLANG_1200_0_32_27_PATCH
 
 # compiler
 CC = clang++
 
 # default target- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-default: $(NAME)
+BUILD_MODE = release
 
-# clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+default: $(BUILD_MODE)
+
+# debug target- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+debug: SW = $(SW_DEBUG)
+debug: BUILD_MODE = debug
+debug: $(NAME)
+
+# debug_asan target- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+debug_asan: SW = $(SW_DEBUG_ASAN)
+debug_asan: BUILD_MODE = debug
+debug_asan: $(NAME)
+
+# release target- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+release: SW = $(SW_RELEASE)
+release: BUILD_MODE = release
+release: $(NAME)
+
+# clean target- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 clean::
 	rm -f $(DIR)/*.o $(DIR)/*~ $(NAME)
@@ -59,7 +82,7 @@ MLIB =  $(CFLBkLIB)
 $(NAME): $(MOBJ) $(DIR)/$(NAME).o
 	$(CC) -o $(NAME) $(DIR)/$(NAME).o $(MOBJ) $(MLIB) $(SW)
 
-# dependencies: every .o from its .C + every recursively included .h- - - - -
+# dependencies: every .o from its .cpp + every recursively included .h- - - -
 
 # include directives
 MINC =  $(CFLBkINC)
@@ -71,5 +94,24 @@ MH =    $(CFLBkH)
 
 $(DIR)/$(NAME).o: $(DIR)/$(NAME).cpp $(MH)
 	$(CC) -c $*.cpp -o $@ $(MINC) $(SW)
+
+# install/uninstall - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+prefix = /opt/smspp-project
+bindir = $(prefix)/$(BUILD_MODE)/bin
+
+install: $(NAME)
+	install -s -D $(NAME) $(DESTDIR)$(bindir)/$(NAME)
+
+uninstall:
+	rm -f $(DESTDIR)$(bindir)/$(NAME)
+
+# distclean target- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+distclean: clean
+
+# phony targets - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+.PHONY: debug debug_asan release install uninstall clean distclean
 
 ############################ End of makefile #################################
