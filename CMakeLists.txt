@@ -21,7 +21,7 @@
 # --------------------------------------------------------------------------- #
 cmake_minimum_required(VERSION 3.19)
 project(CapacitatedFacilityLocationBlock
-        VERSION 0.4.0
+        VERSION 0.1.1
         DESCRIPTION "SMS++ CapacitatedFacilityLocationBlock module"
         HOMEPAGE_URL https://gitlab.com/smspp/capacitatedfacilitylocationblock
         LANGUAGES C CXX)

@@ -25,3 +25,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - First test release.
 
+[Unreleased]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.1.1...develop
+[0.1.1]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.1.0...0.1.1
+[0.1.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/tags/0.1.0
