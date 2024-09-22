@@ -142,8 +142,8 @@ if (UNIX)
 elseif (WIN32)
     add_custom_command(
             OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
-            COMMAND "C:/Program Files/Git/bin/bash.exe" -c
-                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/batch $<TARGET_FILE:txt2nc4>"
+            COMMAND "C:/Program Files/Git/bin/bash.exe"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/batch" "$<TARGET_FILE:txt2nc4>"
             COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
             COMMENT "Running txt2nc4"
