@@ -48,7 +48,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(BuildType)
 
 # An option is an ON/OFF user-settable cache variable
-option(RUN_txt2nc4 "Whether ${modName} will run txt2nc4 or not." ON)
+option(RUN_txt2nc4 "Whether ${modName} will run txt2nc4 or not." OFF)
 
 # ----- Requirements -------------------------------------------------------- #
 # If it's not being called by the umbrella, we need to
