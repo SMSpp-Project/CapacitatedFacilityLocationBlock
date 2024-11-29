@@ -74,7 +74,7 @@ target_compile_features(${modName} PUBLIC cxx_std_17)
 # INTERFACE can be used for sources that should not be added to this library
 # but should be added to anything that links to it.
 # Note: do not GLOB files here.
-target_sources(${modName} PRIVATE CapacitatedFacilityLocationBlock.cpp)
+target_sources(${modName} PRIVATE src/CapacitatedFacilityLocationBlock.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
