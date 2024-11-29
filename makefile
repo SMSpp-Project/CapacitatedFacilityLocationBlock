@@ -41,11 +41,11 @@
 
 # macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-CFLBkOBJ = $(CFLBkSDR)/CapacitatedFacilityLocationBlock.o
+CFLBkOBJ = $(CFLBkSDR)/obj/CapacitatedFacilityLocationBlock.o
 
 CFLBkINC = -I$(CFLBkSDR)
 
-CFLBkH   = $(CFLBkSDR)/CapacitatedFacilityLocationBlock.h
+CFLBkH   = $(CFLBkSDR)/include/CapacitatedFacilityLocationBlock.h
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -54,9 +54,9 @@ clean::
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
-$(CFLBkSDR)/CapacitatedFacilityLocationBlock.o: $(BKBkOBJ) $(MCFBkOBJ) \
-	$(CFLBkSDR)/CapacitatedFacilityLocationBlock.cpp $(SMS++OBJ)
-	$(CC) -c $(CFLBkSDR)/CapacitatedFacilityLocationBlock.cpp -o $@ \
+$(CFLBkSDR)/obj/CapacitatedFacilityLocationBlock.o: $(BKBkOBJ) $(MCFBkOBJ) \
+	$(CFLBkSDR)/src/CapacitatedFacilityLocationBlock.cpp $(SMS++OBJ)
+	$(CC) -c $(CFLBkSDR)/src/CapacitatedFacilityLocationBlock.cpp -o $@ \
 	$(CFLBkINC) $(BKBkINC) $(MCFBkINC) $(SMS++INC) $(SW)
 
 ########################## End of makefile ###################################
