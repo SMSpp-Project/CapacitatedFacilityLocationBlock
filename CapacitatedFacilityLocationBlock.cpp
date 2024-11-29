@@ -3125,7 +3125,7 @@ void CapacitatedFacilityLocationBlock::fix_open_facility( Index i ,
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::chg_UnSplittable( bool unsplt ,
-							 ModParam issueMod  ,
+							 ModParam issueMod ,
 							 ModParam issueAMod )
 {
  if( unsplt == f_unsplittable )  // changing to the same value
