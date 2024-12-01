@@ -43,7 +43,7 @@
 
 CFLBkOBJ = $(CFLBkSDR)/obj/CapacitatedFacilityLocationBlock.o
 
-CFLBkINC = -I$(CFLBkSDR)
+CFLBkINC = -I$(CFLBkSDR)/include
 
 CFLBkH   = $(CFLBkSDR)/include/CapacitatedFacilityLocationBlock.h
 
