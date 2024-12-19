@@ -180,7 +180,7 @@ install(TARGETS ${modName}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 # Install the headers
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/CapacitatedFacilityLocationBlock.h
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/CapacitatedFacilityLocationBlock.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace})
 
 # Install the auto-generated configuration header (see above).
