@@ -47,9 +47,6 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 # See: https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html
 include(BuildType)
 
-# An option is an ON/OFF user-settable cache variable
-option(RUN_txt2nc4 "Whether ${modName} will run txt2nc4 or not." OFF)
-
 # ----- Requirements -------------------------------------------------------- #
 # If it's not being called by the umbrella, we need to
 # look for the system-installed libraries.
@@ -109,62 +106,55 @@ add_subdirectory(tools)
 
 # ----- Custom commands and targets ----------------------------------------- #
 
-if (RUN_txt2nc4)
-    # Custom command to extract the txt.tgz archive if the .extracted file does not exist
-    if (UNIX)
-        set(TAR_FLAGS --warning=no-unknown-keyword -xzf)
-    elseif (WIN32)
-        set(TAR_FLAGS xzf)
-    endif ()
-
-    add_custom_command(
-            OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
-            COMMAND tar ${TAR_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz
-            COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
-            COMMENT "Extracting txt.tgz"
-            VERBATIM
-            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz
-    )
-
-    # Create custom targets to run the txt extraction
-    add_custom_target(extract_txt ALL
-            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
-    )
-
-    # Custom command to run tools/batch with the txt2nc4 exe if the .generated file does not exist
-    if (UNIX)
-        add_custom_command(
-                OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
-                COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/batch ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4
-                COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
-                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
-                COMMENT "Running txt2nc4"
-                VERBATIM
-                DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4 ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
-        )
-    elseif (WIN32)
-        add_custom_command(
-                OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
-                # using Git for Windows that includes Git Bash
-                COMMAND "C:/Program Files/Git/bin/bash.exe"
-                        "${CMAKE_CURRENT_SOURCE_DIR}/tools/batch" "$<TARGET_FILE:txt2nc4>"
-                COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
-                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
-                COMMENT "Running txt2nc4"
-                VERBATIM
-                DEPENDS $<TARGET_FILE:txt2nc4> ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
-        )
-    endif ()
-
-    # Create custom targets to run the nc4 generation
-    add_custom_target(run_txt2nc4 ALL
-            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
-    )
-
-    # Ensure that run_txt2nc4 is executed after the build
-    add_dependencies(run_txt2nc4 txt2nc4)
+# Custom command to extract the txt.tgz archive if the .extracted file does not exist
+if (UNIX)
+    set(TAR_FLAGS --warning=no-unknown-keyword -xzf)
+elseif (WIN32)
+    set(TAR_FLAGS xzf)
 endif ()
+
+add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
+        COMMAND tar ${TAR_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz
+        COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
+        COMMENT "Extracting txt.tgz"
+        VERBATIM
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz)
+
+# Create custom targets to run the txt extraction
+add_custom_target(extract_txt
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted)
+
+# Custom command to run tools/batch with the txt2nc4 exe if the .generated file does not exist
+if (UNIX)
+    add_custom_command(
+            OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/batch ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4
+            COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
+            COMMENT "Running txt2nc4"
+            VERBATIM
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4 ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted)
+elseif (WIN32)
+    add_custom_command(
+            OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+            # using Git for Windows that includes Git Bash
+            COMMAND "C:/Program Files/Git/bin/bash.exe"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/batch" "$<TARGET_FILE:txt2nc4>"
+            COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
+            COMMENT "Running txt2nc4"
+            VERBATIM
+            DEPENDS $<TARGET_FILE:txt2nc4> ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted)
+endif ()
+
+# Create custom targets to run the nc4 generation
+add_custom_target(run_txt2nc4
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated)
+
+# Ensure that run_txt2nc4 is executed after the build
+add_dependencies(run_txt2nc4 txt2nc4)
 
 # ----- Install instructions ------------------------------------------------ #
 # The following commands are used when installing the library
