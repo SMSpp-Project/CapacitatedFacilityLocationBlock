@@ -41,11 +41,13 @@
 
 # macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-CFLBkOBJ = $(CFLBkSDR)/obj/CapacitatedFacilityLocationBlock.o
+CFLBkOBJ = $(CFLBkSDR)/obj/CapacitatedFacilityLocationBlock.o \
+	$(CFLBkSDR)/obj/ScenarioReductionSolver.o
 
 CFLBkINC = -I$(CFLBkSDR)/include
 
-CFLBkH   = $(CFLBkSDR)/include/CapacitatedFacilityLocationBlock.h
+CFLBkH   = $(CFLBkSDR)/include/CapacitatedFacilityLocationBlock.h \
+	$(CFLBkSDR)/include/ScenarioReductionSolver.h
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -58,5 +60,10 @@ $(CFLBkSDR)/obj/CapacitatedFacilityLocationBlock.o: $(BKBkOBJ) $(MCFBkOBJ) \
 	$(CFLBkSDR)/src/CapacitatedFacilityLocationBlock.cpp $(SMS++OBJ)
 	$(CC) -c $(CFLBkSDR)/src/CapacitatedFacilityLocationBlock.cpp -o $@ \
 	$(CFLBkINC) $(BKBkINC) $(MCFBkINC) $(SMS++INC) $(SW)
+
+$(CFLBkSDR)/obj/ScenarioReductionSolver.o: $(BKBkOBJ) $(MCFBkOBJ) \
+	$(CFLBkSDR)/src/ScenarioReductionSolver.cpp $(SMS++OBJ)
+	$(CC) -c $(CFLBkSDR)/src/ScenarioReductionSolver.cpp -o $@ \
+	$(CFLBkINC) $(BKBkINC) $(MCFBkINC) $(SMS++INC) $(MILPSINC) $(SW)
 
 ########################## End of makefile ###################################
