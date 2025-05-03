@@ -64,6 +64,6 @@ $(CFLBkSDR)/obj/CapacitatedFacilityLocationBlock.o: $(BKBkOBJ) $(MCFBkOBJ) \
 $(CFLBkSDR)/obj/ScenarioReductionSolver.o: $(BKBkOBJ) $(MCFBkOBJ) \
 	$(CFLBkSDR)/src/ScenarioReductionSolver.cpp $(SMS++OBJ)
 	$(CC) -c $(CFLBkSDR)/src/ScenarioReductionSolver.cpp -o $@ \
-	$(CFLBkINC) $(BKBkINC) $(MCFBkINC) $(SMS++INC) $(MILPSINC) $(SW)
+	$(StcBlkINC) $(CFLBkINC) $(BKBkINC) $(MCFBkINC) $(SMS++INC) $(MILPSINC) $(SW)
 
 ########################## End of makefile ###################################

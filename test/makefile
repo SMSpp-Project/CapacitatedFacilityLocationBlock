@@ -17,7 +17,7 @@ NAME = SR_test
 DIR = .
 
 # common flags
-COMMON_SW = -std=c++17 -ferror-limit=1 -Wno-enum-compare
+COMMON_SW = -std=c++20 -ferror-limit=1 -Wno-enum-compare
 
 # debug switches
 SW_DEBUG = -g3 -glldb -fno-inline $(COMMON_SW) -DCLANG_1200_0_32_27_PATCH
@@ -69,6 +69,10 @@ MILPSSDR = ../../MILPSolver
 SMS++SDR = ../../SMS++
 include $(SMS++SDR)/lib/makefile-inc
 
+# StochasticBlock
+StcBlkSDR = ../../StochasticBlock
+include $(StcBlkSDR)/makefile
+
 # CapacitatedFacilityLocationBlock
 CFLBkSDR = ../../CapacitatedFacilityLocationBlock
 include $(CFLBkSDR)/makefile-s
@@ -96,10 +100,10 @@ MILPS_INC = -I$(MILPSSDR)/include
 # main module (linking phase) - - - - - - - - - - - - - - - - - - - - - - - -
 
 # object files - includes all necessary objects
-MOBJ =  $(BNDSLVOBJ) $(LgDSLVOBJ) $(CFLBkOBJ) $(SMS++OBJ) $(MCFBkOBJ) $(MCFLEOBJ) $(MILPSOBJ)
+MOBJ = $(SMS++OBJ) $(StcBlkOBJ) $(BNDSLVOBJ) $(LgDSLVOBJ) $(CFLBkOBJ) $(MCFBkOBJ) $(MCFLEOBJ) $(MILPSOBJ)
 
 # libraries - includes all necessary libraries
-MLIB =  $(BNDSLVLIB) $(LgDSLVLIB) $(CFLBkLIB) $(SMS++LIB) $(MCFBkLIB) $(MCFLELIB) $(MILPSLIB)
+MLIB =  $(BNDSLVLIB) $(LgDSLVLIB) $(CFLBkLIB) $(SMS++LIB) $(MCFBkLIB) $(MCFLELIB) $(MILPSLIB) $(StcBlkLIB)
 
 # Final compilation target
 $(DIR)/$(NAME): $(MOBJ) $(DIR)/SR_test.o
@@ -108,10 +112,10 @@ $(DIR)/$(NAME): $(MOBJ) $(DIR)/SR_test.o
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
 # include directives - add MILPS_INC as an extra safety measure
-MINC =  $(SMS++INC) $(BNDSLVINC) $(LgDSLVINC) $(CFLBkINC) $(MCFBkINC) $(MCFLEINC) $(MILPSINC) $(MILPS_INC) -I../include
+MINC =  $(SMS++INC) $(StcBlkINC) $(BNDSLVINC) $(LgDSLVINC) $(CFLBkINC) $(MCFBkINC) $(MCFLEINC) $(MILPSINC) $(MILPS_INC) -I../include
 
 # includes
-MH =    $(SMS++H) $(BNDSLVH) $(LgDSLVH) $(CFLBkH) $(MCFBkH) $(MCFLEH) $(MILPSH)
+MH =    $(SMS++H) $(StcBlkH) $(BNDSLVH) $(LgDSLVH) $(CFLBkH) $(MCFBkH) $(MCFLEH) $(MILPSH)
 
 # compile command for the SR_test.o
 $(DIR)/SR_test.o: $(DIR)/test_SRsolver.cpp $(MH)

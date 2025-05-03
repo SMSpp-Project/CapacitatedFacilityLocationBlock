@@ -11,11 +11,18 @@
 
 #include "ScenarioReductionSolver.h"
 
+#include <algorithm>
+#include <format> // C++20 string formatting
+#include <limits>
+#include <numeric>
+#include <random>
+
 /*--------------------------------------------------------------------------*/
 /*----------------------------- NAMESPACE ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
 using namespace SMSpp_di_unipi_it;
+
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
@@ -29,152 +36,460 @@ SMSpp_insert_in_factory_cpp_1(ScenarioReductionSolver);
 /*--------------------------------------------------------------------------*/
 
 ScenarioReductionSolver::ScenarioReductionSolver() 
-  : f_CFLBlock(nullptr), f_n_facilities(0), f_n_customers(0),
-    f_capacities(nullptr), f_fixed_costs(nullptr), f_demands(nullptr),
-    f_transportation_costs(nullptr), f_unsplittable(false),
-    f_solution_value(0) 
-{
-  // Nothing else to do in constructor
-}
+  : nb_atoms(0), nb_reduced(0),
+    weights(nullptr), f_transportation_costs(nullptr), f_solution_value(0) 
+{}
 
 /*--------------------------------------------------------------------------*/
 
 ScenarioReductionSolver::~ScenarioReductionSolver() 
 {
-  // No need to delete the data pointers - they're just references to the block's data
+  // Nothing to clean up
 }
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- DERIVED METHODS OF BASE CLASS ----------------------*/
 /*--------------------------------------------------------------------------*/
 
-void ScenarioReductionSolver::set_Block(Block* block) 
+void ScenarioReductionSolver::set_Block(Block* block)
 {
-  // First call the base class implementation to set f_Block
-  Solver::set_Block(block);
-  
-  // Try to cast the block to CapacitatedFacilityLocationBlock
-  f_CFLBlock = dynamic_cast<CapacitatedFacilityLocationBlock*>(block);
-  if (!f_CFLBlock) {
-    throw std::invalid_argument("ScenarioReductionSolver only works with CapacitatedFacilityLocationBlock");
-  }
-  
-  // Cache the problem dimensions and references to the data
-  refresh_cached_data();
-  
-  // Initialize solution structures
-  f_facility_solution.resize(f_n_facilities, false);
-  f_transportation_solution.resize(f_n_facilities * f_n_customers, 0.0);
-  f_solution_value = 0.0;
+    // Check if this is the same block we already have
+    if (block == f_Block) {
+        std::cout << "Block already set, nothing to do" << std::endl;
+        return;  // Nothing to do
+    }
+
+    // Call base class implementation to set f_Block
+    Solver::set_Block(block);
+
+    auto cfl_block = dynamic_cast<CapacitatedFacilityLocationBlock*>(f_Block);
+    if (!cfl_block) {
+        throw std::invalid_argument("ScenarioReductionSolver only works with CapacitatedFacilityLocationBlock");
+    }
+
+    // Initialize or refresh cached data from the block
+    refresh_cached_data(cfl_block->get_NMaxFacilities());
+
+    // Initialize solution structures
+    reduced_atoms.resize(nb_atoms, false);
+    ind_red.reserve(nb_reduced);
+    f_solution_value = 0.0;
 }
 
+/*--------------------------------------------------------------------------*/
+/*------------------- MAIN COMPUTATION METHODS ----------------------------*/
 /*--------------------------------------------------------------------------*/
 
 int ScenarioReductionSolver::compute(bool changedvars) 
 {
   // Make sure we have a block to work with
-  if (!f_CFLBlock) {
+  if (!get_Block()) {
     return kError;
   }
   
-  // Process any pending modifications
-  process_pending_modifications();
+  // Clear existing data and solution
+  indices_to_choose.clear();
+  ind_red.clear();
+  std::fill(reduced_atoms.begin(), reduced_atoms.end(), false);
   
-  // This is where you'll implement your scenario reduction algorithm
-  // For now, we'll just create a dummy implementation
-  
-  // TODO: Replace with your actual algorithm implementation
-  // ---------------------------------------------------------
-  // Example of how you might use the physical data:
-  
-  // Clear existing solution
-  std::fill(f_facility_solution.begin(), f_facility_solution.end(), false);
-  std::fill(f_transportation_solution.begin(), f_transportation_solution.end(), 0.0);
-  
-  // Simple greedy algorithm (just for illustration)
-  // 1. Sort facilities by fixed cost
-  std::vector<std::pair<Cost, Index>> sorted_facilities;
-  for (Index i = 0; i < f_n_facilities; ++i) {
-    sorted_facilities.push_back({(*f_fixed_costs)[i], i});
+  // Select the appropriate algorithm
+  switch (algorithm) {
+    case Algorithm::Dupacova:
+      return compute_dupacova();
+    case Algorithm::BestFit:
+    case Algorithm::FirstFit:
+      return compute_local_search();
+    default:
+      return kError;
   }
-  std::sort(sorted_facilities.begin(), sorted_facilities.end());
+}
+
+/*--------------------------------------------------------------------------*/
+  // Implementation of Dupačová's forward algorithm for scenario reduction
+/*--------------------------------------------------------------------------*/
+
+int ScenarioReductionSolver::compute_dupacova()
+{
+  int m = static_cast<int>(nb_reduced);
+  int n = static_cast<int>(nb_atoms);
   
-  // 2. Open facilities in order of increasing fixed cost until all demand is satisfied
-  double total_demand = 0.0;
-  for (const auto& demand : *f_demands) {
-    total_demand += demand;
-  }
+  // Initialize the indices to choose from
+  indices_to_choose.resize(n);
+  std::iota(indices_to_choose.begin(), indices_to_choose.end(), 0);
   
-  double capacity_available = 0.0;
-  for (const auto& [cost, i] : sorted_facilities) {
-    if (capacity_available >= total_demand) {
-      break;
+  // For every atom i, save the minimal distance among the current atoms j
+  std::vector<double> minimum_d(n, std::numeric_limits<double>::infinity());
+  
+  for(int k = 0; k < m; ++k) {
+    // Find the closest atom to add on a greedy Wasserstein-based criterion
+    int j_best, j_tmp;
+    std::tie(j_best, j_tmp) = pick_candidate(reduced_atoms, minimum_d);
+    
+    // Updates
+    for(int i = 0; i < n; i++) {
+      minimum_d[i] = std::min(minimum_d[i], (*f_transportation_costs)[i][j_best]);
     }
-    f_facility_solution[i] = true;
-    capacity_available += (*f_capacities)[i];
+    reduced_atoms[j_best] = true;
+    ind_red.push_back(j_best);
+
+    indices_to_choose.erase(indices_to_choose.begin() + j_tmp);
   }
   
-  // 3. Assign customers to facilities (simple greedy allocation)
-  for (Index j = 0; j < f_n_customers; ++j) {
-    Demand remaining_demand = (*f_demands)[j];
-    for (Index i = 0; i < f_n_facilities; ++i) {
-      if (!f_facility_solution[i]) continue;
-      
-      // Find available capacity for this facility
-      Demand facility_used = 0.0;
-      for (Index j2 = 0; j2 < f_n_customers; ++j2) {
-        facility_used += f_transportation_solution[i * f_n_customers + j2] * (*f_demands)[j2];
-      }
-      Demand available = (*f_capacities)[i] - facility_used;
-      
-      if (available > 0) {
-        Demand assigned = std::min(remaining_demand, available);
-        f_transportation_solution[i * f_n_customers + j] = assigned / (*f_demands)[j];
-        remaining_demand -= assigned;
-        if (remaining_demand <= 0) break;
-      }
+  // Compute final distance
+  double dot_product = std::inner_product(minimum_d.begin(), minimum_d.end(), weights->begin(), 0.0);
+  dist_dupa = dot_product; // Save the distance from Dupacova for local search
+  f_solution_value = std::pow(dot_product, 1.0 / ell);
+  
+  return kOK;
+}
+
+/*--------------------------------------------------------------------------*/
+/*-------------------- LOCAL SEARCH IMPLEMENTATION ------------------------*/
+/*--------------------------------------------------------------------------*/
+
+int ScenarioReductionSolver::compute_local_search()
+{
+  // Initialize local search with random indices
+  double curr_d = init_local_search();
+  
+  bool improvement = true;
+  while (improvement) {
+    int i, j;
+    double trial_d;
+    
+    // Choose the strategy for picking the next pair
+    if (algorithm == Algorithm::BestFit) {
+      std::tie(i, j, trial_d) = pick_ij_bestfit(curr_d);
+    } else {
+      std::tie(i, j, trial_d) = pick_ij_firstfit(curr_d);
+    }
+    
+    // Check if we found a valid improvement
+    if (i >= 0 && j >= 0 && improvement_condition(trial_d, curr_d, dist_dupa)) {
+      curr_d = trial_d;
+      swap_indices(i, j);
+    } else {
+      improvement = false;
     }
   }
   
-  // 4. Calculate objective value
-  f_solution_value = 0.0;
-  for (Index i = 0; i < f_n_facilities; ++i) {
-    if (f_facility_solution[i]) {
-      f_solution_value += (*f_fixed_costs)[i];
-      for (Index j = 0; j < f_n_customers; ++j) {
-        f_solution_value += f_transportation_solution[i * f_n_customers + j] * (*f_transportation_costs)[i][j];
-      }
-    }
-  }
-  // ---------------------------------------------------------
+  // Update reduced_atoms vector from ind_red
+  update_reduced_atoms();
+  
+  // Calculate final Wasserstein distance
+  f_solution_value = std::pow(curr_d, 1.0 / ell);
   
   return kOK;
 }
 
 /*--------------------------------------------------------------------------*/
 
-void ScenarioReductionSolver::get_var_solution(Configuration* solc) 
+double ScenarioReductionSolver::init_local_search()
+{
+  int n = static_cast<int>(nb_atoms);
+  int m = static_cast<int>(nb_reduced);
+  
+  // Initialize the indices to choose from
+  indices_to_choose.resize(n);
+  std::iota(indices_to_choose.begin(), indices_to_choose.end(), 0);
+  
+  // If rho > 0, use Dupacova to initialize
+  if (rho > 0.0) {
+    compute_dupacova(); // This will set ind_red and reduced_atoms
+    
+    // Update indices_to_choose to exclude the indices already in ind_red
+    indices_to_choose.clear();
+    for (int i = 0; i < n; ++i) {
+      if (!reduced_atoms[i]) {
+        indices_to_choose.push_back(i);
+      }
+    }
+  } else {
+    // Initialize with random indices
+    ind_red.clear();
+    std::vector<Index> shuffled_indices(n);
+    std::iota(shuffled_indices.begin(), shuffled_indices.end(), 0);
+    std::shuffle(shuffled_indices.begin(), shuffled_indices.end(), rng);
+    
+    // Take the first m elements as the initial reduced set
+    ind_red.assign(shuffled_indices.begin(), shuffled_indices.begin() + m);
+    std::sort(ind_red.begin(), ind_red.end());
+    
+    // Update indices_to_choose
+    indices_to_choose.clear();
+    for (int i = 0; i < n; ++i) {
+      if (std::find(ind_red.begin(), ind_red.end(), i) == ind_red.end()) {
+        indices_to_choose.push_back(i);
+      }
+    }
+    
+    // Update reduced_atoms
+    update_reduced_atoms();
+  }
+  
+  // Calculate initial Wasserstein distance
+  std::vector<double> min_distances(n);
+  for (int i = 0; i < n; ++i) {
+    min_distances[i] = std::numeric_limits<double>::infinity();
+    for (auto j : ind_red) {
+      min_distances[i] = std::min(min_distances[i], (*f_transportation_costs)[i][j]);
+    }
+  }
+  
+  return std::inner_product(min_distances.begin(), min_distances.end(), weights->begin(), 0.0);
+}
+
+/*--------------------------------------------------------------------------*/
+
+bool ScenarioReductionSolver::improvement_condition(
+  double trial_d, double curr_d, double dist_dupa) const
+{
+  if (rho <= 0.0) {
+    return trial_d < curr_d;
+  } else {
+    return trial_d < curr_d - rho * dist_dupa;
+  }
+}
+
+/*--------------------------------------------------------------------------*/
+/*------------------------ BESTFIT IMPLEMENTATION -------------------------*/
+/*--------------------------------------------------------------------------*/
+
+std::tuple<ScenarioReductionSolver::Index, ScenarioReductionSolver::Index, double>
+ScenarioReductionSolver::pick_ij_bestfit(double& curr_d)
+{
+  // Holder for distances
+  std::vector<double> distances(ind_red.size(), std::numeric_limits<double>::infinity());
+  std::unordered_map<Index, Index> j_map;
+  
+  // Try removing each atom in the reduced set
+  for (size_t i = 0; i < ind_red.size(); ++i) {
+    // Temporarily remove this atom
+    Index atom_to_remove = ind_red[i];
+    ind_red.erase(ind_red.begin() + i);
+    
+    // Find the best atom to add
+    auto [best_j, dist] = bestfit_selection(ind_red);
+    
+    // Remember this combination
+    j_map[atom_to_remove] = best_j;
+    distances[i] = dist;
+    
+    // Put the atom back
+    ind_red.insert(ind_red.begin() + i, atom_to_remove);
+  }
+  
+  // Find the best combination
+  auto min_it = std::min_element(distances.begin(), distances.end());
+  if (min_it == distances.end()) {
+    return std::make_tuple(-1, -1, std::numeric_limits<double>::infinity());
+  }
+  
+  size_t best_idx = std::distance(distances.begin(), min_it);
+  Index best_i = ind_red[best_idx];
+  Index best_j = j_map[best_i];
+  
+  return std::make_tuple(best_i, best_j, distances[best_idx]);
+}
+
+/*--------------------------------------------------------------------------*/
+
+ScenarioReductionSolver::IndexDistancePair
+ScenarioReductionSolver::bestfit_selection(const std::vector<Index>& curr_indices)
+{
+  int n = static_cast<int>(nb_atoms);
+  
+  // Calculate minimum distances to current reduced set
+  std::vector<double> min_on_ind_red(n, std::numeric_limits<double>::infinity());
+  for (int i = 0; i < n; ++i) {
+    for (auto j : curr_indices) {
+      min_on_ind_red[i] = std::min(min_on_ind_red[i], (*f_transportation_costs)[i][j]);
+    }
+  }
+  
+  // Find the best atom to add from indices_to_choose
+  Index best_j = -1;
+  double best_dist = std::numeric_limits<double>::infinity();
+  
+  for (auto j : indices_to_choose) {
+    // Calculate combined minimums
+    std::vector<double> combined_min(n);
+    for (int i = 0; i < n; ++i) {
+      combined_min[i] = std::min(min_on_ind_red[i], (*f_transportation_costs)[i][j]);
+    }
+    
+    // Calculate objective value
+    double obj_val = std::inner_product(combined_min.begin(), combined_min.end(), weights->begin(), 0.0);
+    
+    // Update best if improvement found
+    if (obj_val < best_dist) {
+      best_dist = obj_val;
+      best_j = j;
+    }
+  }
+  
+  return {best_j, best_dist};
+}
+
+/*--------------------------------------------------------------------------*/
+/*------------------------ FIRSTFIT IMPLEMENTATION ------------------------*/
+/*--------------------------------------------------------------------------*/
+
+std::tuple<ScenarioReductionSolver::Index, ScenarioReductionSolver::Index, double>
+ScenarioReductionSolver::pick_ij_firstfit(double& curr_d)
+{
+  // If shuffling is enabled, shuffle the reduced set
+  if (shuffle) {
+    std::shuffle(ind_red.begin(), ind_red.end(), rng);
+  }
+  
+  // Try each atom in the reduced set
+  for (auto i : ind_red) {
+    // Create a temporary set without i
+    std::vector<Index> temp_indices;
+    temp_indices.reserve(ind_red.size() - 1);
+    for (auto idx : ind_red) {
+      if (idx != i) {
+        temp_indices.push_back(idx);
+      }
+    }
+    
+    // Try to find a suitable replacement
+    auto [j, dist] = firstfit_selection(temp_indices, curr_d);
+    
+    // If we found an improvement, return it
+    if (j != static_cast<Index>(-1)) {
+      return {i, j, dist};
+    }
+  }
+  
+  // If we need to restore the original order of ind_red
+  if (shuffle) {
+    std::sort(ind_red.begin(), ind_red.end());
+  }
+  
+  // No improvement found
+  return {-1, -1, std::numeric_limits<double>::infinity()};
+}
+
+/*--------------------------------------------------------------------------*/
+
+ScenarioReductionSolver::IndexDistancePair
+ScenarioReductionSolver::firstfit_selection(
+  const std::vector<Index>& curr_indices,
+  double curr_d)
+{
+  int n = static_cast<int>(nb_atoms);
+  
+  // Calculate minimum distances to current reduced set
+  std::vector<double> min_on_ind_red(n, std::numeric_limits<double>::infinity());
+  for (int i = 0; i < n; ++i) {
+    for (auto j : curr_indices) {
+      min_on_ind_red[i] = std::min(min_on_ind_red[i], (*f_transportation_costs)[i][j]);
+    }
+  }
+  
+  // Try each atom in indices_to_choose
+  for (auto j : indices_to_choose) {
+    // Calculate combined minimums
+    std::vector<double> combined_min(n);
+    for (int i = 0; i < n; ++i) {
+      combined_min[i] = std::min(min_on_ind_red[i], (*f_transportation_costs)[i][j]);
+    }
+    
+    // Calculate objective value
+    double trial_d = std::inner_product(combined_min.begin(), combined_min.end(), weights->begin(), 0.0);
+    
+    // Return first improvement found
+    if (improvement_condition(trial_d, curr_d, dist_dupa)) {
+      return {j, trial_d};
+    }
+  }
+  
+  // No improvement found
+  return {-1, std::numeric_limits<double>::infinity()};
+}
+
+/*--------------------------------------------------------------------------*/
+/*-------------------------- HELPER METHODS -------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void ScenarioReductionSolver::swap_indices(Index i, Index j)
+{
+  // Find and remove i from ind_red
+  auto it_i = std::find(ind_red.begin(), ind_red.end(), i);
+  if (it_i != ind_red.end()) {
+    ind_red.erase(it_i);
+  }
+  
+  // Find and remove j from indices_to_choose
+  auto it_j = std::find(indices_to_choose.begin(), indices_to_choose.end(), j);
+  if (it_j != indices_to_choose.end()) {
+    indices_to_choose.erase(it_j);
+  }
+  
+  // Add j to ind_red and i to indices_to_choose
+  ind_red.push_back(j);
+  indices_to_choose.push_back(i);
+  
+  // Sort the vectors to maintain order
+  std::sort(ind_red.begin(), ind_red.end());
+  std::sort(indices_to_choose.begin(), indices_to_choose.end());
+}
+
+/*--------------------------------------------------------------------------*/
+
+void ScenarioReductionSolver::update_reduced_atoms()
+{
+  // Reset all atoms to false
+  std::fill(reduced_atoms.begin(), reduced_atoms.end(), false);
+  
+  // Set atoms in ind_red to true
+  for (auto i : ind_red) {
+    if (i >= 0 && i < static_cast<Index>(reduced_atoms.size())) {
+      reduced_atoms[i] = true;
+    }
+  }
+}
+
+/*--------------------------------------------------------------------------*/
+
+std::tuple<int, int> ScenarioReductionSolver::pick_candidate(
+  const std::vector<bool>& red_ind, 
+  const std::vector<double>& min_cost) 
+{
+  // For every atom j in indices_to_choose, compute Wasserstein distance with closed formula
+  std::vector<double> inner_min(nb_atoms); // inner_min in closed formula
+  std::vector<float> distances(indices_to_choose.size());
+
+  for (size_t idx = 0; idx < indices_to_choose.size(); idx++) {
+    auto j = indices_to_choose[idx];
+    // compute every component 0\leq i \leq n-1 of inner_min by recursive formula
+    for (int i = 0; i < nb_atoms; i++) {
+      inner_min[i] = std::min(min_cost[i], (*f_transportation_costs)[i][j]);
+    }
+    distances[idx] = std::inner_product(inner_min.begin(), inner_min.end(), weights->begin(), 0.0); 
+  }
+
+  // compute argmin_j distances[j]
+  auto min_it = std::min_element(distances.begin(), distances.end());
+  int j_tmp = std::distance(distances.begin(), min_it); // index in indices_to_choose
+
+  return std::make_pair(indices_to_choose[j_tmp], j_tmp);
+}
+
+/*--------------------------------------------------------------------------*/
+
+void ScenarioReductionSolver::get_var_solution(Configuration* solc)
 {
   // Make sure we have a block to work with
+  Block* f_CFLBlock = get_Block();
   if (!f_CFLBlock) {
     throw std::logic_error("No CapacitatedFacilityLocationBlock set");
   }
   
   // For now, do nothing - we won't try to write to the block's variables
   // since we're ignoring the abstract representation
-  
-  // Later replace this with:
-  // if (f_CFLBlock has abstract representation) {
-  //   f_CFLBlock->set_facility_solution(f_facility_solution.begin());
-  //   f_CFLBlock->set_transportation_solution(f_transportation_solution.begin());
-  // }
-}
-
-// For get_var_value():
-OFValue ScenarioReductionSolver::get_var_value() 
-{
-  // Simply return your internally calculated objective value
-  return f_solution_value;
 }
 
 /*--------------------------------------------------------------------------*/
@@ -185,72 +500,31 @@ ScenarioReductionSolver::OFValue ScenarioReductionSolver::get_var_value()
 }
 
 /*--------------------------------------------------------------------------*/
-
-void ScenarioReductionSolver::add_Modification(sp_Mod& mod) 
-{
-  // First call the base implementation to store the modification in the queue
-  Solver::add_Modification(mod);
-  
-  // For performance, we might want to process modifications immediately
-  // but for simplicity, we'll process them all together in compute()
-}
-
-/*--------------------------------------------------------------------------*/
 /*---------------------------- PRIVATE METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void ScenarioReductionSolver::refresh_cached_data() 
+void ScenarioReductionSolver::refresh_cached_data(int k)
 {
-  if (!f_CFLBlock) return;
+  // Get the block and check if it exists
+  Block* block = get_Block();
+  if (!block) return;
   
-  // Cache the problem dimensions
-  f_n_facilities = f_CFLBlock->get_NFacilities();
-  f_n_customers = f_CFLBlock->get_NCustomers();
-  
-  // Cache references to the problem data
-  // Note: We're storing pointers to the data in the block, not copying it
-  f_capacities = &f_CFLBlock->get_Capacities();
-  f_fixed_costs = &f_CFLBlock->get_Fixed_Costs();
-  f_demands = &f_CFLBlock->get_Demands();
-  f_transportation_costs = &f_CFLBlock->get_Transportation_Costs();
-  f_unsplittable = f_CFLBlock->get_UnSplittable();
-}
-
-/*--------------------------------------------------------------------------*/
-
-void ScenarioReductionSolver::process_pending_modifications() 
-{
-  // Process all pending modifications
-  sp_Mod mod;
-  while ((mod = pop()) != nullptr) {
-    // Handle different types of modifications
-    
-    // Check for changes in facility costs
-    if (auto cflMod = std::dynamic_pointer_cast<CapacitatedFacilityLocationBlockRngdMod>(mod)) {
-      if (cflMod->type() == CapacitatedFacilityLocationBlockMod::eChgFCost ||
-          cflMod->type() == CapacitatedFacilityLocationBlockMod::eChgTCost ||
-          cflMod->type() == CapacitatedFacilityLocationBlockMod::eChgCap ||
-          cflMod->type() == CapacitatedFacilityLocationBlockMod::eChgDem) {
-        // Data has changed, refresh our cached references
-        refresh_cached_data();
-      }
-    }
-    // Check for subset-based modifications
-    else if (auto cflSubsetMod = std::dynamic_pointer_cast<CapacitatedFacilityLocationBlockSbstMod>(mod)) {
-      // Similar handling as above
-      refresh_cached_data();
-    }
-    // Check for nuclear option (reload)
-    else if (std::dynamic_pointer_cast<NBModification>(mod)) {
-      // Complete reload of the problem
-      refresh_cached_data();
-      
-      // Reinitialize solution structures
-      f_facility_solution.resize(f_n_facilities, false);
-      f_transportation_solution.resize(f_n_facilities * f_n_customers, 0.0);
-      f_solution_value = 0.0;
-    }
+  // Cast to the specialized type
+  auto cfl_block = dynamic_cast<CapacitatedFacilityLocationBlock*>(block);
+  if (!cfl_block) {
+      throw std::logic_error("Expected a CapacitatedFacilityLocationBlock");
   }
+  
+  // Now use the specialized methods with the properly typed pointer
+  nb_atoms = static_cast<ScenarioIndex>(cfl_block->get_NCustomers());
+  nb_reduced = static_cast<ScenarioIndex>(cfl_block->get_NFacilities());
+  weights = &cfl_block->get_Demands();
+  f_transportation_costs = &cfl_block->get_Transportation_Costs();
+  
+  // Resize data structures and set parameters
+  reduced_atoms.resize(nb_atoms, false);
+  ind_red.reserve(k);
+  nb_reduced = k;
 }
 
 /*--------------------------------------------------------------------------*/

@@ -250,6 +250,8 @@ public:
 /*--------------------------------------------------------------------------*/
 
  static constexpr double dNaN = std::numeric_limits< double >::quiet_NaN();
+ // TODO: fix that type it's not a double
+ static constexpr double iInf = std::numeric_limits<int>::infinity();
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
@@ -267,7 +269,7 @@ public:
  explicit CapacitatedFacilityLocationBlock( Block *father = nullptr )
   : Block( father ) , f_n_facilities( 0 ) , f_n_customers( 0 ) ,
     f_unsplittable( false ) , AR( 0 ) , f_cond_lower( dNaN ) ,
-    f_cond_upper( dNaN ) , f_mod_skip( false ) {}
+    f_cond_upper( dNaN ) , f_mod_skip( false ) , f_max_facilities( iInf ) {}
 
 /*--------------------------------------------------------------------------*/
  /// destructor; deletes the abstract representation, if any
@@ -304,6 +306,9 @@ public:
   *
   * - unsplt is the bool that, if true [default], denotes that the
   *   unsplittable version of of the problem needs be solved.
+  * 
+  * - k is the number of maximum facilities that can be opened,
+  *   [default] is iInf. 
   *
   * As the && tells, all the data becomes property of the
   * CapacitatedFacilityLocationBlock.
@@ -313,7 +318,8 @@ public:
   * option") is issued. */
 
  void load( Index m , Index n , DVector && Q , CVector && F ,
-	    DVector && D , CMatrix && C , bool unsplt = false );
+	    DVector && D , CMatrix && C , bool unsplt = false ,
+      Index k = iInf);
 
 /*--------------------------------------------------------------------------*/
  /// loads the CFL instance from memory, copying the input data
@@ -322,9 +328,9 @@ public:
   * the vectors/matrices are copied rather than moved.  */
 
  void load( Index m , Index n , c_DVector & Q , c_CVector & F ,
-	    c_DVector & D , c_CMatrix & C , bool unsplt = false ) {
+	    c_DVector & D , c_CMatrix & C , bool unsplt = false , Index k = iInf) {
   load( m , n , DVector( Q ) , CVector( F ) , DVector( D ) , CMatrix( C ),
-	unsplt );
+	unsplt , k );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -394,7 +400,11 @@ public:
   *
   * Note that the text input format does not allow to specify whether the
   * splittable or unsplittable version of the problem is solved; by default
-  * the splittable one is assumed. */
+  * the splittable one is assumed.
+  * 
+  * Similarly, the text input format does not allow to specify the 
+  * maximum of number of facilities that can be opened; by default
+  * there are no restriction on it. */
 
  void load( std::istream & input , char frmt = 0 ) override;
 
@@ -440,6 +450,9 @@ public:
   * - dimension "UnSplittable" can be present; if so, and it contains a
   *   nonzero value, then the problem is considered an unsplittable one
   *   (each customer must be served by one and only one facility).
+  * 
+  * - dimension "MaxFacilities" can be present; it is the maximum number
+  *   of facitlies that can be opened.
   *
   * Otherwise (the dimension is not there or it contains zero) then the
   * problem is considered an splittable one (customer can be served by any
@@ -576,11 +589,14 @@ public:
   *
   * The meaning of wc is bit-wise: the first bit being 1 means that the
   * customers satisfaction constraints are constructed, while the second bit
-  * being 1 means that the capacity constraints are constructed.
+  * being 1 means that the capacity constraints are constructed. The third
+  * bit being 1 means that the constraint on the number of facilities has
+  * been constructed. That last one is currently only supported by the 
+  * "natural formulation".
   * Note that "constraints X constructed" has different meanings according
   * to which formulation is used, as decided by generate_abstract_variables():
   *
-  * - If the "natural formulation" (SF) is used, there are the two explicit
+  * - If the "natural formulation" (SF) is used, there are the three explicit
   *   groups of "linear constraints" (FRowConstraint with a LinearFunction)
   *   of the "natural formulation", i.e.,
   *
@@ -591,27 +607,31 @@ public:
   *     imposing the maximum capacity of facilities as well as the logical
   *     constraints that a facility can only be used to serve any customer
   *     if it is open (2)
+  * 
+  *   = "maxF", a FRowConstraint imposing the maximum number of facilities
+  *     that can be opened.
   *
   *   and no dynamic constraints. "sat" is constructed unless ( wc & 1 ) ==
-  *   true, and "cap" is constructed unless ( wc & 2 ) == true.
+  *   false, "cap" is constructed unless ( wc & 2 ) == false and "max" 
+  *   is *not* constructed (default) unless ( wc & 4 ) == true.
   *
   * - If the "knapsack formulation" (KF) is used, then there is only one
   *   explicit groups of "linear constraints", the "sat" one with a
   *   std::vector< FRowConstraint > of size f_n_facilities imposing the
   *   satisfaction of customers' demands (1), which is constructed unless
-  *   ( wc & 1 ) == true; the capacity constraints are inside the
+  *   ( wc & 1 ) == false; the capacity constraints are inside the
   *   BinaryKnapsackBlock sub-Block, and the corresponding constraints are
-  *   constructed unless ( wc & 2 ) == true.
+  *   constructed unless ( wc & 2 ) == false.
   *
   * - If the "flow formulation" (FF) is used, then there is only one
   *   explicit groups of "linear constraints", the "cap" one with a
   *   std::vector< FRowConstraint > of size f_n_customers imposing the
   *   linking between the Y[] variables in the first sub-Block and the
   *   (appropriate) arc flow variables in the MCFBlock sub-Block; this
-  *   is constructed unless ( wc & 2 ) == true, while the constraints in
+  *   is constructed unless ( wc & 2 ) == false, while the constraints in
   *   the MCFBlock sub-Block (which impose the satisfaction of customers'
   *   demands, although they also are a part of the capacity ones) are
-  *   constructed unless ( wc & 1 ) == true.
+  *   constructed unless ( wc & 1 ) == false.
   *
   * Finally, if the third bit of ws is 1, then an appropriately arranged
   * group of dynamic Constraint is added that support the separation of
@@ -744,6 +764,14 @@ public:
  [[nodiscard]] bool get_UnSplittable( void ) const {
   return( f_unsplittable );
   }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// get the number of maximum opened facilities
+
+ [[nodiscard]] Index get_NMaxFacilities( void ) const {
+  return( f_max_facilities );
+  }
+
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// get the vector of facility capacities
@@ -1731,6 +1759,7 @@ public:
 
  Index f_n_facilities;  ///< the number of facilities
  Index f_n_customers;   ///< the number of customers
+ Index f_max_facilities; ///< the number of maximum opened facilities
 
  DVector v_capacity;    ///< vector of facility capacities
  CVector v_f_cost;      ///< vector of facility fixed costs
@@ -1747,8 +1776,8 @@ public:
 
  // abstract representation stuff - - - - - - - - - - - - - - - - - - - - - -
 
- unsigned char AR;       ///< bit-wise coded: what abstract is there
-                         /**< The char field AR keeps track of which part of
+ unsigned short AR;       ///< bit-wise coded: what abstract is there
+                         /**< The short field AR keeps track of which part of
 			  * the abstract representation has been constructed
   * already, as well as *which formulation* is used.
   * The second part is coded in the first three bits of AR, as follows.
@@ -1771,7 +1800,9 @@ public:
   *                     constructed
   * - AR & HasCapCns:   if the capacity Constraints have been constructed
   * - AR & HasStrngCns: if the strong Linking Constraints have been
-  *                     prepared for being separated */
+  *                     prepared for being separated 
+  * - AR & HasMaxCns:   if the Max Facility Constraint has been
+  *                     constructed. */
 
  bool f_unsplittable;    ///< if customers can only be served once
 
@@ -1791,6 +1822,8 @@ public:
  std::vector< FRowConstraint> v_sat;  ///< the customer satisfaction constrs.
 
  std::vector< FRowConstraint> v_cap;  ///< the facility capacity constraints
+
+ FRowConstraint maxF; ///< the maximum opened facility constraint
 
  std::vector< std::list< FRowConstraint > > v_sfc;
  ///< the strong forcing constraints

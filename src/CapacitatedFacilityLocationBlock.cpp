@@ -51,36 +51,39 @@ using v_coeff_pair = LinearFunction::v_coeff_pair;
 /*-------------------------------- CONSTANTS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-static constexpr unsigned char FormMsk = 3;
+static constexpr unsigned short FormMsk = 3;
 // mask for removing all but the first two bits and only leaving the
 // formulation (irrespective of if it is splittable or not)
 
-static constexpr unsigned char StdForm = 0;
+static constexpr unsigned short StdForm = 0;
 // the "standard" formulation is used
 
-static constexpr unsigned char KskForm = 1;
+static constexpr unsigned short KskForm = 1;
 // the "knapsack" formulation is used
 
-static constexpr unsigned char FlwForm = 2;
+static constexpr unsigned short FlwForm = 2;
 // the "flow" formulation is used
 
-static constexpr unsigned char UnSpltF = 4;
+static constexpr unsigned short UnSpltF = 4;
 // 3rd bit of AR == 1 if the problem is unsplittable (the X[] are integer)
 
-static constexpr unsigned char HasVar = 8;
+static constexpr unsigned short HasVar = 8;
 // 4th bit of AR == 1 if the Variable have been constructed
 
-static constexpr unsigned char HasObj = 16;
+static constexpr unsigned short HasObj = 16;
 // 5th bit of AR == 1 if the Objective has been constructed
 
-static constexpr unsigned char HasSatCns = 32;
+static constexpr unsigned short HasSatCns = 32;
 // 6th bit of AR == 1 if the customer satisfaction Constraints are constructed
 
-static constexpr unsigned char HasCapCns = 64;
+static constexpr unsigned short HasCapCns = 64;
 // 7th bit of AR == 1 if the capacity Constraints are constructed
 
-static constexpr unsigned char HasStrngCns = 128;
+static constexpr unsigned short HasStrngCns = 128;
 // 8th bit of AR == 1 if the strong Linking Constraints are separated
+
+static constexpr unsigned short HasMaxCns = 256;
+// 9th bit of AR == 1 if the maximum number facility Constraint is constructed
 
 static constexpr unsigned char yFree = 0;  // facility is free
 
@@ -165,7 +168,7 @@ SMSpp_insert_in_factory_cpp_1( CapacitatedFacilityLocationSolution );
 void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
 					     DVector && Q , CVector && F ,
 					     DVector && D , CMatrix && C ,
-					     bool unsplt )
+					     bool unsplt , Index k)
 {
  static const std::string _prfx = "CapacitatedFacilityLocationBlock::load: ";
 
@@ -199,6 +202,13 @@ void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
   throw( std::invalid_argument( _prfx +
 			   "transportation cost matrix has wrong shape"	) );
 
+ if ( k == 0 )
+  throw( std::invalid_argument( _prfx + "number of maximum facilities too small" ) );
+ if (k != iInf && k > m) {
+  throw(std::invalid_argument(_prfx + "number of maximum facilities too large"));
+}
+
+
  // erase existing abstract representation, if any - - - - - - - - - - - - - -
 
  if( AR & ~7 )
@@ -208,6 +218,7 @@ void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
 
  f_n_facilities = m;
  f_n_customers = n;
+
 
  v_capacity = std::move( Q );
  v_f_cost = std::move( F );
@@ -223,6 +234,8 @@ void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
  f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
 
  f_unsplittable = unsplt;
+ f_max_facilities = k;
+
 
  // throw Modification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // note: this is a NBModification, the "nuclear option"
@@ -373,6 +386,7 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input ,
 
  f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
  f_unsplittable = false;
+ f_max_facilities = iInf;
 
  // issue Modification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // note: this is a NBModification, the "nuclear option"
@@ -483,7 +497,16 @@ void CapacitatedFacilityLocationBlock::deserialize(
   f_unsplittable = ( unsplt.getSize() > 0 );
 
  f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
- 
+
+ f_max_facilities = iInf;
+ auto max_fac = group.getDim( "MaxFacilities" );
+ if ( ! max_fac.isNull() )
+  f_max_facilities = max_fac.getSize();
+ if ( f_max_facilities == 0)
+  throw( std::invalid_argument( _prfx + "number of maximum facilities too small" ) );
+ if ( f_max_facilities > f_n_facilities )
+  throw( std::invalid_argument( _prfx + "number of maximum facilities too high" ) ); 
+
  // call the method of Block- - - - - - - - - - - - - - - - - - - - - - - - -
  // inside this the NBModification, the "nuclear option",  is issued
 
@@ -686,6 +709,18 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
    AR |= HasCapCns;
    }
 
+  if( ( wc & 4 ) && ( ! ( AR & HasMaxCns ) ) ) {
+    v_coeff_pair coeffs( f_n_facilities );
+
+    for( Index i = 0 ; i < f_n_facilities ; ++i )
+     coeffs[ i ] = std::make_pair( & v_y[ i ] , double( 1 ) );
+
+    maxF.set_both( f_max_facilities );
+    maxF.set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
+
+    add_static_constraint( maxF , "maxF" ); 
+   AR |= HasMaxCns;
+  }
   goto Strong_Linking;
   }
 
@@ -3203,6 +3238,7 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
   cnst.clear(); 
  for( auto & cnst : v_sat )  // clear the satisfaction constraints
   cnst.clear();
+ maxF.clear();               // clear max. opened facilities constraint
  f_obj.clear();              // clear the objective function
 
  if( ( AR & FormMsk ) == FlwForm ) {
