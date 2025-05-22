@@ -2,9 +2,9 @@
 ################################ makefile ####################################
 ##############################################################################
 #                                                                            #
-#   makefile of test (for CapacitatedFacilityLocationBlock)                  #
+#   makefile of temporary test (for ScenarioReduction features)              #
 #                                                                            #
-#                              Antonio Frangioni                             #
+#                                  Benoît Tran                               #
 #                          Dipartimento di Informatica                       #
 #                              Universita' di Pisa                           #
 #                                                                            #

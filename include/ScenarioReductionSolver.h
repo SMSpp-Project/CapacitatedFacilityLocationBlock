@@ -95,9 +95,11 @@ class ScenarioReductionSolver : public Solver {
    * Enumeration of available scenario reduction algorithms
    */
   enum class Algorithm {
+    Baseline,  // Select scenarios with the most pb. weights
     Dupacova,  // Dupacova's forward algorithm (default)
     BestFit,   // Local search with BestFit strategy
-    FirstFit   // Local search with FirstFit strategy
+    FirstFit,   // Local search with FirstFit strategy
+    MILP       // MILP formulation with exact solution
   };
 
 /*--------------------------------------------------------------------------*/
@@ -136,6 +138,7 @@ class ScenarioReductionSolver : public Solver {
 
   void set_ell(float exponent) { ell = exponent; }
 
+/*--------------------------------------------------------------------------*/
   /**
    * Set the algorithm to use for scenario reduction
    * 
