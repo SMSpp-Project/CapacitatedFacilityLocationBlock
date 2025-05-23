@@ -41,7 +41,7 @@
 
 #include "Solver.h"
 #include "CapacitatedFacilityLocationBlock.h"
-#include "DiscreteScenarioSet.h"
+#include "ScenarioGenerator.h"  // For ScenarioIndex type
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- NAMESPACE ----------------------------------*/
