@@ -29,6 +29,7 @@
 #include <mutex>
 
 #include "SMSTypedefs.h"
+#include "Configuration.h"
 #include "ScenarioReductionSolver.h"
 #include "CapacitatedFacilityLocationBlock.h"
 
@@ -752,8 +753,9 @@ REGISTER_TEST(solution_basic_functionality) {
     throw std::runtime_error("Solver failed to compute");
   }
   
-  // Test get_Solution
-  auto* sol = solver.get_Solution();
+  // Test get_Solution from Block (need to specify we want scenario reduction solution)
+  SimpleConfiguration<int> sr_config(1);  // 1 = scenario reduction solution
+  auto* sol = block->get_Solution(&sr_config, false);  // false = not empty
   if (!sol) {
     delete block;
     throw std::runtime_error("get_Solution returned nullptr");
@@ -795,8 +797,9 @@ REGISTER_TEST(solution_save_restore) {
   solver.set_par(ScenarioReductionSolver::intAlgorithm, 1);
   solver.compute();
   
-  // Save solution
-  auto* saved_sol = solver.get_Solution();
+  // Save solution from Block
+  SimpleConfiguration<int> sr_config(1);  // 1 = scenario reduction solution
+  auto* saved_sol = block->get_Solution(&sr_config, false);
   double saved_obj = solver.get_var_value();
   
   // Compute with different algorithm (Baseline)
@@ -811,7 +814,7 @@ REGISTER_TEST(solution_save_restore) {
     throw std::runtime_error("Different algorithms should produce different objectives");
   }
   
-  // Restore saved solution
+  // Restore saved solution through solver (solver will write it to block)
   solver.put_Solution(saved_sol);
   
   // Verify objective is restored
@@ -845,8 +848,9 @@ REGISTER_TEST(solution_clone) {
   solver.set_Block(block);
   solver.compute();
   
-  // Get solution and clone it
-  auto* sol1 = solver.get_Solution();
+  // Get solution from Block and clone it
+  SimpleConfiguration<int> sr_config(1);  // 1 = scenario reduction solution
+  auto* sol1 = block->get_Solution(&sr_config, false);
   auto* sol2 = sol1->clone(false);  // Full clone
   auto* sol3 = sol1->clone(true);   // Empty clone
   
@@ -880,7 +884,8 @@ REGISTER_TEST(solution_serialization) {
   solver.set_Block(block);
   solver.compute();
   
-  auto* sol = solver.get_Solution();
+  SimpleConfiguration<int> sr_config(1);  // 1 = scenario reduction solution
+  auto* sol = block->get_Solution(&sr_config, false);
   
   // Test serialization (once implemented)
   try {
@@ -936,7 +941,8 @@ REGISTER_TEST(solution_warm_start) {
   solver1.compute();
   
   // Save solution for warm start
-  auto* warm_start = solver1.get_Solution();
+  SimpleConfiguration<int> sr_config(1);
+  auto* warm_start = block->get_Solution(&sr_config, false);
   
   // Create a second solver and use warm start
   ScenarioReductionSolver solver2;
@@ -950,6 +956,49 @@ REGISTER_TEST(solution_warm_start) {
   }
   
   delete warm_start;
+  delete block;
+}
+
+REGISTER_TEST(backward_compatibility) {
+  // Test that default get_Solution() returns CFL solution for backward compatibility
+  auto* block = new CapacitatedFacilityLocationBlock();
+  
+  // Set up minimal test instance
+  block->set_NFacilities(2);
+  block->set_NCustomers(1);
+  
+  std::vector<double> f_cost = {10.0, 15.0};
+  std::vector<double> t_cost = {1.0, 2.0};
+  std::vector<double> capacity = {1.0, 1.0};
+  std::vector<double> demand = {0.5};
+  
+  block->set_facility_cost(f_cost.data());
+  block->set_transportation_cost(t_cost.data());
+  block->set_capacity(capacity.data());
+  block->set_demand(demand.data());
+  
+  // Get solution without configuration (backward compatible)
+  auto* default_sol = block->get_Solution();
+  
+  // Verify it's a CFL solution, not a scenario reduction solution
+  if (dynamic_cast<CapacitatedFacilityLocationSolution*>(default_sol)) {
+    std::cout << "✓ Default get_Solution() returns CapacitatedFacilityLocationSolution\n";
+  } else {
+    std::cerr << "✗ Default get_Solution() did not return expected type\n";
+  }
+  
+  // Also verify we can get scenario reduction solution with config
+  SimpleConfiguration<int> sr_config(1);
+  auto* sr_sol = block->get_Solution(&sr_config);
+  
+  if (dynamic_cast<ScenarioReductionSolution*>(sr_sol)) {
+    std::cout << "✓ get_Solution(&sr_config) returns ScenarioReductionSolution\n";
+  } else {
+    std::cerr << "✗ get_Solution(&sr_config) did not return expected type\n";
+  }
+  
+  delete default_sol;
+  delete sr_sol;
   delete block;
 }
 
