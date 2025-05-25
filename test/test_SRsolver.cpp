@@ -719,6 +719,241 @@ REGISTER_TEST(stress_test_mixed_operations) {
 }
 
 /*--------------------------------------------------------------------------*/
+/*---------------------- SOLUTION SUPPORT TESTS ----------------------------*/
+/*--------------------------------------------------------------------------*/
+
+REGISTER_TEST(solution_basic_functionality) {
+  // Create a test block and solver
+  auto* block = new CapacitatedFacilityLocationBlock();
+  
+  // Set up a simple test instance
+  block->set_NFacilities(3);
+  block->set_NCustomers(2);
+  
+  std::vector<double> f_cost = {10.0, 15.0, 20.0};
+  std::vector<double> t_cost = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+  std::vector<double> capacity = {0.4, 0.3, 0.3};  // probabilities
+  std::vector<double> demand = {1.0, 1.0};
+  
+  block->set_facility_cost(f_cost.data());
+  block->set_transportation_cost(t_cost.data());
+  block->set_capacity(capacity.data());
+  block->set_demand(demand.data());
+  
+  // Create and configure solver
+  ScenarioReductionSolver solver;
+  solver.set_Block(block);
+  solver.set_par(ScenarioReductionSolver::intAlgorithm, 1); // Dupacova
+  
+  // Compute solution
+  int status = solver.compute();
+  if (status != Solver::kOK) {
+    delete block;
+    throw std::runtime_error("Solver failed to compute");
+  }
+  
+  // Test get_Solution
+  auto* sol = solver.get_Solution();
+  if (!sol) {
+    delete block;
+    throw std::runtime_error("get_Solution returned nullptr");
+  }
+  
+  // Verify solution type (once ScenarioReductionSolution is implemented)
+  // auto* sr_sol = dynamic_cast<ScenarioReductionSolution*>(sol);
+  // if (!sr_sol) {
+  //   delete sol;
+  //   delete block;
+  //   throw std::runtime_error("Wrong solution type returned");
+  // }
+  
+  delete sol;
+  delete block;
+}
+
+REGISTER_TEST(solution_save_restore) {
+  auto* block = new CapacitatedFacilityLocationBlock();
+  
+  // Set up test instance
+  block->set_NFacilities(4);
+  block->set_NCustomers(2);
+  
+  std::vector<double> f_cost = {10.0, 15.0, 20.0, 25.0};
+  std::vector<double> t_cost = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0};
+  std::vector<double> capacity = {0.25, 0.25, 0.25, 0.25};
+  std::vector<double> demand = {1.0, 1.0};
+  
+  block->set_facility_cost(f_cost.data());
+  block->set_transportation_cost(t_cost.data());
+  block->set_capacity(capacity.data());
+  block->set_demand(demand.data());
+  
+  ScenarioReductionSolver solver;
+  solver.set_Block(block);
+  
+  // Compute with Dupacova
+  solver.set_par(ScenarioReductionSolver::intAlgorithm, 1);
+  solver.compute();
+  
+  // Save solution
+  auto* saved_sol = solver.get_Solution();
+  double saved_obj = solver.get_var_value();
+  
+  // Compute with different algorithm (Baseline)
+  solver.set_par(ScenarioReductionSolver::intAlgorithm, 0);
+  solver.compute();
+  double new_obj = solver.get_var_value();
+  
+  // Objectives should be different
+  if (approx_equal(saved_obj, new_obj)) {
+    delete saved_sol;
+    delete block;
+    throw std::runtime_error("Different algorithms should produce different objectives");
+  }
+  
+  // Restore saved solution
+  solver.put_Solution(saved_sol);
+  
+  // Verify objective is restored
+  if (!approx_equal(solver.get_var_value(), saved_obj)) {
+    delete saved_sol;
+    delete block;
+    throw std::runtime_error("Failed to restore solution objective");
+  }
+  
+  delete saved_sol;
+  delete block;
+}
+
+REGISTER_TEST(solution_clone) {
+  auto* block = new CapacitatedFacilityLocationBlock();
+  
+  block->set_NFacilities(3);
+  block->set_NCustomers(2);
+  
+  std::vector<double> f_cost = {10.0, 15.0, 20.0};
+  std::vector<double> t_cost = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+  std::vector<double> capacity = {0.4, 0.3, 0.3};
+  std::vector<double> demand = {1.0, 1.0};
+  
+  block->set_facility_cost(f_cost.data());
+  block->set_transportation_cost(t_cost.data());
+  block->set_capacity(capacity.data());
+  block->set_demand(demand.data());
+  
+  ScenarioReductionSolver solver;
+  solver.set_Block(block);
+  solver.compute();
+  
+  // Get solution and clone it
+  auto* sol1 = solver.get_Solution();
+  auto* sol2 = sol1->clone(false);  // Full clone
+  auto* sol3 = sol1->clone(true);   // Empty clone
+  
+  // Once implemented, verify clones
+  // auto* sr_sol2 = dynamic_cast<ScenarioReductionSolution*>(sol2);
+  // auto* sr_sol3 = dynamic_cast<ScenarioReductionSolution*>(sol3);
+  
+  delete sol1;
+  delete sol2;
+  delete sol3;
+  delete block;
+}
+
+REGISTER_TEST(solution_serialization) {
+  auto* block = new CapacitatedFacilityLocationBlock();
+  
+  block->set_NFacilities(3);
+  block->set_NCustomers(2);
+  
+  std::vector<double> f_cost = {10.0, 15.0, 20.0};
+  std::vector<double> t_cost = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+  std::vector<double> capacity = {0.4, 0.3, 0.3};
+  std::vector<double> demand = {1.0, 1.0};
+  
+  block->set_facility_cost(f_cost.data());
+  block->set_transportation_cost(t_cost.data());
+  block->set_capacity(capacity.data());
+  block->set_demand(demand.data());
+  
+  ScenarioReductionSolver solver;
+  solver.set_Block(block);
+  solver.compute();
+  
+  auto* sol = solver.get_Solution();
+  
+  // Test serialization (once implemented)
+  try {
+    netCDF::NcFile file("test_sr_solution.nc4", netCDF::NcFile::replace);
+    netCDF::NcGroup group = file.addGroup("solution");
+    sol->serialize(group);
+    file.close();
+    
+    // Test deserialization
+    netCDF::NcFile file2("test_sr_solution.nc4", netCDF::NcFile::read);
+    netCDF::NcGroup group2 = file2.getGroup("solution");
+    auto* loaded = Solution::new_Solution(group2);
+    
+    if (!loaded) {
+      delete sol;
+      delete block;
+      throw std::runtime_error("Failed to deserialize solution");
+    }
+    
+    delete loaded;
+    
+    // Clean up test file
+    std::remove("test_sr_solution.nc4");
+  } catch (const netCDF::exceptions::NcException& e) {
+    delete sol;
+    delete block;
+    throw std::runtime_error(std::string("NetCDF error: ") + e.what());
+  }
+  
+  delete sol;
+  delete block;
+}
+
+REGISTER_TEST(solution_warm_start) {
+  auto* block = new CapacitatedFacilityLocationBlock();
+  
+  // Set up test instance
+  block->set_NFacilities(5);
+  block->set_NCustomers(3);
+  
+  std::vector<double> f_cost = {10.0, 15.0, 20.0, 25.0, 30.0};
+  std::vector<double> t_cost(15, 1.0);  // All transportation costs = 1.0
+  std::vector<double> capacity = {0.2, 0.2, 0.2, 0.2, 0.2};
+  std::vector<double> demand = {1.0, 1.0, 1.0};
+  
+  block->set_facility_cost(f_cost.data());
+  block->set_transportation_cost(t_cost.data());
+  block->set_capacity(capacity.data());
+  block->set_demand(demand.data());
+  
+  ScenarioReductionSolver solver1;
+  solver1.set_Block(block);
+  solver1.compute();
+  
+  // Save solution for warm start
+  auto* warm_start = solver1.get_Solution();
+  
+  // Create a second solver and use warm start
+  ScenarioReductionSolver solver2;
+  solver2.set_Block(block);
+  
+  // Apply warm start (once put_Solution is implemented)
+  try {
+    solver2.put_Solution(warm_start);
+  } catch (...) {
+    // Expected until implementation
+  }
+  
+  delete warm_start;
+  delete block;
+}
+
+/*--------------------------------------------------------------------------*/
 /*--------------------------------- MAIN -----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
