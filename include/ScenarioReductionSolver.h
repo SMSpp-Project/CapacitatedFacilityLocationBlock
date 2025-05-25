@@ -22,7 +22,7 @@
  * 
  * \author Benoît Tran \n
  *         Dipartimento di Informatica \n
- *         Università di Pisa \n
+ *         Universita' di Pisa \n
  */
 /*--------------------------------------------------------------------------*/
 /*----------------------------- DEFINITIONS --------------------------------*/
@@ -36,6 +36,7 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+#include <mutex>
 #include <random>
 #include <unordered_map>
 
@@ -102,6 +103,21 @@ class ScenarioReductionSolver : public Solver {
     MILP       // MILP formulation with exact solution
   };
 
+  /// public enum extending int_par_type_S for ScenarioReductionSolver
+  enum int_par_type_SRS {
+    intAlgorithm = intLastAlgPar,      ///< Algorithm selection (0=Baseline, 1=Dupacova, 2=BestFit, 3=FirstFit, 4=MILP)
+    intShuffle = intLastAlgPar + 1,    ///< Enable shuffling for FirstFit (0=false, 1=true)
+    intRandomSeed = intLastAlgPar + 2, ///< Random seed for shuffling
+    intLastParSRS                      ///< First allowed parameter for derived classes
+  };
+
+  /// public enum extending dbl_par_type_S for ScenarioReductionSolver
+  enum dbl_par_type_SRS {
+    dblRho = dblLastAlgPar,            ///< Minimum improvement threshold for local search
+    dblEll = dblLastAlgPar + 1,        ///< Power in ell-Wasserstein distance (default: 2.0)
+    dblLastParSRS                      ///< First allowed parameter for derived classes
+  };
+
 /*--------------------------------------------------------------------------*/
 /*--------------------- CONSTRUCTOR AND DESTRUCTOR -------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -136,62 +152,17 @@ class ScenarioReductionSolver : public Solver {
 
   const IntSolution& get_reduced_atoms() const { return reduced_atoms; }
 
-  void set_ell(float exponent) { ell = exponent; }
+  // Override parameter methods
+  void set_par(idx_type par, int value) override;
+  void set_par(idx_type par, double value) override;
+  int get_int_par(idx_type par) const override;
+  double get_dbl_par(idx_type par) const override;
+  
+  // Static default parameter methods
+  static int get_dflt_int_par(idx_type par);
+  static double get_dflt_dbl_par(idx_type par);
 
 /*--------------------------------------------------------------------------*/
-  /**
-   * Set the algorithm to use for scenario reduction
-   * 
-   * @param alg The algorithm to use
-   */
-  void set_algorithm(Algorithm alg) { algorithm = alg; }
-
-  /**
-   * Get the current algorithm being used
-   * 
-   * @return The current algorithm
-   */
-  Algorithm get_algorithm() const { return algorithm; }
-
-  /**
-   * Set the rho parameter for local search algorithms (minimum improvement threshold)
-   * 
-   * @param value The rho value (should be non-negative)
-   */
-  void set_rho(double value) { 
-    if (value < 0.0) {
-      throw std::invalid_argument("rho should be non-negative");
-    }
-    rho = value; 
-  }
-
-  /**
-   * Get the rho parameter
-   * 
-   * @return The current rho value
-   */
-  double get_rho() const { return rho; }
-
-  /**
-   * Set whether to use shuffling in FirstFit local search
-   * 
-   * @param enable Whether to enable shuffling
-   */
-  void set_shuffle(bool enable) { shuffle = enable; }
-
-  /**
-   * Get whether shuffling is enabled for FirstFit
-   * 
-   * @return True if shuffling is enabled
-   */
-  bool get_shuffle() const { return shuffle; }
-
-  /**
-   * Set random seed for shuffling
-   * 
-   * @param seed The random seed
-   */
-  void set_random_seed(unsigned int seed) { rng.seed(seed); }
 
   /// Selecting a pair of atoms to swap
   /**
@@ -253,6 +224,9 @@ class ScenarioReductionSolver : public Solver {
   /// Solution data
   IntSolution reduced_atoms;   // Binary values indicating which atoms are selected
   double f_solution_value;     // Objective function value of current solution
+  
+  /// Thread safety flag to prevent concurrent computations
+  bool f_computing = false;
 
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PRIVATE METHODS -----------------------------*/

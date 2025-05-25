@@ -53,9 +53,6 @@ release: $(DIR)/$(NAME)
 clean::
 	rm -f $(DIR)/*.o $(DIR)/*~ $(NAME)
 
-# Define the MILPSolver directory independently first
-MILPSSDR = ../../MILPSolver
-
 # define & include the necessary modules- - - - - - - - - - - - - - - - - - -
 # if a module is not used in the current configuration, just comment out the
 # corresponding include line
@@ -86,6 +83,7 @@ LgDSLVSDR = ../../LagrangianDualSolver
 include $(LgDSLVSDR)/makefile
 
 # MILPSolver - we need it for ScenarioReductionSolver
+MILPSSDR = ../../MILPSolver
 include $(MILPSSDR)/makefile-c
 
 # LEMONSolver, assuming all dependencies (MCFBlock) are there already
@@ -100,7 +98,8 @@ MILPS_INC = -I$(MILPSSDR)/include
 # main module (linking phase) - - - - - - - - - - - - - - - - - - - - - - - -
 
 # object files - includes all necessary objects
-MOBJ = $(SMS++OBJ) $(StcBlkOBJ) $(BNDSLVOBJ) $(LgDSLVOBJ) $(CFLBkOBJ) $(MCFBkOBJ) $(MCFLEOBJ) $(MILPSOBJ)
+# Note: MILPSOBJ is already included in BNDSLVOBJ, so we don't include it separately
+MOBJ = $(SMS++OBJ) $(StcBlkOBJ) $(BNDSLVOBJ) $(LgDSLVOBJ) $(CFLBkOBJ) $(MCFBkOBJ) $(MCFLEOBJ)
 
 # libraries - includes all necessary libraries
 MLIB =  $(BNDSLVLIB) $(LgDSLVLIB) $(CFLBkLIB) $(SMS++LIB) $(MCFBkLIB) $(MCFLELIB) $(MILPSLIB) $(StcBlkLIB)

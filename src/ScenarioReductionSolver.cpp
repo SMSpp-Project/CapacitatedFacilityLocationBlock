@@ -6,7 +6,7 @@
  *
  * \author Benoît Tran \n
  *         Dipartimento di Informatica \n
- *         Università di Pisa \n
+ *         Universita' di Pisa \n
  */
 
 #include "ScenarioReductionSolver.h"
@@ -53,6 +53,8 @@ ScenarioReductionSolver::~ScenarioReductionSolver()
 
 void ScenarioReductionSolver::set_Block(Block* block)
 {
+    std::lock_guard<std::recursive_mutex> lock(f_mutex);
+    
     // Check if this is the same block we already have
     if (block == f_Block) {
         std::cout << "Block already set, nothing to do" << std::endl;
@@ -82,26 +84,45 @@ void ScenarioReductionSolver::set_Block(Block* block)
 
 int ScenarioReductionSolver::compute(bool changedvars) 
 {
-  // Make sure we have a block to work with
-  if (!get_Block()) {
+  lock();  // Lock the solver for thread safety
+  
+  // Prevent multiple simultaneous computations
+  if (f_computing) {
+    unlock();
     return kError;
   }
+  
+  // Make sure we have a block to work with
+  if (!get_Block()) {
+    unlock();
+    return kError;
+  }
+  
+  f_computing = true;
   
   // Clear existing data and solution
   indices_to_choose.clear();
   ind_red.clear();
   std::fill(reduced_atoms.begin(), reduced_atoms.end(), false);
   
+  int result;
   // Select the appropriate algorithm
   switch (algorithm) {
     case Algorithm::Dupacova:
-      return compute_dupacova();
+      result = compute_dupacova();
+      break;
     case Algorithm::BestFit:
     case Algorithm::FirstFit:
-      return compute_local_search();
+      result = compute_local_search();
+      break;
     default:
-      return kError;
+      result = kError;
+      break;
   }
+  
+  f_computing = false;
+  unlock();  // Unlock the solver
+  return result;
 }
 
 /*--------------------------------------------------------------------------*/
@@ -482,6 +503,8 @@ std::tuple<int, int> ScenarioReductionSolver::pick_candidate(
 
 void ScenarioReductionSolver::get_var_solution(Configuration* solc)
 {
+  std::lock_guard<std::recursive_mutex> lock(f_mutex);
+  
   // Make sure we have a block to work with
   Block* f_CFLBlock = get_Block();
   if (!f_CFLBlock) {
@@ -497,6 +520,100 @@ void ScenarioReductionSolver::get_var_solution(Configuration* solc)
 ScenarioReductionSolver::OFValue ScenarioReductionSolver::get_var_value() 
 {
   return f_solution_value;
+}
+
+/*--------------------------------------------------------------------------*/
+/*---------------------- PARAMETER METHODS ---------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void ScenarioReductionSolver::set_par(idx_type par, int value) {
+  switch(par) {
+    case intAlgorithm:
+      if (value < 0 || value > 4) {
+        throw std::invalid_argument("Invalid algorithm value");
+      }
+      algorithm = static_cast<Algorithm>(value);
+      break;
+    case intShuffle:
+      shuffle = (value != 0);
+      break;
+    case intRandomSeed:
+      rng.seed(static_cast<unsigned int>(value));
+      break;
+    default:
+      Solver::set_par(par, value);
+  }
+}
+
+/*--------------------------------------------------------------------------*/
+
+void ScenarioReductionSolver::set_par(idx_type par, double value) {
+  switch(par) {
+    case dblRho:
+      if (value < 0.0) {
+        throw std::invalid_argument("rho must be non-negative");
+      }
+      rho = value;
+      break;
+    case dblEll:
+      if (value <= 0.0) {
+        throw std::invalid_argument("ell must be positive");
+      }
+      ell = static_cast<float>(value);
+      break;
+    default:
+      Solver::set_par(par, value);
+  }
+}
+
+/*--------------------------------------------------------------------------*/
+
+int ScenarioReductionSolver::get_int_par(idx_type par) const {
+  switch(par) {
+    case intAlgorithm:
+      return static_cast<int>(algorithm);
+    case intShuffle:
+      return shuffle ? 1 : 0;
+    case intRandomSeed:
+      // Note: We can't retrieve the seed from mt19937, so return a default
+      return 0;
+    default:
+      return Solver::get_int_par(par);
+  }
+}
+
+/*--------------------------------------------------------------------------*/
+
+double ScenarioReductionSolver::get_dbl_par(idx_type par) const {
+  switch(par) {
+    case dblRho:
+      return rho;
+    case dblEll:
+      return static_cast<double>(ell);
+    default:
+      return Solver::get_dbl_par(par);
+  }
+}
+
+/*--------------------------------------------------------------------------*/
+
+int ScenarioReductionSolver::get_dflt_int_par(idx_type par) {
+  switch(par) {
+    case intAlgorithm: return 1;    // Dupacova
+    case intShuffle: return 0;       // No shuffling
+    case intRandomSeed: return 0;    // Default seed
+    default: return 0;  // Base class default
+  }
+}
+
+/*--------------------------------------------------------------------------*/
+
+double ScenarioReductionSolver::get_dflt_dbl_par(idx_type par) {
+  switch(par) {
+    case dblRho: return 0.0;
+    case dblEll: return 2.0;
+    default: return 0.0;  // Base class default
+  }
 }
 
 /*--------------------------------------------------------------------------*/
