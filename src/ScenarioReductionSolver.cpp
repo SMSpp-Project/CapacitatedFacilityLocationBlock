@@ -529,7 +529,7 @@ ScenarioReductionSolver::OFValue ScenarioReductionSolver::get_var_value()
 void ScenarioReductionSolver::set_par(idx_type par, int value) {
   switch(par) {
     case intAlgorithm:
-      if (value < 0 || value > 4) {
+      if (value < 0 || value > 3) {
         throw std::invalid_argument("Invalid algorithm value");
       }
       algorithm = static_cast<Algorithm>(value);

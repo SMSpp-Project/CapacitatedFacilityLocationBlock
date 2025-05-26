@@ -8,11 +8,10 @@
  * 
  * It assumes that the user loaded a CapacitatedFacilityLocationBlock 
  * instance and uses its internal variables and methods. 
- * ScenarioReductionSolver checks that the instance can be correctly 
- * interpreted as a MILP reformulation of the (Discrete) Scenario Reduction
- * Problem. 
+ * ScenarioReductionSolver interprets the CFL instance as a Discrete 
+ * Scenario Reduction Problem and solves it using heuristic methods.
  * 
- * For now, this solver works directly with the physical representation of 
+ * This solver works directly with the physical representation of 
  * the problem.
  * 
  * This implementation includes multiple scenario reduction algorithms:
@@ -57,15 +56,19 @@ namespace SMSpp_di_unipi_it {
 /*--------------------------- GENERAL NOTES --------------------------------*/
 /*--------------------------------------------------------------------------*/
 /**
- * A solver for Capacitated Facility Location (CFL) problems that works directly
- * with the physical representation of the problem, forgetting the abstract
- * representation for now. This solver solves the Scenario Reduction Problem
- * as a specific instance of CFL.
+ * A purely physical solver for the Discrete Scenario Reduction problem 
+ * interpreted as a Capacitated Facility Location (CFL) instance.
+ * This solver works directly with the physical data arrays and implements
+ * efficient heuristic algorithms.
  * 
- * Multiple scenario reduction algorithms are implemented:
+ * Implemented heuristic algorithms:
+ * - Baseline: Select scenarios with highest probability weights
  * - Dupacova's forward algorithm (default)
  * - Local search with BestFit strategy 
  * - Local search with FirstFit strategy
+ * 
+ * For exact MILP-based scenario reduction, users should attach a MILPSolver
+ * to the CapacitatedFacilityLocationBlock instead.
  */
 class ScenarioReductionSolver : public Solver {
 
@@ -99,13 +102,12 @@ class ScenarioReductionSolver : public Solver {
     Baseline,  // Select scenarios with the most pb. weights
     Dupacova,  // Dupacova's forward algorithm (default)
     BestFit,   // Local search with BestFit strategy
-    FirstFit,   // Local search with FirstFit strategy
-    MILP       // MILP formulation with exact solution
+    FirstFit   // Local search with FirstFit strategy
   };
 
   /// public enum extending int_par_type_S for ScenarioReductionSolver
   enum int_par_type_SRS {
-    intAlgorithm = intLastAlgPar,      ///< Algorithm selection (0=Baseline, 1=Dupacova, 2=BestFit, 3=FirstFit, 4=MILP)
+    intAlgorithm = intLastAlgPar,      ///< Algorithm selection (0=Baseline, 1=Dupacova, 2=BestFit, 3=FirstFit)
     intShuffle = intLastAlgPar + 1,    ///< Enable shuffling for FirstFit (0=false, 1=true)
     intRandomSeed = intLastAlgPar + 2, ///< Random seed for shuffling
     intLastParSRS                      ///< First allowed parameter for derived classes
