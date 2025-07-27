@@ -103,6 +103,26 @@ add_subdirectory(tools)
 
 # ----- Custom commands and targets ----------------------------------------- #
 
+# Download txt.tgz from GitLab Package Registry if it doesn't exist
+set(TXT_URL "https://gitlab.com/api/v4/projects/24780184/packages/generic/txt/latest/txt.tgz")
+set(TXT_ARCHIVE ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz)
+set(TXT_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/download_txt.cmake)
+
+file(WRITE ${TXT_SCRIPT} "
+file(DOWNLOAD \"${TXT_URL}\" \"${TXT_ARCHIVE}\" SHOW_PROGRESS)
+")
+
+add_custom_command(
+        OUTPUT ${TXT_ARCHIVE}
+        COMMAND ${CMAKE_COMMAND} -E echo "Downloading txt.tgz from GitLab Package Registry..."
+        COMMAND ${CMAKE_COMMAND} -P ${TXT_SCRIPT}
+        COMMENT "Downloading txt.tgz"
+        VERBATIM
+)
+
+add_custom_target(download_txt
+        DEPENDS ${TXT_ARCHIVE})
+
 # Custom command to extract the txt.tgz archive if the .extracted file does not exist
 if (UNIX)
     set(TAR_FLAGS --warning=no-unknown-keyword -xzf)
@@ -117,11 +137,14 @@ add_custom_command(
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
         COMMENT "Extracting txt.tgz"
         VERBATIM
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz)
+        DEPENDS download_txt)
 
 # Create custom targets to run the txt extraction
 add_custom_target(extract_txt
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted)
+
+# Ensure that extract_txt is executed after the download
+add_dependencies(extract_txt download_txt)
 
 # Custom command to run tools/batch with the txt2nc4 exe if the .generated file does not exist
 if (UNIX)
