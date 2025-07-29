@@ -131,9 +131,9 @@ elseif (WIN32)
 endif ()
 
 add_custom_command(
-        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted
         COMMAND tar ${TAR_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz
-        COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
+        COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
         COMMENT "Extracting txt.tgz"
         VERBATIM
@@ -141,7 +141,7 @@ add_custom_command(
 
 # Create custom targets to run the txt extraction
 add_custom_target(extract_txt
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted)
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
 
 # Ensure that extract_txt is executed after the download
 add_dependencies(extract_txt download_txt)
@@ -155,7 +155,7 @@ if (UNIX)
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
             COMMENT "Running txt2nc4"
             VERBATIM
-            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4 ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted)
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4 ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
 elseif (WIN32)
     add_custom_command(
             OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
@@ -166,7 +166,7 @@ elseif (WIN32)
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
             COMMENT "Running txt2nc4"
             VERBATIM
-            DEPENDS $<TARGET_FILE:txt2nc4> ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted)
+            DEPENDS $<TARGET_FILE:txt2nc4> ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
 endif ()
 
 # Create custom targets to run the nc4 generation
