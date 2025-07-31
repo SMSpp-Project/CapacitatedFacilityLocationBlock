@@ -678,7 +678,7 @@ void ScenarioReductionSolver::set_par(idx_type par, double value) {
 
 /*--------------------------------------------------------------------------*/
 
-void ScenarioReductionSolver::set_par(idx_type par, const std::vector<int>& value) {
+void ScenarioReductionSolver::set_par(idx_type par, std::vector<int>&& value) {
   switch(par) {
     case vintWarmstartIndices:
       warmstart_indices.clear();
@@ -688,7 +688,7 @@ void ScenarioReductionSolver::set_par(idx_type par, const std::vector<int>& valu
       }
       break;
     default:
-      Solver::set_par(par, value);
+      Solver::set_par(par, std::move(value));
   }
 }
 
@@ -725,18 +725,19 @@ double ScenarioReductionSolver::get_dbl_par(idx_type par) const {
 
 /*--------------------------------------------------------------------------*/
 
-void ScenarioReductionSolver::get_par(idx_type par, std::vector<int>& value) const {
-  switch(par) {
-    case vintWarmstartIndices:
-      value.clear();
-      value.reserve(warmstart_indices.size());
-      for (Index idx : warmstart_indices) {
-        value.push_back(static_cast<int>(idx));
-      }
-      break;
-    default:
-      Solver::get_par(par, value);
+const std::vector<int>& ScenarioReductionSolver::get_vint_par(idx_type par) const {
+  if (par == vintWarmstartIndices) {
+    // We need to return a const ref to vector<int>, but we have vector<Index>
+    // Create a static thread_local to hold the conversion
+    static thread_local std::vector<int> temp_indices;
+    temp_indices.clear();
+    temp_indices.reserve(warmstart_indices.size());
+    for (Index idx : warmstart_indices) {
+      temp_indices.push_back(static_cast<int>(idx));
+    }
+    return temp_indices;
   }
+  return Solver::get_vint_par(par);
 }
 
 /*--------------------------------------------------------------------------*/

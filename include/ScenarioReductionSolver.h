@@ -167,10 +167,10 @@ class ScenarioReductionSolver : public Solver {
   // Override parameter methods
   void set_par(idx_type par, int value) override;
   void set_par(idx_type par, double value) override;
-  void set_par(idx_type par, const std::vector<int>& value) override;
+  void set_par(idx_type par, std::vector<int>&& value) override;
   int get_int_par(idx_type par) const override;
   double get_dbl_par(idx_type par) const override;
-  void get_par(idx_type par, std::vector<int>& value) const override;
+  const std::vector<int>& get_vint_par(idx_type par) const override;
   
   // Static default parameter methods
   static int get_dflt_int_par(idx_type par);
