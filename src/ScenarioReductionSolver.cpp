@@ -16,6 +16,7 @@
 #include <limits>
 #include <numeric>
 #include <random>
+#include <unordered_set>
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- NAMESPACE ----------------------------------*/
@@ -64,18 +65,36 @@ void ScenarioReductionSolver::set_Block(Block* block)
     // Call base class implementation to set f_Block
     Solver::set_Block(block);
 
-    auto cfl_block = dynamic_cast<CapacitatedFacilityLocationBlock*>(f_Block);
-    if (!cfl_block) {
-        throw std::invalid_argument("ScenarioReductionSolver only works with CapacitatedFacilityLocationBlock");
+    if (f_Block) {
+        // Check if block is correct type
+        auto cfl_block = dynamic_cast<CapacitatedFacilityLocationBlock*>(f_Block);
+        if (!cfl_block) {
+            throw std::invalid_argument("ScenarioReductionSolver only works with CapacitatedFacilityLocationBlock");
+        }
+
+        // Lock the block if not owned
+        bool owned = f_Block->is_owned_by(f_id);
+        if (!owned && !f_Block->lock(f_id)) {
+            throw std::runtime_error("ScenarioReductionSolver: unable to lock the Block");
+        }
+
+        // Generate only abstract variables (we only need y variables for solution writing)
+        // Note: This still generates x variables which we don't use, but there's no
+        // built-in way to generate only y variables. This is acceptable overhead.
+        f_Block->generate_abstract_variables();
+
+        if (!owned) {
+            f_Block->unlock(f_id);
+        }
+
+        // Initialize or refresh cached data from the block
+        refresh_cached_data(cfl_block->get_NMaxFacilities());
+
+        // Initialize solution structures
+        reduced_atoms.resize(nb_atoms, false);
+        ind_red.reserve(nb_reduced);
+        f_solution_value = 0.0;
     }
-
-    // Initialize or refresh cached data from the block
-    refresh_cached_data(cfl_block->get_NMaxFacilities());
-
-    // Initialize solution structures
-    reduced_atoms.resize(nb_atoms, false);
-    ind_red.reserve(nb_reduced);
-    f_solution_value = 0.0;
 }
 
 /*--------------------------------------------------------------------------*/
@@ -108,6 +127,9 @@ int ScenarioReductionSolver::compute(bool changedvars)
   int result;
   // Select the appropriate algorithm
   switch (algorithm) {
+    case Algorithm::Baseline:
+      result = compute_baseline();
+      break;
     case Algorithm::Dupacova:
       result = compute_dupacova();
       break;
@@ -165,6 +187,53 @@ int ScenarioReductionSolver::compute_dupacova()
 }
 
 /*--------------------------------------------------------------------------*/
+/*--------------------- BASELINE ALGORITHM IMPLEMENTATION -----------------*/
+/*--------------------------------------------------------------------------*/
+
+int ScenarioReductionSolver::compute_baseline()
+{
+  // Create vector of (weight, index) pairs
+  std::vector<std::pair<double, Index>> weight_index_pairs;
+  weight_index_pairs.reserve(nb_atoms);
+  
+  for (Index i = 0; i < nb_atoms; ++i) {
+    weight_index_pairs.emplace_back((*weights)[i], i);
+  }
+  
+  // Sort by weight in descending order
+  std::sort(weight_index_pairs.begin(), weight_index_pairs.end(),
+            [](const auto& a, const auto& b) { return a.first > b.first; });
+  
+  // Select top k scenarios
+  std::fill(reduced_atoms.begin(), reduced_atoms.end(), false);
+  ind_red.clear();
+  for (Index i = 0; i < nb_reduced && i < nb_atoms; ++i) {
+    Index scenario_idx = weight_index_pairs[i].second;
+    reduced_atoms[scenario_idx] = true;
+    ind_red.push_back(scenario_idx);
+  }
+  
+  // Calculate objective value (ell-Wasserstein distance)
+  std::vector<double> min_distances(nb_atoms);
+  for (Index i = 0; i < nb_atoms; ++i) {
+    min_distances[i] = std::numeric_limits<double>::infinity();
+    for (Index j = 0; j < nb_atoms; ++j) {
+      if (reduced_atoms[j]) {
+        min_distances[i] = std::min(min_distances[i], 
+                                   (*f_transportation_costs)[i][j]);
+      }
+    }
+  }
+  
+  double total_distance = std::inner_product(min_distances.begin(), 
+                                           min_distances.end(), 
+                                           weights->begin(), 0.0);
+  f_solution_value = std::pow(total_distance, 1.0 / ell);
+  
+  return kOK;
+}
+
+/*--------------------------------------------------------------------------*/
 /*-------------------- LOCAL SEARCH IMPLEMENTATION ------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -214,19 +283,29 @@ double ScenarioReductionSolver::init_local_search()
   indices_to_choose.resize(n);
   std::iota(indices_to_choose.begin(), indices_to_choose.end(), 0);
   
-  // If rho > 0, use Dupacova to initialize
-  if (rho > 0.0) {
-    compute_dupacova(); // This will set ind_red and reduced_atoms
+  ind_red.clear();
+  
+  if (use_warmstart) {
+    if (!warmstart_indices.empty()) {
+      // Use custom warm start indices
+      validate_warmstart_indices(warmstart_indices, n, m);
+      ind_red = warmstart_indices;
+      // Sort to maintain consistency
+      std::sort(ind_red.begin(), ind_red.end());
+    } else {
+      // Use Dupačová as default warm start
+      compute_dupacova(); // This will set ind_red and reduced_atoms
+    }
     
-    // Update indices_to_choose to exclude the indices already in ind_red
+    // Update indices_to_choose to exclude selected indices
     indices_to_choose.clear();
     for (int i = 0; i < n; ++i) {
-      if (!reduced_atoms[i]) {
+      if (std::find(ind_red.begin(), ind_red.end(), i) == ind_red.end()) {
         indices_to_choose.push_back(i);
       }
     }
   } else {
-    // Initialize with random indices
+    // Random initialization
     ind_red.clear();
     std::vector<Index> shuffled_indices(n);
     std::iota(shuffled_indices.begin(), shuffled_indices.end(), 0);
@@ -243,10 +322,10 @@ double ScenarioReductionSolver::init_local_search()
         indices_to_choose.push_back(i);
       }
     }
-    
-    // Update reduced_atoms
-    update_reduced_atoms();
   }
+  
+  // Update reduced_atoms
+  update_reduced_atoms();
   
   // Calculate initial Wasserstein distance
   std::vector<double> min_distances(n);
@@ -505,14 +584,42 @@ void ScenarioReductionSolver::get_var_solution(Configuration* solc)
 {
   std::lock_guard<std::recursive_mutex> lock(f_mutex);
   
-  // Make sure we have a block to work with
-  Block* f_CFLBlock = get_Block();
-  if (!f_CFLBlock) {
-    throw std::logic_error("No CapacitatedFacilityLocationBlock set");
+  if (!f_Block) {
+    throw std::logic_error("ScenarioReductionSolver::get_var_solution: no Block set");
   }
   
-  // For now, do nothing - we won't try to write to the block's variables
-  // since we're ignoring the abstract representation
+  if (!has_var_solution()) {
+    throw std::logic_error("ScenarioReductionSolver::get_var_solution: no solution available");
+  }
+  
+  auto cfl_block = dynamic_cast<CapacitatedFacilityLocationBlock*>(f_Block);
+  if (!cfl_block) {
+    throw std::logic_error("ScenarioReductionSolver::get_var_solution: Block is not CapacitatedFacilityLocationBlock");
+  }
+  
+  // Check that abstract representation exists
+  if (!cfl_block->get_y(0)) {
+    throw std::logic_error("ScenarioReductionSolver::get_var_solution: variables not generated in Block");
+  }
+  
+  // Write solution to Block's y variables
+  for (Index i = 0; i < nb_atoms; ++i) {
+    ColVariable* y_var = cfl_block->get_y(i);
+    if (y_var) {
+      // Set value: 1.0 if facility/scenario selected, 0.0 otherwise
+      y_var->set_value(reduced_atoms[i] ? 1.0 : 0.0);
+    }
+  }
+}
+
+/*--------------------------------------------------------------------------*/
+
+bool ScenarioReductionSolver::has_var_solution() 
+{
+  // Solution exists if compute() was successful and we have selected scenarios
+  return (f_solution_value >= 0) && !reduced_atoms.empty() && 
+         std::any_of(reduced_atoms.begin(), reduced_atoms.end(), 
+                     [](bool val) { return val; });
 }
 
 /*--------------------------------------------------------------------------*/
@@ -539,6 +646,9 @@ void ScenarioReductionSolver::set_par(idx_type par, int value) {
       break;
     case intRandomSeed:
       rng.seed(static_cast<unsigned int>(value));
+      break;
+    case intUseWarmstart:
+      use_warmstart = (value != 0);
       break;
     default:
       Solver::set_par(par, value);
@@ -568,6 +678,22 @@ void ScenarioReductionSolver::set_par(idx_type par, double value) {
 
 /*--------------------------------------------------------------------------*/
 
+void ScenarioReductionSolver::set_par(idx_type par, const std::vector<int>& value) {
+  switch(par) {
+    case vintWarmstartIndices:
+      warmstart_indices.clear();
+      warmstart_indices.reserve(value.size());
+      for (int idx : value) {
+        warmstart_indices.push_back(static_cast<Index>(idx));
+      }
+      break;
+    default:
+      Solver::set_par(par, value);
+  }
+}
+
+/*--------------------------------------------------------------------------*/
+
 int ScenarioReductionSolver::get_int_par(idx_type par) const {
   switch(par) {
     case intAlgorithm:
@@ -577,6 +703,8 @@ int ScenarioReductionSolver::get_int_par(idx_type par) const {
     case intRandomSeed:
       // Note: We can't retrieve the seed from mt19937, so return a default
       return 0;
+    case intUseWarmstart:
+      return use_warmstart ? 1 : 0;
     default:
       return Solver::get_int_par(par);
   }
@@ -597,11 +725,28 @@ double ScenarioReductionSolver::get_dbl_par(idx_type par) const {
 
 /*--------------------------------------------------------------------------*/
 
+void ScenarioReductionSolver::get_par(idx_type par, std::vector<int>& value) const {
+  switch(par) {
+    case vintWarmstartIndices:
+      value.clear();
+      value.reserve(warmstart_indices.size());
+      for (Index idx : warmstart_indices) {
+        value.push_back(static_cast<int>(idx));
+      }
+      break;
+    default:
+      Solver::get_par(par, value);
+  }
+}
+
+/*--------------------------------------------------------------------------*/
+
 int ScenarioReductionSolver::get_dflt_int_par(idx_type par) {
   switch(par) {
     case intAlgorithm: return 1;    // Dupacova
     case intShuffle: return 0;       // No shuffling
     case intRandomSeed: return 0;    // Default seed
+    case intUseWarmstart: return 0;  // No warm start by default
     default: return 0;  // Base class default
   }
 }
@@ -622,26 +767,83 @@ double ScenarioReductionSolver::get_dflt_dbl_par(idx_type par) {
 
 void ScenarioReductionSolver::refresh_cached_data(int k)
 {
-  // Get the block and check if it exists
-  Block* block = get_Block();
-  if (!block) return;
+  // Check if block exists
+  if (!f_Block) {
+    throw std::logic_error("ScenarioReductionSolver::refresh_cached_data: no Block set");
+  }
   
   // Cast to the specialized type
-  auto cfl_block = dynamic_cast<CapacitatedFacilityLocationBlock*>(block);
+  auto cfl_block = dynamic_cast<CapacitatedFacilityLocationBlock*>(f_Block);
   if (!cfl_block) {
-      throw std::logic_error("Expected a CapacitatedFacilityLocationBlock");
+    throw std::logic_error("ScenarioReductionSolver::refresh_cached_data: Block is not CapacitatedFacilityLocationBlock");
+  }
+  
+  // Validate k parameter
+  if (k < 0) {
+    throw std::invalid_argument("ScenarioReductionSolver::refresh_cached_data: k must be non-negative");
   }
   
   // Now use the specialized methods with the properly typed pointer
   nb_atoms = static_cast<ScenarioIndex>(cfl_block->get_NCustomers());
   nb_reduced = static_cast<ScenarioIndex>(cfl_block->get_NFacilities());
+  
+  // Validate that we have a square distance matrix (customers == facilities for scenario reduction)
+  if (nb_atoms != nb_reduced) {
+    throw std::logic_error("ScenarioReductionSolver::refresh_cached_data: for scenario reduction, number of customers must equal number of facilities");
+  }
+  
+  // Validate k against problem size
+  if (k > nb_atoms) {
+    throw std::invalid_argument("ScenarioReductionSolver::refresh_cached_data: k cannot exceed number of scenarios");
+  }
+  
+  // Get pointers to data - these should always be valid for a properly loaded block
   weights = &cfl_block->get_Demands();
   f_transportation_costs = &cfl_block->get_Transportation_Costs();
   
+  if (!weights || weights->empty()) {
+    throw std::runtime_error("ScenarioReductionSolver::refresh_cached_data: Block has no demand data");
+  }
+  
+  if (!f_transportation_costs) {
+    throw std::runtime_error("ScenarioReductionSolver::refresh_cached_data: Block has no transportation cost data");
+  }
+  
   // Resize data structures and set parameters
   reduced_atoms.resize(nb_atoms, false);
+  ind_red.clear();
   ind_red.reserve(k);
   nb_reduced = k;
+}
+
+/*--------------------------------------------------------------------------*/
+
+void ScenarioReductionSolver::validate_warmstart_indices(
+    const std::vector<Index>& indices, int n, int m)
+{
+  // Check size
+  if (indices.size() != static_cast<size_t>(m)) {
+    throw std::invalid_argument(
+      "ScenarioReductionSolver::validate_warmstart_indices: warmstart_indices size (" + 
+      std::to_string(indices.size()) + ") must equal nb_reduced (" + 
+      std::to_string(m) + ")");
+  }
+  
+  // Check bounds and uniqueness
+  std::unordered_set<Index> seen;
+  for (Index idx : indices) {
+    if (idx < 0 || idx >= n) {
+      throw std::invalid_argument(
+        "ScenarioReductionSolver::validate_warmstart_indices: warmstart index " + 
+        std::to_string(idx) + " out of bounds [0, " + 
+        std::to_string(n-1) + "]");
+    }
+    if (!seen.insert(idx).second) {
+      throw std::invalid_argument(
+        "ScenarioReductionSolver::validate_warmstart_indices: duplicate warmstart index " + 
+        std::to_string(idx));
+    }
+  }
 }
 
 /*--------------------------------------------------------------------------*/

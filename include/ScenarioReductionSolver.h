@@ -40,7 +40,7 @@
 #include <unordered_map>
 
 #include "Solver.h"
-#include "CapacitatedFacilityLocationBlock.h"
+#include "CapacitatedFacilityLocationBlock.h" 
 #include "ScenarioGenerator.h"  // For ScenarioIndex type
 
 /*--------------------------------------------------------------------------*/
@@ -59,7 +59,7 @@ namespace SMSpp_di_unipi_it {
  * A purely physical solver for the Discrete Scenario Reduction problem 
  * interpreted as a Capacitated Facility Location (CFL) instance.
  * This solver works directly with the physical data arrays and implements
- * efficient heuristic algorithms.
+ * heuristic algorithms.
  * 
  * Implemented heuristic algorithms:
  * - Baseline: Select scenarios with highest probability weights
@@ -110,6 +110,7 @@ class ScenarioReductionSolver : public Solver {
     intAlgorithm = intLastAlgPar,      ///< Algorithm selection (0=Baseline, 1=Dupacova, 2=BestFit, 3=FirstFit)
     intShuffle = intLastAlgPar + 1,    ///< Enable shuffling for FirstFit (0=false, 1=true)
     intRandomSeed = intLastAlgPar + 2, ///< Random seed for shuffling
+    intUseWarmstart = intLastAlgPar + 3, ///< Enable warm start for local search (0=false, 1=true)
     intLastParSRS                      ///< First allowed parameter for derived classes
   };
 
@@ -118,6 +119,12 @@ class ScenarioReductionSolver : public Solver {
     dblRho = dblLastAlgPar,            ///< Minimum improvement threshold for local search
     dblEll = dblLastAlgPar + 1,        ///< Power in ell-Wasserstein distance (default: 2.0)
     dblLastParSRS                      ///< First allowed parameter for derived classes
+  };
+
+  /// public enum extending vint_par_type_S for ScenarioReductionSolver
+  enum vint_par_type_SRS {
+    vintWarmstartIndices = vintLastAlgPar, ///< Custom warm start indices (empty = use Dupacova)
+    vintLastParSRS                         ///< First allowed parameter for derived classes
   };
 
 /*--------------------------------------------------------------------------*/
@@ -146,6 +153,9 @@ class ScenarioReductionSolver : public Solver {
   /// Get the power ell in the objective ell-Wasserstein distance
   [[nodiscard]] float get_ell() const { return ell; }
 
+  /// Returns true if a variable solution is available
+  [[nodiscard]] bool has_var_solution() override;
+
   /// Returns the value of the current solution, if any
   [[nodiscard]] OFValue get_var_value() override;
 
@@ -157,8 +167,10 @@ class ScenarioReductionSolver : public Solver {
   // Override parameter methods
   void set_par(idx_type par, int value) override;
   void set_par(idx_type par, double value) override;
+  void set_par(idx_type par, const std::vector<int>& value) override;
   int get_int_par(idx_type par) const override;
   double get_dbl_par(idx_type par) const override;
+  void get_par(idx_type par, std::vector<int>& value) const override;
   
   // Static default parameter methods
   static int get_dflt_int_par(idx_type par);
@@ -206,6 +218,8 @@ class ScenarioReductionSolver : public Solver {
   /// Parameters for local search
   double rho = 0.0;         // Minimum improvement threshold
   bool shuffle = false;     // Whether to shuffle indices (for FirstFit)
+  bool use_warmstart = false; // Whether to use warm start for local search
+  std::vector<Index> warmstart_indices; // Custom warm start indices (empty = use Dupacova)
   std::mt19937 rng{std::random_device{}()};  // Random number generator
   double dist_dupa = std::numeric_limits<double>::infinity(); // Distance from Dupacova algorithm
 
@@ -247,6 +261,14 @@ class ScenarioReductionSolver : public Solver {
    * @return Status code (kOK if successful)
    */
   int compute_local_search();
+
+  /**
+   * Perform scenario reduction using Baseline algorithm
+   * Selects k scenarios with highest probability weights
+   * 
+   * @return Status code (kOK if successful)
+   */
+  int compute_baseline();
 
   /**
    * Initialize the reduced set of atoms for local search
@@ -312,6 +334,16 @@ class ScenarioReductionSolver : public Solver {
    * Update the reduced_atoms binary vector from ind_red
    */
   void update_reduced_atoms();
+
+  /**
+   * Validate warm start indices
+   * 
+   * @param indices The indices to validate
+   * @param n Total number of scenarios
+   * @param m Number of scenarios to select
+   * @throws std::invalid_argument if indices are invalid
+   */
+  void validate_warmstart_indices(const std::vector<Index>& indices, int n, int m);
 
   // /// Helper method to process modifications
   // void process_pending_modifications() 
