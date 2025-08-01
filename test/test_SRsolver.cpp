@@ -963,8 +963,6 @@ REGISTER_TEST(has_var_solution_test) {
   }
   
   delete block3;
-  
-  std::cout << "✓ has_var_solution() tests passed\n";
 }
 
 REGISTER_TEST(get_var_solution_test) {
@@ -1075,8 +1073,6 @@ REGISTER_TEST(get_var_solution_test) {
       delete block;
     }
   }
-  
-  std::cout << "✓ get_var_solution() tests passed\n";
 }
 
 REGISTER_TEST(refresh_cached_data_error_handling) {
@@ -1173,8 +1169,7 @@ REGISTER_TEST(refresh_cached_data_error_handling) {
     
     delete block;
   }
-  
-  std::cout << "✓ refresh_cached_data() error handling tests passed\n";
+
 }
 
 /*--------------------------------------------------------------------------*/

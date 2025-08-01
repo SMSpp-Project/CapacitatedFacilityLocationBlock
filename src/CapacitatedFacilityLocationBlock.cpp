@@ -715,7 +715,8 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
     for( Index i = 0 ; i < f_n_facilities ; ++i )
      coeffs[ i ] = std::make_pair( & v_y[ i ] , double( 1 ) );
 
-    maxF.set_both( f_max_facilities );
+    maxF.set_lhs( -Inf< double >() );
+    maxF.set_rhs( f_max_facilities );
     maxF.set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
 
     add_static_constraint( maxF , "maxF" ); 
