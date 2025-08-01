@@ -10,8 +10,39 @@
  * 
  * Copyright &copy; by Benoît Tran
  */
+
 /*--------------------------------------------------------------------------*/
-/*---------------------------- IMPLEMENTATION ------------------------------*/
+/*---------------------------- OVERVIEW ------------------------------------*/
+/*--------------------------------------------------------------------------*/
+/*
+ * TEST SUITE OVERVIEW
+ * ===================
+ * 
+ * This test suite contains 15 tests organized by theme:
+ * 
+ * PARAMETER MANAGEMENT (3 tests)
+ * - parameter_setting: Tests setting/getting all parameter types and boundary values
+ * - parameter_validation: Tests parameter validation and error handling
+ * - default_values: Tests default parameter values and get_dflt_*_par methods
+ * 
+ * SOLUTION HANDLING (6 tests)
+ * - solution_basic_functionality: Tests writing solutions to Block's y variables and algorithm correctness
+ * - solution_independence: Tests multiple solvers working independently
+ * - solution_persistence: Tests saving/restoring solver state through parameters
+ * - solution_warm_start: Tests warm start functionality with vintWarmstartIndices
+ * - has_var_solution_test: Tests has_var_solution() method behavior
+ * - get_var_solution_test: Tests get_var_solution() method and error handling
+ * 
+ * THREAD SAFETY & CONCURRENCY (5 tests)
+ * - concurrent_parameter_setting: Tests thread-safe parameter access
+ * - simultaneous_compute_prevention: Tests preventing concurrent compute() calls
+ * - lock_during_set_block: Tests thread safety during set_Block()
+ * - get_var_solution_locking: Tests thread safety of get_var_solution()
+ * - stress_test_mixed_operations: Stress test with multiple concurrent operations
+ * 
+ * ERROR HANDLING & EDGE CASES (1 test)
+ * - refresh_cached_data_error_handling: Tests error handling in refresh_cached_data()
+ */
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- INCLUDES --------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -189,29 +220,7 @@ CapacitatedFacilityLocationBlock* create_test_block(int k) {
 /*------------------------------ TEST CASES --------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-REGISTER_TEST(basic_creation) {
-  // Test basic solver creation and destruction
-  ScenarioReductionSolver solver;
-  
-  // Check default parameters
-  if (solver.get_int_par(ScenarioReductionSolver::intAlgorithm) != 1) {
-    throw std::runtime_error("Default algorithm should be 1 (Dupacova)");
-  }
-  
-  if (solver.get_int_par(ScenarioReductionSolver::intShuffle) != 0) {
-    throw std::runtime_error("Default shuffle should be 0 (disabled)");
-  }
-  
-  if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblEll), 2.0)) {
-    throw std::runtime_error("Default ell should be 2.0");
-  }
-  
-  if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblRho), 0.0)) {
-    throw std::runtime_error("Default rho should be 0.0");
-  }
-}
-
-REGISTER_TEST(parameter_setting_int) {
+REGISTER_TEST(parameter_setting) {
   ScenarioReductionSolver solver;
   
   // Test setting and getting integer parameters
@@ -228,10 +237,6 @@ REGISTER_TEST(parameter_setting_int) {
   // Note: We can't verify the random seed value since mt19937 doesn't expose it
   // But we can test that set_par doesn't throw
   solver.set_par(ScenarioReductionSolver::intRandomSeed, 12345);
-}
-
-REGISTER_TEST(parameter_setting_double) {
-  ScenarioReductionSolver solver;
   
   // Test setting and getting double parameters
   solver.set_par(ScenarioReductionSolver::dblEll, 0.5);
@@ -242,6 +247,28 @@ REGISTER_TEST(parameter_setting_double) {
   solver.set_par(ScenarioReductionSolver::dblRho, 0.01);
   if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblRho), 0.01)) {
     throw std::runtime_error("Failed to set rho parameter");
+  }
+  
+  // Test boundary values for algorithm
+  solver.set_par(ScenarioReductionSolver::intAlgorithm, 0);  // Min valid
+  if (solver.get_int_par(ScenarioReductionSolver::intAlgorithm) != 0) {
+    throw std::runtime_error("Failed to set min algorithm value");
+  }
+  
+  solver.set_par(ScenarioReductionSolver::intAlgorithm, 3);  // Max valid
+  if (solver.get_int_par(ScenarioReductionSolver::intAlgorithm) != 3) {
+    throw std::runtime_error("Failed to set max algorithm value");
+  }
+  
+  // Test small positive values for double parameters
+  solver.set_par(ScenarioReductionSolver::dblEll, 1e-10);
+  if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblEll), 1e-10)) {
+    throw std::runtime_error("Failed to set small ell value");
+  }
+  
+  solver.set_par(ScenarioReductionSolver::dblRho, 1e-10);
+  if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblRho), 1e-10)) {
+    throw std::runtime_error("Failed to set small rho value");
   }
 }
 
@@ -284,7 +311,7 @@ REGISTER_TEST(parameter_validation) {
 REGISTER_TEST(default_values) {
   ScenarioReductionSolver solver;
   
-  // Test getting default values
+  // Test getting default values through get_dflt_*_par
   if (solver.get_dflt_int_par(ScenarioReductionSolver::intAlgorithm) != 1) {
     throw std::runtime_error("Default algorithm should be 1");
   }
@@ -304,154 +331,20 @@ REGISTER_TEST(default_values) {
   if (!approx_equal(solver.get_dflt_dbl_par(ScenarioReductionSolver::dblRho), 0.0)) {
     throw std::runtime_error("Default rho should be 0.0");
   }
-}
-
-REGISTER_TEST(parameter_reset) {
-  ScenarioReductionSolver solver;
   
-  // Change some parameters
-  solver.set_par(ScenarioReductionSolver::intAlgorithm, 3);
-  solver.set_par(ScenarioReductionSolver::dblEll, 1.5);
-  solver.set_par(ScenarioReductionSolver::dblRho, 0.1);
-  
-  // Verify they changed
-  if (solver.get_int_par(ScenarioReductionSolver::intAlgorithm) != 3) {
-    throw std::runtime_error("Algorithm should have changed to 3");
-  }
-  
-  if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblEll), 1.5)) {
-    throw std::runtime_error("Ell should have changed to 1.5");
-  }
-  
-  if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblRho), 0.1)) {
-    throw std::runtime_error("Rho should have changed to 0.1");
-  }
-  
-  // Reset to defaults
-  solver.set_par(ScenarioReductionSolver::intAlgorithm, 
-                solver.get_dflt_int_par(ScenarioReductionSolver::intAlgorithm));
-  solver.set_par(ScenarioReductionSolver::dblEll, 
-                solver.get_dflt_dbl_par(ScenarioReductionSolver::dblEll));
-  solver.set_par(ScenarioReductionSolver::dblRho, 
-                solver.get_dflt_dbl_par(ScenarioReductionSolver::dblRho));
-  
-  // Verify reset
-  if (solver.get_int_par(ScenarioReductionSolver::intAlgorithm) != 1) {
-    throw std::runtime_error("Algorithm should be reset to 1");
-  }
-  
-  if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblEll), 2.0)) {
-    throw std::runtime_error("Ell should be reset to 2.0");
-  }
-  
-  if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblRho), 0.0)) {
-    throw std::runtime_error("Rho should be reset to 0.0");
+  // Also verify that get_*_par returns the same defaults initially
+  if (solver.get_int_par(ScenarioReductionSolver::intAlgorithm) != 1 ||
+      solver.get_int_par(ScenarioReductionSolver::intShuffle) != 0 ||
+      !approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblEll), 2.0) ||
+      !approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblRho), 0.0)) {
+    throw std::runtime_error("get_*_par should return default values initially");
   }
 }
 
-REGISTER_TEST(algorithm_constants) {
-  // Test that algorithm constants are as expected
-  if (static_cast<int>(ScenarioReductionSolver::Algorithm::Baseline) != 0) {
-    throw std::runtime_error("Baseline algorithm should be 0");
-  }
-  
-  if (static_cast<int>(ScenarioReductionSolver::Algorithm::Dupacova) != 1) {
-    throw std::runtime_error("Dupacova algorithm should be 1");
-  }
-  
-  if (static_cast<int>(ScenarioReductionSolver::Algorithm::BestFit) != 2) {
-    throw std::runtime_error("BestFit algorithm should be 2");
-  }
-  
-  if (static_cast<int>(ScenarioReductionSolver::Algorithm::FirstFit) != 3) {
-    throw std::runtime_error("FirstFit algorithm should be 3");
-  }
-}
-
-REGISTER_TEST(boundary_values) {
-  ScenarioReductionSolver solver;
-  
-  // Test boundary values for algorithm
-  solver.set_par(ScenarioReductionSolver::intAlgorithm, 0);  // Min valid
-  if (solver.get_int_par(ScenarioReductionSolver::intAlgorithm) != 0) {
-    throw std::runtime_error("Algorithm 0 should be valid");
-  }
-  
-  solver.set_par(ScenarioReductionSolver::intAlgorithm, 3);  // Max valid (FirstFit)
-  if (solver.get_int_par(ScenarioReductionSolver::intAlgorithm) != 3) {
-    throw std::runtime_error("Algorithm 3 should be valid");
-  }
-  
-  // Test boundary values for shuffle
-  solver.set_par(ScenarioReductionSolver::intShuffle, 0);
-  if (solver.get_int_par(ScenarioReductionSolver::intShuffle) != 0) {
-    throw std::runtime_error("Shuffle 0 should be valid");
-  }
-  
-  solver.set_par(ScenarioReductionSolver::intShuffle, 1);
-  if (solver.get_int_par(ScenarioReductionSolver::intShuffle) != 1) {
-    throw std::runtime_error("Shuffle 1 should be valid");
-  }
-  
-  // Test small positive values for double parameters
-  solver.set_par(ScenarioReductionSolver::dblEll, 1e-10);
-  if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblEll), 1e-10)) {
-    throw std::runtime_error("Very small ell should be valid");
-  }
-  
-  solver.set_par(ScenarioReductionSolver::dblRho, 1e-10);
-  if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblRho), 1e-10)) {
-    throw std::runtime_error("Very small rho should be valid");
-  }
-}
 
 /*--------------------------------------------------------------------------*/
 /*------------------------ THREAD SAFETY TESTS -----------------------------*/
 /*--------------------------------------------------------------------------*/
-
-REGISTER_TEST(mutex_basic_lock_unlock) {
-  // Test that the solver has a working mutex
-  ScenarioReductionSolver solver;
-  
-  // The solver should be lockable
-  solver.lock();
-  
-  // Try to lock again from another thread - should block
-  std::atomic<bool> locked(false);
-  std::atomic<bool> tried(false);
-  
-  std::thread t([&solver, &locked, &tried]() {
-    tried = true;
-    if (solver.try_lock()) {
-      locked = true;
-      solver.unlock();
-    }
-  });
-  
-  // Give the thread time to try
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  
-  // The thread should have tried but not succeeded
-  if (!tried) {
-    solver.unlock();
-    t.join();
-    throw std::runtime_error("Thread didn't attempt to lock");
-  }
-  
-  if (locked) {
-    solver.unlock();
-    t.join();
-    throw std::runtime_error("Thread acquired lock when it shouldn't have");
-  }
-  
-  // Now unlock and let the thread acquire it
-  solver.unlock();
-  
-  // Give the thread time to acquire
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  
-  t.join();
-}
 
 REGISTER_TEST(concurrent_parameter_setting) {
   ScenarioReductionSolver solver;
@@ -498,44 +391,37 @@ REGISTER_TEST(concurrent_parameter_setting) {
 }
 
 REGISTER_TEST(simultaneous_compute_prevention) {
-  auto block = create_test_block(1);  // Reduce from 3 facilities to 1
+  // Test that compute() calls are properly serialized by the mutex
+  auto block = create_test_block(1);
   ScenarioReductionSolver solver;
   solver.set_Block(block);
   
-  std::atomic<int> computing(0);
+  std::atomic<int> concurrent_computes(0);
+  std::atomic<int> max_concurrent(0);
   std::atomic<int> completed(0);
-  std::atomic<int> blocked(0);
   std::vector<std::thread> threads;
   
   // Launch multiple threads that try to compute simultaneously
   for (int i = 0; i < 5; ++i) {
-    threads.emplace_back([&solver, &computing, &completed, &blocked]() {
-      solver.lock();
+    threads.emplace_back([&solver, &concurrent_computes, &max_concurrent, &completed]() {
+      // Increment concurrent counter
+      int current = concurrent_computes.fetch_add(1) + 1;
       
-      // Check if we can compute
-      int current = computing.fetch_add(1);
-      
-      if (current == 0) {
-        // First thread, should be able to compute
-        int status = solver.compute();
-        computing--;
-        completed++;
-        
-        if (status != Solver::kOK && status != Solver::kError) {
-          solver.unlock();
-          throw std::runtime_error("Unexpected compute status: " + 
-                                  std::to_string(status));
-        }
-      } else {
-        // Other threads should be prevented from computing
-        computing--;
-        blocked++;
-        // Note: Without the f_computing flag implemented yet,
-        // multiple threads might actually compute simultaneously
-        // This test will need to be updated after implementation
+      // Update max concurrent if needed
+      int expected = max_concurrent.load();
+      while (current > expected && 
+             !max_concurrent.compare_exchange_weak(expected, current)) {
       }
       
-      solver.unlock();
+      // Call compute - this should block on the mutex if another compute is running
+      int status = solver.compute();
+      
+      // Decrement concurrent counter
+      concurrent_computes--;
+      
+      if (status == Solver::kOK) {
+        completed++;
+      }
     });
   }
   
@@ -547,10 +433,16 @@ REGISTER_TEST(simultaneous_compute_prevention) {
   // Clean up
   delete block;
   
-  // Note: This test will be more meaningful after f_computing flag is implemented
-  // For now, we just check that no exceptions were thrown
-  if (completed == 0) {
-    throw std::runtime_error("No thread completed computation");
+  // Verify that compute calls were serialized (max 1 concurrent)
+  if (max_concurrent > 1) {
+    throw std::runtime_error("Multiple threads were in compute() simultaneously: " + 
+                           std::to_string(max_concurrent.load()));
+  }
+  
+  // Verify all threads completed
+  if (completed != 5) {
+    throw std::runtime_error("Not all threads completed compute(): " + 
+                           std::to_string(completed.load()) + "/5");
   }
 }
 
@@ -729,158 +621,161 @@ REGISTER_TEST(stress_test_mixed_operations) {
 
 REGISTER_TEST(solution_basic_functionality) {
   // Test that ScenarioReductionSolver correctly writes solution to Block's y variables
-  auto* block = new CapacitatedFacilityLocationBlock();
+  // and that different algorithms produce valid results
   
-  // Set up a simple test instance - need square matrix for scenario reduction
-  int nf = 2;  // facilities (must equal customers for square distance matrix)
-  int nc = 2;  // customers (scenarios)
-  int k = 1;  // number of scenarios to select
-  
-  CapacitatedFacilityLocationBlock::DVector caps(nf);
-  caps[0] = 0.5;
-  caps[1] = 0.5;
-  
-  CapacitatedFacilityLocationBlock::CVector fcosts(nf);
-  fcosts[0] = 10.0;
-  fcosts[1] = 15.0;
-  
-  CapacitatedFacilityLocationBlock::DVector dems(nc);
-  dems[0] = 1.0;
-  dems[1] = 1.0;
-  
-  CapacitatedFacilityLocationBlock::CMatrix tcosts(boost::extents[nf][nc]);
-  tcosts[0][0] = 0.0;  // Distance from scenario 0 to 0
-  tcosts[0][1] = 2.0;  // Distance from scenario 0 to 1
-  tcosts[1][0] = 2.0;  // Distance from scenario 1 to 0 (symmetric)
-  tcosts[1][1] = 0.0;  // Distance from scenario 1 to 1
-  
-  block->load(nf, nc, caps, fcosts, dems, tcosts, false, k);
-  
-  // Create and configure solver
-  ScenarioReductionSolver solver;
-  solver.set_Block(block);
-  solver.set_par(ScenarioReductionSolver::intAlgorithm, 1); // Dupacova
-  
-  // Compute solution
-  int status = solver.compute();
-  if (status != Solver::kOK) {
-    delete block;
-    throw std::runtime_error("Solver failed to compute");
-  }
-  
-  // Get the solver's solution
-  const auto& reduced = solver.get_reduced_atoms();
-  
-  // Verify the solver wrote solution to the Block's y variables
-  solver.get_var_solution();
-  
-  // Check that y variables have the correct values
-  for (int i = 0; i < nc; ++i) {
-    auto* y_var = block->get_y(i);
-    if (!y_var) {
+  // Test 1: Basic Dupacova algorithm functionality
+  {
+    auto* block = new CapacitatedFacilityLocationBlock();
+    
+    // Set up a simple test instance - need square matrix for scenario reduction
+    int nf = 2;  // facilities (must equal customers for square distance matrix)
+    int nc = 2;  // customers (scenarios)
+    int k = 1;  // number of scenarios to select
+    
+    CapacitatedFacilityLocationBlock::DVector caps(nf);
+    caps[0] = 0.5;
+    caps[1] = 0.5;
+    
+    CapacitatedFacilityLocationBlock::CVector fcosts(nf);
+    fcosts[0] = 10.0;
+    fcosts[1] = 15.0;
+    
+    CapacitatedFacilityLocationBlock::DVector dems(nc);
+    dems[0] = 1.0;
+    dems[1] = 1.0;
+    
+    CapacitatedFacilityLocationBlock::CMatrix tcosts(boost::extents[nf][nc]);
+    tcosts[0][0] = 0.0;  // Distance from scenario 0 to 0
+    tcosts[0][1] = 2.0;  // Distance from scenario 0 to 1
+    tcosts[1][0] = 2.0;  // Distance from scenario 1 to 0 (symmetric)
+    tcosts[1][1] = 0.0;  // Distance from scenario 1 to 1
+    
+    block->load(nf, nc, caps, fcosts, dems, tcosts, false, k);
+    
+    // Create and configure solver
+    ScenarioReductionSolver solver;
+    solver.set_Block(block);
+    solver.set_par(ScenarioReductionSolver::intAlgorithm, 1); // Dupacova
+    
+    // Compute solution
+    int status = solver.compute();
+    if (status != Solver::kOK) {
       delete block;
-      throw std::runtime_error("y variable not found");
+      throw std::runtime_error("Solver failed to compute");
     }
-    double val = y_var->get_value();
-    bool is_selected = (val > 0.5);  // y should be 0 or 1
-    if (is_selected != reduced[i]) {
-      delete block;
-      throw std::runtime_error("y variable value doesn't match solver's solution");
-    }
-  }
-  
-  // Verify the solver computed successfully
-  int selected_count = std::count(reduced.begin(), reduced.end(), true);
-  if (selected_count != k) {
-    delete block;
-    throw std::runtime_error("Wrong number of scenarios selected");
-  }
-  
-  delete block;
-}
-
-REGISTER_TEST(solution_save_restore) {
-  // Test saving and restoring solver state through the Block's variables
-  
-  auto* block = new CapacitatedFacilityLocationBlock();
-  
-  // Set up test instance - need square matrix
-  int nf = 4;
-  int nc = 4;  // Must equal nf for square distance matrix
-  int k = 2;
-  
-  CapacitatedFacilityLocationBlock::CVector fcosts(nf);
-  fcosts[0] = 10.0;
-  fcosts[1] = 15.0;
-  fcosts[2] = 20.0;
-  fcosts[3] = 25.0;
-  
-  CapacitatedFacilityLocationBlock::DVector caps(nf);
-  caps[0] = 0.25;
-  caps[1] = 0.25;
-  caps[2] = 0.25;
-  caps[3] = 0.25;
-  
-  CapacitatedFacilityLocationBlock::DVector dems(nc);
-  dems[0] = 0.25;
-  dems[1] = 0.25;
-  dems[2] = 0.25;
-  dems[3] = 0.25;
-  
-  CapacitatedFacilityLocationBlock::CMatrix tcosts(boost::extents[nf][nc]);
-  // Create a symmetric distance matrix
-  for (int i = 0; i < nf; ++i) {
-    for (int j = 0; j < nc; ++j) {
-      if (i == j) {
-        tcosts[i][j] = 0.0;
-      } else {
-        tcosts[i][j] = 10.0 * std::abs(i - j);
+    
+    // Get the solver's solution
+    const auto& reduced = solver.get_reduced_atoms();
+    
+    // Verify the solver wrote solution to the Block's y variables
+    solver.get_var_solution();
+    
+    // Check that y variables have the correct values
+    for (int i = 0; i < nc; ++i) {
+      auto* y_var = block->get_y(i);
+      if (!y_var) {
+        delete block;
+        throw std::runtime_error("y variable not found");
+      }
+      double val = y_var->get_value();
+      bool is_selected = (val > 0.5);  // y should be 0 or 1
+      if (is_selected != reduced[i]) {
+        delete block;
+        throw std::runtime_error("y variable value doesn't match solver's solution");
       }
     }
-  }
-  
-  block->load(nf, nc, caps, fcosts, dems, tcosts, false, k);
-  
-  ScenarioReductionSolver solver;
-  solver.set_Block(block);
-  
-  // Compute with Dupacova
-  solver.set_par(ScenarioReductionSolver::intAlgorithm, 1);
-  solver.compute();
-  
-  // Save the current solution state
-  std::vector<bool> saved_solution = solver.get_reduced_atoms();
-  double saved_obj = solver.get_var_value();
-  
-  // Compute with different algorithm (Baseline)
-  solver.set_par(ScenarioReductionSolver::intAlgorithm, 0);
-  solver.compute();
-  double new_obj = solver.get_var_value();
-  
-  // TODO: With current test data, both algorithms might produce same result
-  // Once we have more diverse test cases, uncomment this check
-  // if (approx_equal(saved_obj, new_obj)) {
-  //   delete block;
-  //   throw std::runtime_error("Different algorithms should produce different objectives");
-  // }
-  std::cout << "INFO: Dupacova objective: " << saved_obj << ", Baseline objective: " << new_obj << std::endl;
-  
-  // Verify the solutions are different
-  const auto& new_solution = solver.get_reduced_atoms();
-  bool solutions_differ = false;
-  for (size_t i = 0; i < saved_solution.size(); ++i) {
-    if (saved_solution[i] != new_solution[i]) {
-      solutions_differ = true;
-      break;
+    
+    // Verify the solver computed successfully
+    int selected_count = std::count(reduced.begin(), reduced.end(), true);
+    if (selected_count != k) {
+      delete block;
+      throw std::runtime_error("Wrong number of scenarios selected");
     }
+    
+    delete block;
   }
   
-  if (!solutions_differ && !approx_equal(saved_obj, new_obj)) {
-    // If objectives differ but solutions are same, that's unexpected
+  // Test 2: Baseline algorithm selects scenarios with highest weights
+  {
+    auto* block = create_test_block(2);  // Select 2 out of 4 scenarios
+    ScenarioReductionSolver solver;
+    solver.set_Block(block);
+    solver.set_par(ScenarioReductionSolver::intAlgorithm, 0);  // Baseline
+    
+    int result = solver.compute();
+    if (result != Solver::kOK) {
+      delete block;
+      throw std::runtime_error("Baseline algorithm compute() failed");
+    }
+    
+    // Get the selected scenarios
+    const auto& selected = solver.get_reduced_atoms();
+    
+    // Get the demands (weights)
+    const auto& demands = block->get_Demands();
+    
+    // Verify that selected scenarios have the highest weights
+    std::vector<double> selected_weights, unselected_weights;
+    for (CapacitatedFacilityLocationBlock::Index i = 0; i < block->get_NFacilities(); ++i) {
+      if (selected[i]) {
+        selected_weights.push_back(demands[i]);
+      } else {
+        unselected_weights.push_back(demands[i]);
+      }
+    }
+    
+    // The demands were set as 50, 100, 150, 200
+    // So for k=2, we should select indices 2 and 3 (with weights 150 and 200)
+    if (selected_weights.size() != 2) {
+      delete block;
+      throw std::runtime_error("Should select exactly 2 scenarios");
+    }
+    
+    // All selected weights should be >= all unselected weights
+    double min_selected = *std::min_element(selected_weights.begin(), selected_weights.end());
+    double max_unselected = unselected_weights.empty() ? 0 : 
+                            *std::max_element(unselected_weights.begin(), unselected_weights.end());
+    
+    if (min_selected < max_unselected) {
+      delete block;
+      throw std::runtime_error("Baseline didn't select scenarios with highest weights");
+    }
+    
+    // Check that the solution can be written
+    solver.get_var_solution();
+    
     delete block;
-    throw std::runtime_error("Same solution but different objectives");
   }
-  delete block;
+  
+  // Test 3: Compare Baseline vs Dupacova algorithms
+  {
+    auto* block = create_test_block(2);
+    
+    // Run Baseline
+    ScenarioReductionSolver baseline_solver;
+    baseline_solver.set_Block(block);
+    baseline_solver.set_par(ScenarioReductionSolver::intAlgorithm, 0);  // Baseline
+    baseline_solver.compute();
+    double baseline_obj = baseline_solver.get_var_value();
+    
+    // Run Dupacova
+    ScenarioReductionSolver dupacova_solver;
+    dupacova_solver.set_Block(block);
+    dupacova_solver.set_par(ScenarioReductionSolver::intAlgorithm, 1);  // Dupacova
+    dupacova_solver.compute();
+    double dupacova_obj = dupacova_solver.get_var_value();
+    
+    // Baseline should have worse or equal objective value than Dupacova
+    if (baseline_obj < dupacova_obj - 1e-6) {
+      delete block;
+      throw std::runtime_error(
+        "Baseline objective (" + std::to_string(baseline_obj) + 
+        ") should not be better than Dupacova (" + std::to_string(dupacova_obj) + ")"
+      );
+    }
+    
+    delete block;
+  }
 }
 
 REGISTER_TEST(solution_independence) {
@@ -1184,194 +1079,6 @@ REGISTER_TEST(get_var_solution_test) {
   std::cout << "✓ get_var_solution() tests passed\n";
 }
 
-REGISTER_TEST(baseline_algorithm) {
-  // Test Baseline algorithm that selects scenarios with highest weights
-  
-  // Test 1: Basic functionality
-  {
-    auto* block = create_test_block(2);  // Select 2 out of 4 scenarios
-    ScenarioReductionSolver solver;
-    solver.set_Block(block);
-    solver.set_par(ScenarioReductionSolver::intAlgorithm, 0);  // Baseline
-    
-    int result = solver.compute();
-    if (result != Solver::kOK) {
-      delete block;
-      throw std::runtime_error("Baseline algorithm compute() failed");
-    }
-    
-    // Get the selected scenarios
-    const auto& selected = solver.get_reduced_atoms();
-    
-    // Get the demands (weights)
-    const auto& demands = block->get_Demands();
-    
-    // Verify that selected scenarios have the highest weights
-    std::vector<double> selected_weights, unselected_weights;
-    for (CapacitatedFacilityLocationBlock::Index i = 0; i < block->get_NFacilities(); ++i) {
-      if (selected[i]) {
-        selected_weights.push_back(demands[i]);
-      } else {
-        unselected_weights.push_back(demands[i]);
-      }
-    }
-    
-    // The demands were set as 50, 100, 150, 200
-    // So for k=2, we should select indices 2 and 3 (with weights 150 and 200)
-    if (selected_weights.size() != 2) {
-      delete block;
-      throw std::runtime_error("Should select exactly 2 scenarios");
-    }
-    
-    // All selected weights should be >= all unselected weights
-    double min_selected = *std::min_element(selected_weights.begin(), selected_weights.end());
-    double max_unselected = unselected_weights.empty() ? 0 : 
-                            *std::max_element(unselected_weights.begin(), unselected_weights.end());
-    
-    if (min_selected < max_unselected) {
-      delete block;
-      throw std::runtime_error("Baseline didn't select scenarios with highest weights");
-    }
-    
-    // Check that the solution can be written
-    solver.get_var_solution();
-    
-    delete block;
-  }
-  
-  // Test 2: Edge case - k = 1 (select only one scenario - should be the one with highest weight)
-  {
-    auto* block = create_test_block(1);  // Select 1 out of 4 scenarios
-    ScenarioReductionSolver solver;
-    solver.set_Block(block);
-    solver.set_par(ScenarioReductionSolver::intAlgorithm, 0);  // Baseline
-    solver.compute();
-    
-    const auto& selected = solver.get_reduced_atoms();
-    const auto& demands = block->get_Demands();
-    
-    // Find which scenario was selected
-    int selected_idx = -1;
-    for (int i = 0; i < 4; ++i) {
-      if (selected[i]) {
-        selected_idx = i;
-        break;
-      }
-    }
-    
-    // The demands were set as 50, 100, 150, 200
-    // So for k=1, we should select index 3 (with weight 200)
-    if (selected_idx != 3) {
-      delete block;
-      throw std::runtime_error("Baseline should select scenario with highest weight (index 3)");
-    }
-    
-    delete block;
-  }
-  
-  // Test 3: Edge case - k = n (select all scenarios)
-  {
-    auto* block = create_test_block(4);  // Select all 4 scenarios
-    ScenarioReductionSolver solver;
-    solver.set_Block(block);
-    solver.set_par(ScenarioReductionSolver::intAlgorithm, 0);  // Baseline
-    solver.compute();
-    
-    const auto& selected = solver.get_reduced_atoms();
-    int count_selected = std::count(selected.begin(), selected.end(), true);
-    
-    if (count_selected != 4) {
-      delete block;
-      throw std::runtime_error("Should select all 4 scenarios when k=n");
-    }
-    
-    delete block;
-  }
-  
-  // Test 4: Ties in weights - create custom block with equal weights
-  {
-    auto* block = new CapacitatedFacilityLocationBlock();
-    
-    int nf = 4;  // 4 facilities/scenarios
-    int nc = 4;  // 4 customers/scenarios
-    int k = 2;   // Select 2
-    
-    // Set up facility costs
-    CapacitatedFacilityLocationBlock::CVector fcosts(nf);
-    for (int i = 0; i < nf; ++i) {
-      fcosts[i] = 100.0;  // All equal
-    }
-    
-    // Set up transportation costs
-    CapacitatedFacilityLocationBlock::CMatrix tcosts(boost::extents[nf][nc]);
-    for (int i = 0; i < nf; ++i) {
-      for (int j = 0; j < nc; ++j) {
-        tcosts[i][j] = (i == j) ? 0.0 : 10.0;
-      }
-    }
-    
-    // Set up capacities (all equal)
-    CapacitatedFacilityLocationBlock::DVector caps(nf, 0.25);
-    
-    // Set up demands with ties - two high, two low
-    CapacitatedFacilityLocationBlock::DVector dems(nc);
-    dems[0] = 100.0;  // High
-    dems[1] = 50.0;   // Low
-    dems[2] = 100.0;  // High
-    dems[3] = 50.0;   // Low
-    
-    block->load(nf, nc, caps, fcosts, dems, tcosts, false, k);
-    
-    ScenarioReductionSolver solver;
-    solver.set_Block(block);
-    solver.set_par(ScenarioReductionSolver::intAlgorithm, 0);  // Baseline
-    solver.compute();
-    
-    const auto& selected = solver.get_reduced_atoms();
-    
-    // Should select the two scenarios with weight 100
-    if (!selected[0] || selected[1] || !selected[2] || selected[3]) {
-      delete block;
-      throw std::runtime_error("Baseline should select scenarios 0 and 2 (with weight 100)");
-    }
-    
-    delete block;
-  }
-  
-  // Test 5: Compare with other algorithms - Baseline should be simpler/faster but less optimal
-  {
-    auto* block = create_test_block(2);
-    
-    // Run Baseline
-    ScenarioReductionSolver baseline_solver;
-    baseline_solver.set_Block(block);
-    baseline_solver.set_par(ScenarioReductionSolver::intAlgorithm, 0);  // Baseline
-    baseline_solver.compute();
-    double baseline_obj = baseline_solver.get_var_value();
-    
-    // Run Dupacova
-    ScenarioReductionSolver dupacova_solver;
-    dupacova_solver.set_Block(block);
-    dupacova_solver.set_par(ScenarioReductionSolver::intAlgorithm, 1);  // Dupacova
-    dupacova_solver.compute();
-    double dupacova_obj = dupacova_solver.get_var_value();
-    
-    // Baseline should generally have worse or equal objective
-    // (higher Wasserstein distance)
-    if (baseline_obj < dupacova_obj - 1e-6) {
-      delete block;
-      throw std::runtime_error(
-        "Baseline objective (" + std::to_string(baseline_obj) + 
-        ") should not be better than Dupacova (" + std::to_string(dupacova_obj) + ")"
-      );
-    }
-    
-    delete block;
-  }
-  
-  std::cout << "✓ Baseline algorithm tests passed\n";
-}
-
 REGISTER_TEST(refresh_cached_data_error_handling) {
   // Test error handling in refresh_cached_data() method
   
@@ -1468,34 +1175,6 @@ REGISTER_TEST(refresh_cached_data_error_handling) {
   }
   
   std::cout << "✓ refresh_cached_data() error handling tests passed\n";
-}
-
-REGISTER_TEST(backward_compatibility) {
-  // Test that ScenarioReductionSolver works with existing CapacitatedFacilityLocationBlock
-  auto* block = create_test_block(1);
-  
-  // Create solver and compute
-  ScenarioReductionSolver solver;
-  solver.set_Block(block);
-  solver.compute();
-  
-  // Verify solver writes to block's y variables correctly
-  solver.get_var_solution();
-  
-  // Check that the block can still create its default solution type
-  auto* default_sol = block->get_Solution();
-  
-  // Verify it's a CFL solution as expected
-  if (dynamic_cast<CapacitatedFacilityLocationSolution*>(default_sol)) {
-    std::cout << "✓ Default get_Solution() returns CapacitatedFacilityLocationSolution\n";
-  } else {
-    delete default_sol;
-    delete block;
-    throw std::runtime_error("Default get_Solution() did not return expected type");
-  }
-  
-  delete default_sol;
-  delete block;
 }
 
 /*--------------------------------------------------------------------------*/

@@ -240,9 +240,6 @@ class ScenarioReductionSolver : public Solver {
   /// Solution data
   IntSolution reduced_atoms;   // Binary values indicating which atoms are selected
   double f_solution_value;     // Objective function value of current solution
-  
-  /// Thread safety flag to prevent concurrent computations
-  bool f_computing = false;
 
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PRIVATE METHODS -----------------------------*/

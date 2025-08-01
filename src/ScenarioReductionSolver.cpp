@@ -105,19 +105,11 @@ int ScenarioReductionSolver::compute(bool changedvars)
 {
   lock();  // Lock the solver for thread safety
   
-  // Prevent multiple simultaneous computations
-  if (f_computing) {
-    unlock();
-    return kError;
-  }
-  
   // Make sure we have a block to work with
   if (!get_Block()) {
     unlock();
     return kError;
   }
-  
-  f_computing = true;
   
   // Clear existing data and solution
   indices_to_choose.clear();
@@ -142,7 +134,6 @@ int ScenarioReductionSolver::compute(bool changedvars)
       break;
   }
   
-  f_computing = false;
   unlock();  // Unlock the solver
   return result;
 }
