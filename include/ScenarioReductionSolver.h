@@ -342,41 +342,6 @@ class ScenarioReductionSolver : public Solver {
    */
   void validate_warmstart_indices(const std::vector<Index>& indices, int n, int m);
 
-  // /// Helper method to process modifications
-  // void process_pending_modifications() 
-  // {
-  //   // Process all pending modifications
-  //   sp_Mod mod;
-  //   while ((mod = pop()) != nullptr) {
-  //     // Handle different types of modifications
-      
-  //     // Check for changes in facility costs
-  //     if (auto cflMod = std::dynamic_pointer_cast<CapacitatedFacilityLocationBlockRngdMod>(mod)) {
-  //       if (cflMod->type() == CapacitatedFacilityLocationBlockMod::eChgFCost ||
-  //           cflMod->type() == CapacitatedFacilityLocationBlockMod::eChgTCost ||
-  //           cflMod->type() == CapacitatedFacilityLocationBlockMod::eChgCap ||
-  //           cflMod->type() == CapacitatedFacilityLocationBlockMod::eChgDem) {
-  //         // Data has changed, refresh our cached references
-  //         refresh_cached_data();
-  //       }
-  //     }
-  //     // Check for subset-based modifications
-  //     else if (auto cflSubsetMod = std::dynamic_pointer_cast<CapacitatedFacilityLocationBlockSbstMod>(mod)) {
-  //       // Similar handling as above
-  //       refresh_cached_data();
-  //     }
-  //     // Check for nuclear option (reload)
-  //     else if (std::dynamic_pointer_cast<NBModification>(mod)) {
-  //       // Complete reload of the problem
-  //       refresh_cached_data();
-        
-  //       // Reinitialize solution structures
-  //       reduced_atoms.resize(nb_atoms, false);
-  //       f_solution_value = 0.0;
-  //     }
-  //   }
-  // }
-
 /*--------------------------------------------------------------------------*/
 /*-------------------------- FACTORY REGISTRATION --------------------------*/
 /*--------------------------------------------------------------------------*/
