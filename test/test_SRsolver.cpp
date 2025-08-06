@@ -172,7 +172,7 @@ CapacitatedFacilityLocationBlock* create_test_block(int k) {
     throw std::invalid_argument("k must be positive");
   }
   
-  auto block = new CapacitatedFacilityLocationBlock();
+  auto cfl_block = new CapacitatedFacilityLocationBlock();
   
   // Create a small problem: for scenario reduction, we need a square distance matrix
   // If we interpret customers as scenarios, we need nc x nc matrix
@@ -197,12 +197,12 @@ CapacitatedFacilityLocationBlock* create_test_block(int k) {
     }
   }
   
-  // Set up capacities (interpreted as probabilities)
+  // Set up capacities - must be 1.0 for scenario reduction (allows sending all mass to single facility)
   CapacitatedFacilityLocationBlock::DVector caps(nf);
-  caps[0] = 0.25;
-  caps[1] = 0.25;
-  caps[2] = 0.25;
-  caps[3] = 0.25;
+  caps[0] = 1.0;
+  caps[1] = 1.0;
+  caps[2] = 1.0;
+  caps[3] = 1.0;
   
   // Set up demands
   CapacitatedFacilityLocationBlock::DVector dems(nc);
@@ -211,9 +211,9 @@ CapacitatedFacilityLocationBlock* create_test_block(int k) {
   }
   
   // Load data into block with k as the max number of facilities
-  block->load(nf, nc, caps, fcosts, dems, tcosts, false, k);
+  cfl_block->load(nf, nc, caps, fcosts, dems, tcosts, false, k);
   
-  return block;
+  return cfl_block;
 }
 
 /*--------------------------------------------------------------------------*/
@@ -627,14 +627,14 @@ REGISTER_TEST(solution_basic_functionality) {
   {
     auto* block = new CapacitatedFacilityLocationBlock();
     
-    // Set up a simple test instance - need square matrix for scenario reduction
+    // Set up a simple test instance
     int nf = 2;  // facilities (must equal customers for square distance matrix)
     int nc = 2;  // customers (scenarios)
     int k = 1;  // number of scenarios to select
     
     CapacitatedFacilityLocationBlock::DVector caps(nf);
-    caps[0] = 0.5;
-    caps[1] = 0.5;
+    caps[0] = 1.0;  // Must be 1.0 for scenario reduction
+    caps[1] = 1.0;
     
     CapacitatedFacilityLocationBlock::CVector fcosts(nf);
     fcosts[0] = 10.0;
@@ -1170,6 +1170,105 @@ REGISTER_TEST(refresh_cached_data_error_handling) {
     delete block;
   }
 
+}
+
+REGISTER_TEST(weight_normalization) {
+  // Test 1: Unnormalized weights (should be normalized automatically)
+  // create_test_block already creates a block with unnormalized demands (50, 100, 150, 200)
+  {
+    auto* block = create_test_block(2); 
+    // Verify the demands are not normalized
+    const auto& demands = block->get_Demands();
+    double sum = std::accumulate(demands.begin(), demands.end(), 0.0);
+    if (std::abs(sum - 1.0) <= 1e-6) {
+      delete block;
+      throw std::runtime_error("Test demands should be unnormalized");
+    }
+    
+    ScenarioReductionSolver solver;
+    solver.set_Block(block);
+    
+    // Solver should work with unnormalized weights (normalized internally)
+    int result = solver.compute();
+    if (result != Solver::kOK) {
+      delete block;
+      throw std::runtime_error("Solver should succeed with unnormalized weights");
+    }
+    
+    // Verify solution exists
+    if (!solver.has_var_solution()) {
+      delete block;
+      throw std::runtime_error("Should have solution after compute");
+    }
+    
+    // The original demands in block should be unchanged (50, 100, 150, 200)
+    if (std::abs(demands[0] - 50.0) > 1e-10 ||
+        std::abs(demands[1] - 100.0) > 1e-10 ||
+        std::abs(demands[2] - 150.0) > 1e-10 ||
+        std::abs(demands[3] - 200.0) > 1e-10) {
+      delete block;
+      throw std::runtime_error("Original demands should be unchanged");
+    }
+    
+    delete block;
+  }
+  
+  // Test 2: Already normalized weights (should use original weights)
+  {
+    auto* block = new CapacitatedFacilityLocationBlock();
+    
+    // Create normalized test data
+    int nf = 4, nc = 4, k = 2;
+    
+    // Set up normalized demands (0.1, 0.2, 0.3, 0.4 - sum = 1.0)
+    CapacitatedFacilityLocationBlock::DVector dems(nc);
+    dems[0] = 0.1;
+    dems[1] = 0.2;
+    dems[2] = 0.3;
+    dems[3] = 0.4;
+    
+    // Verify they're normalized
+    double sum = std::accumulate(dems.begin(), dems.end(), 0.0);
+    if (std::abs(sum - 1.0) > 1e-6) {
+      delete block;
+      throw std::runtime_error("Test demands should be normalized");
+    }
+    
+    CapacitatedFacilityLocationBlock::DVector caps(nf);
+    CapacitatedFacilityLocationBlock::CVector fcosts(nf);
+    CapacitatedFacilityLocationBlock::CMatrix tcosts(boost::extents[nc][nf]);
+    
+    for (int i = 0; i < nf; ++i) {
+      caps[i] = 1.0;  // Must be 1.0 for scenario reduction
+      fcosts[i] = 0.0;
+    }
+    
+    for (int i = 0; i < nc; ++i) {
+      for (int j = 0; j < nf; ++j) {
+        tcosts[i][j] = std::abs(i - j);
+      }
+    }
+    
+    block->load(nf, nc, caps, fcosts, dems, tcosts, false, k);
+    
+    ScenarioReductionSolver solver;
+    solver.set_Block(block);
+    
+    // Solver should work with normalized weights
+    int result = solver.compute();
+    if (result != Solver::kOK) {
+      delete block;
+      throw std::runtime_error("Solver should succeed with normalized weights");
+    }
+    
+    // Verify solution exists
+    if (!solver.has_var_solution()) {
+      delete block;
+      throw std::runtime_error("Should have solution after compute");
+    }
+    
+    delete block;
+  }
 }
 
 /*--------------------------------------------------------------------------*/

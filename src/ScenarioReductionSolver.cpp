@@ -80,7 +80,7 @@ void ScenarioReductionSolver::set_Block(Block* block)
 
         // Generate only abstract variables (we only need y variables for solution writing)
         // Note: This still generates x variables which we don't use, but there's no
-        // built-in way to generate only y variables. This is acceptable overhead.
+        // built-in way to generate only y variables. This is acceptable overhead for now.
         f_Block->generate_abstract_variables();
 
         if (!owned) {
@@ -789,16 +789,50 @@ void ScenarioReductionSolver::refresh_cached_data(int k)
     throw std::invalid_argument("ScenarioReductionSolver::refresh_cached_data: k cannot exceed number of scenarios");
   }
   
-  // Get pointers to data - these should always be valid for a properly loaded block
-  weights = &cfl_block->get_Demands();
+  // Get pointers to data
+  const DVector& original_demands = cfl_block->get_Demands();
+  const DVector& capacities = cfl_block->get_Capacities();
   f_transportation_costs = &cfl_block->get_Transportation_Costs();
   
-  if (!weights || weights->empty()) {
+  if (original_demands.empty()) {
     throw std::runtime_error("ScenarioReductionSolver::refresh_cached_data: Block has no demand data");
+  }
+  
+  if (capacities.empty()) {
+    throw std::runtime_error("ScenarioReductionSolver::refresh_cached_data: Block has no capacity data");
   }
   
   if (!f_transportation_costs) {
     throw std::runtime_error("ScenarioReductionSolver::refresh_cached_data: Block has no transportation cost data");
+  }
+  
+  // Define tolerance for floating point comparisons
+  const double tolerance = 1e-6;
+  
+  // For scenario reduction, capacities should all be 1.0 to allow sending all mass to a single facility
+  if (k > 0) {
+    for (size_t i = 0; i < capacities.size(); ++i) {
+      if (std::abs(capacities[i] - 1.0) > tolerance) {
+        throw std::invalid_argument("ScenarioReductionSolver::refresh_cached_data: for scenario reduction, all capacities must be 1.0. Capacity " + 
+                                   std::to_string(i) + " is " + std::to_string(capacities[i]));
+      }
+    }
+  }
+  
+  // Check if demands are already normalized (sum to 1.0 within tolerance)
+  double sum = std::accumulate(original_demands.begin(), original_demands.end(), 0.0);
+  
+  if (k > 0 && std::abs(sum - 1.0) > tolerance) {
+    // Normalize the weights and store in normalized_weights
+    normalized_weights = std::make_unique<DVector>(original_demands.size());
+    for (size_t i = 0; i < original_demands.size(); ++i) {
+      (*normalized_weights)[i] = original_demands[i] / sum;
+    }
+    weights = normalized_weights.get();
+  } else {
+    // Weights are already normalized or k=0, use original demands
+    normalized_weights.reset();  // Free any existing normalized weights
+    weights = &original_demands;
   }
   
   // Resize data structures and set parameters

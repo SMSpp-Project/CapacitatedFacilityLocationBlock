@@ -12,9 +12,13 @@
  * Scenario Reduction Problem and solves it using heuristic methods.
  * 
  * This solver works directly with the physical representation of 
- * the problem.
+ * the problem and enforces specific requirements on the CFL data:
+ * - All capacities must equal 1.0
+ * - Demands must represent scenario probabilities (auto-normalized if needed)
+ * - Square distance matrix (facilities = customers)
  * 
  * This implementation includes multiple scenario reduction algorithms:
+ * - Baseline: Select scenarios with highest probability weights
  * - Dupacova's forward algorithm (default)
  * - Local search with BestFit strategy
  * - Local search with FirstFit strategy
@@ -60,6 +64,14 @@ namespace SMSpp_di_unipi_it {
  * interpreted as a Capacitated Facility Location (CFL) instance.
  * This solver works directly with the physical data arrays and implements
  * heuristic algorithms.
+ * 
+ * IMPORTANT REQUIREMENTS for the CapacitatedFacilityLocationBlock:
+ * - All facility capacities must be 1.0 (allows sending all probability mass 
+ *   to a single facility if needed)
+ * - Customer demands represent scenario probabilities and should sum to 1.0
+ *   (if they don't, the solver will automatically normalize them)
+ * - Number of facilities must equal number of customers (square distance matrix)
+ * - Transportation costs represent distances between scenarios in the ell-norm
  * 
  * Implemented heuristic algorithms:
  * - Baseline: Select scenarios with highest probability weights
@@ -141,10 +153,31 @@ class ScenarioReductionSolver : public Solver {
 /*--------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
 /*--------------------------------------------------------------------------*/
 
-  /// Sets the Block that the Solver has to solve and caches physical data
+  /** Sets the Block that the Solver has to solve and caches physical data.
+   *  
+   *  The block must be a CapacitatedFacilityLocationBlock with specific requirements:
+   *  - All facility capacities must be 1.0
+   *  - Customer demands represent scenario probabilities (auto-normalized if needed)
+   *  - Number of facilities must equal number of customers 
+   *  
+   *  @throws std::invalid_argument if block is not CapacitatedFacilityLocationBlock
+   *  @throws std::invalid_argument if any capacity != 1.0 and k > 0
+   *  @throws std::logic_error if number of facilities != number of customers
+   */
   void set_Block(Block* block) override;
 
-  /// Helper method to refresh cached data from the block
+  /** Helper method to refresh cached data from the block.
+   *  
+   *  Validates and caches scenario reduction data:
+   *  - Ensures all capacities are 1.0 (when k > 0)
+   *  - Normalizes demand probabilities if they don't sum to 1.0
+   *  - Caches pointers to transportation costs and normalized weights
+   *  
+   *  @param k Number of scenarios to select (must be <= number of scenarios)
+   *  @throws std::invalid_argument if k < 0 or k > number of scenarios
+   *  @throws std::invalid_argument if any capacity != 1.0 and k > 0
+   *  @throws std::logic_error if facilities != customers
+   */
   void refresh_cached_data(int k);
 
   /// Solve the scenario reduction problem from a choice of methods 
@@ -236,6 +269,9 @@ class ScenarioReductionSolver : public Solver {
   /// Problem data - these are references to the data in the block
   const DVector* weights;
   const CMatrix* f_transportation_costs;
+  
+  /// Normalized weights (only allocated if original weights are not normalized)
+  std::unique_ptr<DVector> normalized_weights;
 
   /// Solution data
   IntSolution reduced_atoms;   // Binary values indicating which atoms are selected
