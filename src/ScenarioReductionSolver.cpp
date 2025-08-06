@@ -157,7 +157,7 @@ int ScenarioReductionSolver::compute_dupacova()
   for(int k = 0; k < m; ++k) {
     // Find the closest atom to add on a greedy Wasserstein-based criterion
     int j_best, j_tmp;
-    std::tie(j_best, j_tmp) = pick_candidate(reduced_atoms, minimum_d);
+    std::tie(j_best, j_tmp) = pick_dupacova(reduced_atoms, minimum_d);
     
     // Updates
     for(int i = 0; i < n; i++) {
@@ -423,7 +423,7 @@ ScenarioReductionSolver::bestfit_selection(const std::vector<Index>& curr_indice
 }
 
 /*--------------------------------------------------------------------------*/
-/*------------------------ FIRSTFIT IMPLEMENTATION ------------------------*/
+/*------------------------ FIRSTFIT IMPLEMENTATION -------------------------*/
 /*--------------------------------------------------------------------------*/
 
 std::tuple<ScenarioReductionSolver::Index, ScenarioReductionSolver::Index, double>
@@ -502,6 +502,34 @@ ScenarioReductionSolver::firstfit_selection(
 }
 
 /*--------------------------------------------------------------------------*/
+/*------------------------ DUPACOVA IMPLEMENTATION -------------------------*/
+/*--------------------------------------------------------------------------*/
+
+std::tuple<int, int> ScenarioReductionSolver::pick_dupacova(
+  const std::vector<bool>& red_ind, 
+  const std::vector<double>& min_cost) 
+{
+  // For every atom j in indices_to_choose, compute Wasserstein distance with closed formula
+  std::vector<double> inner_min(nb_atoms); // inner_min in closed formula
+  std::vector<float> distances(indices_to_choose.size());
+
+  for (size_t idx = 0; idx < indices_to_choose.size(); idx++) {
+    auto j = indices_to_choose[idx];
+    // compute every component 0\leq i \leq n-1 of inner_min by recursive formula
+    for (int i = 0; i < nb_atoms; i++) {
+      inner_min[i] = std::min(min_cost[i], (*f_transportation_costs)[i][j]);
+    }
+    distances[idx] = std::inner_product(inner_min.begin(), inner_min.end(), weights->begin(), 0.0); 
+  }
+
+  // compute argmin_j distances[j]
+  auto min_it = std::min_element(distances.begin(), distances.end());
+  int j_tmp = std::distance(distances.begin(), min_it); // index in indices_to_choose
+
+  return std::make_pair(indices_to_choose[j_tmp], j_tmp);
+}
+
+/*--------------------------------------------------------------------------*/
 /*-------------------------- HELPER METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -541,32 +569,6 @@ void ScenarioReductionSolver::update_reduced_atoms()
       reduced_atoms[i] = true;
     }
   }
-}
-
-/*--------------------------------------------------------------------------*/
-
-std::tuple<int, int> ScenarioReductionSolver::pick_candidate(
-  const std::vector<bool>& red_ind, 
-  const std::vector<double>& min_cost) 
-{
-  // For every atom j in indices_to_choose, compute Wasserstein distance with closed formula
-  std::vector<double> inner_min(nb_atoms); // inner_min in closed formula
-  std::vector<float> distances(indices_to_choose.size());
-
-  for (size_t idx = 0; idx < indices_to_choose.size(); idx++) {
-    auto j = indices_to_choose[idx];
-    // compute every component 0\leq i \leq n-1 of inner_min by recursive formula
-    for (int i = 0; i < nb_atoms; i++) {
-      inner_min[i] = std::min(min_cost[i], (*f_transportation_costs)[i][j]);
-    }
-    distances[idx] = std::inner_product(inner_min.begin(), inner_min.end(), weights->begin(), 0.0); 
-  }
-
-  // compute argmin_j distances[j]
-  auto min_it = std::min_element(distances.begin(), distances.end());
-  int j_tmp = std::distance(distances.begin(), min_it); // index in indices_to_choose
-
-  return std::make_pair(indices_to_choose[j_tmp], j_tmp);
 }
 
 /*--------------------------------------------------------------------------*/

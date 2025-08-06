@@ -725,7 +725,7 @@ REGISTER_TEST(solution_basic_functionality) {
     }
     
     // The demands were set as 50, 100, 150, 200
-    // So for k=2, we should select indices 2 and 3 (with weights 150 and 200)
+    // So for k=2, we should select indices 2 and 3 (with unnormalized weights 150 and 200)
     if (selected_weights.size() != 2) {
       delete block;
       throw std::runtime_error("Should select exactly 2 scenarios");
@@ -880,7 +880,7 @@ REGISTER_TEST(solution_warm_start) {
   double obj1 = solver1.get_var_value();
   double obj2 = solver2.get_var_value();
   
-  if (obj2 > obj1 * 1.1) { // Local search shouldn't be much worse than Dupacova with warm start
+  if (obj2 < obj1) { // Local search should be at better (or equal) to Dupacova with warm start
     delete block;
     throw std::runtime_error("Warm start doesn't seem to be working properly");
   }

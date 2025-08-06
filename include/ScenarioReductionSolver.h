@@ -93,6 +93,8 @@ class ScenarioReductionSolver : public Solver {
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PUBLIC TYPES --------------------------------*/
 /*--------------------------------------------------------------------------*/
+/** @name Public Types
+ *  @{ */
 
   // Using types from CapacitatedFacilityLocationBlock for clarity
   using Index = CapacitatedFacilityLocationBlock::Index;
@@ -139,9 +141,11 @@ class ScenarioReductionSolver : public Solver {
     vintLastParSRS                         ///< First allowed parameter for derived classes
   };
 
-/*--------------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*--------------------- CONSTRUCTOR AND DESTRUCTOR -------------------------*/
 /*--------------------------------------------------------------------------*/
+/** @name Constructing and destructing ScenarioReductionSolver
+ *  @{ */
 
   /// Default constructor
   ScenarioReductionSolver();
@@ -149,9 +153,12 @@ class ScenarioReductionSolver : public Solver {
   /// Destructor
   ~ScenarioReductionSolver() override;
 
-/*--------------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*--------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
 /*--------------------------------------------------------------------------*/
+/** @name Methods to configure ScenarioReductionSolver
+ *  @{ */
+
 
   /** Sets the Block that the Solver has to solve and caches physical data.
    *  
@@ -209,24 +216,11 @@ class ScenarioReductionSolver : public Solver {
   static int get_dflt_int_par(idx_type par);
   static double get_dflt_dbl_par(idx_type par);
 
-/*--------------------------------------------------------------------------*/
-
-  /// Selecting a pair of atoms to swap
-  /**
-   * Virtual method which implements Dupacova greedy heuristic by default.
-   * Abstract method to select a pair of indices (i, j) for swapping atoms 
-   * in a candidate reduced distribution.
-   * This method should be implemented in concrete subclasses to define 
-   * the strategy for selecting a pair of atoms to swap.
-   */
-  virtual std::tuple<int, int> pick_candidate(const std::vector<bool>& ind, 
-    const std::vector<double>& min_cost);
-
   const ScenarioIndex& get_nb_atoms() const { return nb_atoms; }
   const ScenarioIndex& get_nb_reduced() const { return nb_reduced; }
   const DVector* get_weights() const { return weights; }
 
-/*--------------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*----------------------- PRIVATE PART OF THE CLASS ------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -280,6 +274,23 @@ class ScenarioReductionSolver : public Solver {
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PRIVATE METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
+
+
+  /// Selecting an atom from Dupacova greedy heuristic
+  /**
+   * Given a current set ind of indices characterizing the current Solution,
+   * pick the index of the scenario that minimizes the Wasserstein distance
+   * between the original distribution and ind with the new index.
+   * 
+   * Note that we consider the optimal weights on the reduced distribution
+   * to compute the aforementioned Wasserstein distance.
+   * 
+   * @return A pair of indices, respectively the index in the original range
+   * of scenarios and the index in the range of scenarios that are not 
+   * picked up yet.
+   */
+  std::tuple<int, int> pick_dupacova(const std::vector<bool>& ind, 
+    const std::vector<double>& min_cost);
 
   /**
    * Perform scenario reduction using Dupacova's forward algorithm
