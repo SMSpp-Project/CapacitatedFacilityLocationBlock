@@ -2622,6 +2622,48 @@ void CapacitatedFacilityLocationBlock::chg_customer_demand( Demand NDem ,
 
 /*--------------------------------------------------------------------------*/
 
+void CapacitatedFacilityLocationBlock::chg_max_facilities( Index NMaxFac ,
+			     ModParam issueMod , ModParam issueAMod )
+{
+ if( NMaxFac != iInf && NMaxFac < 1 )
+  throw( std::invalid_argument( "number of maximum facilities too small" ) );
+ if( NMaxFac != iInf && NMaxFac > f_n_facilities )
+  throw( std::invalid_argument( "number of maximum facilities too high" ) );
+
+ if( f_max_facilities == NMaxFac )
+  return;
+
+ // reset conditional bounds
+ f_cond_lower = NAN;
+ f_cond_upper = NAN;
+
+ // update the physical representation
+ if( not_dry_run( issueMod ) )
+  f_max_facilities = NMaxFac;
+
+ // update abstract representation if it exists
+ if( not_dry_run( issueAMod ) && ( AR & HasMaxCns ) ) {
+  // update the max facilities constraint RHS
+  auto maxF_cnstr = get_static_constraint< FRowConstraint >( "maxF" );
+  if( maxF_cnstr )
+   maxF_cnstr->set_rhs( NMaxFac , issueAMod );
+  }
+
+ // issue "physical Modification"
+ if( issue_pmod( issueMod ) )
+  Block::add_Modification( std::make_shared< 
+                           CapacitatedFacilityLocationBlockMod >( this ,
+                           CapacitatedFacilityLocationBlockMod::eChgMxF ) ,
+                           Observer::par2chnl( issueMod ) );
+
+ #if CHECK_DS
+  CheckAbsVSPhys();
+ #endif
+
+ }  // end( CapacitatedFacilityLocationBlock::chg_max_facilities )
+
+/*--------------------------------------------------------------------------*/
+
 void CapacitatedFacilityLocationBlock::close_facilities( Range rng ,
 			             ModParam issueMod , ModParam issueAMod )
 {
@@ -4623,6 +4665,9 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
    case( CapacitatedFacilityLocationBlockMod::eChgSplt ):  //- - - - - - - -
     R3B->chg_UnSplittable( false , issuePMod , issueAMod );
     break;
+   case( CapacitatedFacilityLocationBlockMod::eChgMxF ):  // - - - - - - - -
+    // R3Block doesn't support max facilities constraint, so ignore it
+    break;
    default:
     throw( std::invalid_argument(
 		  "invalid type in CapacitatedFacilityLocationBlockMod" ) );
@@ -4883,7 +4928,8 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
   switch( tmod->type() ) {
    case( CapacitatedFacilityLocationBlockMod::eChgUnSplt ):  //- - - - - - -
    case( CapacitatedFacilityLocationBlockMod::eChgSplt ):  //- - - - - - - -
-    break;    // nothing to do, although it's a weird case
+   case( CapacitatedFacilityLocationBlockMod::eChgMxF ):  // - - - - - - - -
+    break;    // nothing to do for these types
    default:
     throw( std::invalid_argument(
 		  "invalid type in CapacitatedFacilityLocationBlockMod" ) );

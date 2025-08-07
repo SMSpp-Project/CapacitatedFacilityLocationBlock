@@ -1600,6 +1600,18 @@ public:
                            ModParam issueMod = eNoBlck ,
                            ModParam issueAMod = eNoBlck );
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /// changes the maximum number of facilities that can be opened
+ /** Method to change the maximum number of facilities that can be opened.
+  * The new value must be >= 1 and <= get_NFacilities(). Setting it to
+  * iInf removes the constraint entirely.
+  *
+  * If issueMod says so then a "physical" Modification is issued. */
+
+ void chg_max_facilities( Index NMaxFac ,
+                          ModParam issueMod = eNoBlck ,
+                          ModParam issueAMod = eNoBlck );
+
 /*--------------------------------------------------------------------------*/
  /// closes a contiguous interval of facilities
  /** Method to close a subset of facility with "contiguous names", i.e., all
@@ -2084,6 +2096,7 @@ class CapacitatedFacilityLocationBlockMod : public Modification
   eChgTCost     ,   ///< change the transportation costs
   eChgCap       ,   ///< change the facility capacities
   eChgDem       ,   ///< change the customers demands
+  eChgMxF       ,   ///< change the maximum number of facilities
   eCloseF       ,   ///< close facilities
   eOpenF        ,   ///< re-open facilities
   eBuyF         ,   ///< fix open facilities
@@ -2130,6 +2143,7 @@ class CapacitatedFacilityLocationBlockMod : public Modification
    case( eChgTCost ): output << "change the transportation costs "; break;
    case( eChgCap ):   output << "change the facility capacities "; break;
    case( eChgDem ):   output << "change the customers demands "; break;
+   case( eChgMxF ):   output << "change the maximum number of facilities "; break;
    case( eCloseF ):   output << "close facilities "; break;
    case( eOpenF ):    output << "re-open facilities "; break;
    default:           output << "fix open facilities ";
