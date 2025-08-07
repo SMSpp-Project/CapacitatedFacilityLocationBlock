@@ -44,8 +44,7 @@
 #include <unordered_map>
 
 #include "Solver.h"
-#include "CapacitatedFacilityLocationBlock.h" 
-#include "ScenarioGenerator.h"  // For ScenarioIndex type
+#include "CapacitatedFacilityLocationBlock.h"
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- NAMESPACE ----------------------------------*/
@@ -107,7 +106,6 @@ class ScenarioReductionSolver : public Solver {
   using CntSolution = CapacitatedFacilityLocationBlock::CntSolution;
 
   using OFValue = RealObjective::OFValue;
-  using ScenarioIndex = ScenarioGenerator::ScenarioIndex;
 
   /**
    * Enumeration of available scenario reduction algorithms
@@ -216,8 +214,8 @@ class ScenarioReductionSolver : public Solver {
   static int get_dflt_int_par(idx_type par);
   static double get_dflt_dbl_par(idx_type par);
 
-  const ScenarioIndex& get_nb_atoms() const { return nb_atoms; }
-  const ScenarioIndex& get_nb_reduced() const { return nb_reduced; }
+  const Index& get_nb_atoms() const { return nb_atoms; }
+  const Index& get_nb_reduced() const { return nb_reduced; }
   const DVector* get_weights() const { return weights; }
 
 /** @} ---------------------------------------------------------------------*/
@@ -251,10 +249,10 @@ class ScenarioReductionSolver : public Solver {
   double dist_dupa = std::numeric_limits<double>::infinity(); // Distance from Dupacova algorithm
 
   /// Problem dimensions
-  ScenarioIndex nb_atoms;
-  ScenarioIndex nb_reduced;
+  Index nb_atoms;
+  Index nb_reduced;
 
-  std::vector<ScenarioIndex> indices_to_choose;  // Indices not yet chosen
+  std::vector<Index> indices_to_choose;  // Indices not yet chosen
   std::vector<Index> ind_red;                   // Indices in reduced set (for local search)
 
   // Power in the ell-Wasserstein distance

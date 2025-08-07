@@ -778,8 +778,8 @@ void ScenarioReductionSolver::refresh_cached_data(int k)
   }
   
   // Now use the specialized methods with the properly typed pointer
-  nb_atoms = static_cast<ScenarioIndex>(cfl_block->get_NCustomers());
-  nb_reduced = static_cast<ScenarioIndex>(cfl_block->get_NFacilities());
+  nb_atoms = static_cast<Index>(cfl_block->get_NCustomers());
+  nb_reduced = static_cast<Index>(cfl_block->get_NFacilities());
   
   // Validate that we have a square distance matrix (customers == facilities for scenario reduction)
   if (nb_atoms != nb_reduced) {
