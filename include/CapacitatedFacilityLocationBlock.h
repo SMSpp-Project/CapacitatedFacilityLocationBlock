@@ -250,8 +250,7 @@ public:
 /*--------------------------------------------------------------------------*/
 
  static constexpr double dNaN = std::numeric_limits< double >::quiet_NaN();
- // TODO: fix that type it's not a double
- static constexpr double iInf = std::numeric_limits<int>::infinity();
+ static constexpr Index iInf = Inf< Index >();
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
