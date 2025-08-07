@@ -35,9 +35,7 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#include <mutex>
 #include <random>
-#include <unordered_map>
 
 #include "Solver.h"
 #include "CapacitatedFacilityLocationBlock.h"

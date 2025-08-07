@@ -11,11 +11,9 @@
 
 #include "ScenarioReductionSolver.h"
 
-#include <algorithm>
-#include <format> // C++20 string formatting
-#include <limits>
-#include <numeric>
-#include <random>
+#include <limits>    // std::numeric_limits (not in SMSTypedefs)
+#include <numeric>   // std::iota (not in SMSTypedefs)
+#include <unordered_map>
 #include <unordered_set>
 
 /*--------------------------------------------------------------------------*/

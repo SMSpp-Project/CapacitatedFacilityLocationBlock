@@ -47,20 +47,15 @@
 /*-------------------------------- INCLUDES --------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#include <iostream>
-#include <iomanip>
-#include <vector>
-#include <map>
-#include <functional>
-#include <stdexcept>
-#include <thread>
-#include <chrono>
-#include <atomic>
-#include <mutex>
-#include <cstdlib>
-#include <algorithm>
+#include <iostream>      // std::cout, std::cerr, std::endl
+#include <iomanip>       // std::setprecision
+#include <stdexcept>     // std::runtime_error, std::invalid_argument, etc.
+#include <thread>        // std::thread
+#include <chrono>        // std::chrono
+#include <atomic>        // std::atomic
+#include <cstdlib>       // std::rand, std::srand
 
-#include "SMSTypedefs.h"
+#include "SMSTypedefs.h" // includes: algorithm, vector, map, functional, mutex
 #include "Configuration.h"
 #include "ScenarioReductionSolver.h"
 #include "CapacitatedFacilityLocationBlock.h"
