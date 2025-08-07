@@ -125,6 +125,7 @@ int ScenarioReductionSolver::compute(bool changedvars)
       result = compute_dupacova();
       break;
     case Algorithm::BestFit:
+      [[fallthrough]];  // Both BestFit and FirstFit use compute_local_search()
     case Algorithm::FirstFit:
       result = compute_local_search();
       break;
