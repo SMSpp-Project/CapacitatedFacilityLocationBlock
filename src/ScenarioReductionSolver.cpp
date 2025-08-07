@@ -103,11 +103,10 @@ void ScenarioReductionSolver::set_Block(Block* block)
 
 int ScenarioReductionSolver::compute(bool changedvars) 
 {
-  lock();  // Lock the solver for thread safety
+  std::lock_guard<std::recursive_mutex> lock(f_mutex);  // Exception-safe RAII lock
   
   // Make sure we have a block to work with
   if (!get_Block()) {
-    unlock();
     return kError;
   }
   
@@ -134,8 +133,8 @@ int ScenarioReductionSolver::compute(bool changedvars)
       break;
   }
   
-  unlock();  // Unlock the solver
   return result;
+  // Lock is automatically released when lock_guard goes out of scope
 }
 
 /*--------------------------------------------------------------------------*/
