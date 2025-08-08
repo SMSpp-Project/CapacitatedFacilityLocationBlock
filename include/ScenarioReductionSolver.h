@@ -306,13 +306,13 @@ class ScenarioReductionSolver : public Solver {
    * @param par parameter identifier
    * @return the default value
    */
-  static int get_dflt_int_par(idx_type par);
+  int get_dflt_int_par(idx_type par) const override;
 
   /** @brief Returns the default value for a double parameter.
    * @param par parameter identifier
    * @return the default value
    */
-  static double get_dflt_dbl_par(idx_type par);
+  double get_dflt_dbl_par(idx_type par) const override;
 
 /** @} ---------------------------------------------------------------------*/
 /*----------------------- PRIVATE PART OF THE CLASS ------------------------*/

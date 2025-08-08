@@ -725,7 +725,7 @@ const std::vector<int>& ScenarioReductionSolver::get_vint_par(idx_type par) cons
 
 /*--------------------------------------------------------------------------*/
 
-int ScenarioReductionSolver::get_dflt_int_par(idx_type par) {
+int ScenarioReductionSolver::get_dflt_int_par(idx_type par) const {
   switch(par) {
     case intAlgorithm: return 1;    // Dupacova
     case intShuffle: return 0;       // No shuffling
@@ -737,7 +737,7 @@ int ScenarioReductionSolver::get_dflt_int_par(idx_type par) {
 
 /*--------------------------------------------------------------------------*/
 
-double ScenarioReductionSolver::get_dflt_dbl_par(idx_type par) {
+double ScenarioReductionSolver::get_dflt_dbl_par(idx_type par) const {
   switch(par) {
     case dblRho: return 0.0;
     default: return 0.0;  // Base class default
