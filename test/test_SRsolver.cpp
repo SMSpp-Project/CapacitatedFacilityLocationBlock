@@ -234,10 +234,6 @@ REGISTER_TEST(parameter_setting) {
   solver.set_par(ScenarioReductionSolver::intRandomSeed, 12345);
   
   // Test setting and getting double parameters
-  solver.set_par(ScenarioReductionSolver::dblEll, 0.5);
-  if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblEll), 0.5)) {
-    throw std::runtime_error("Failed to set ell parameter");
-  }
   
   solver.set_par(ScenarioReductionSolver::dblRho, 0.01);
   if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblRho), 0.01)) {
@@ -256,10 +252,6 @@ REGISTER_TEST(parameter_setting) {
   }
   
   // Test small positive values for double parameters
-  solver.set_par(ScenarioReductionSolver::dblEll, 1e-10);
-  if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblEll), 1e-10)) {
-    throw std::runtime_error("Failed to set small ell value");
-  }
   
   solver.set_par(ScenarioReductionSolver::dblRho, 1e-10);
   if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblRho), 1e-10)) {
@@ -288,12 +280,6 @@ REGISTER_TEST(parameter_validation) {
   // Note: shuffle parameter accepts any integer (non-zero = true, zero = false)
   // So there are no invalid values to test
   
-  try {
-    solver.set_par(ScenarioReductionSolver::dblEll, -1.0);
-    throw std::runtime_error("Should have thrown for invalid ell value");
-  } catch (const std::invalid_argument&) {
-    // Expected
-  }
   
   try {
     solver.set_par(ScenarioReductionSolver::dblRho, -1.0);
@@ -319,10 +305,6 @@ REGISTER_TEST(default_values) {
     throw std::runtime_error("Default random seed should be 0");
   }
   
-  if (!approx_equal(solver.get_dflt_dbl_par(ScenarioReductionSolver::dblEll), 2.0)) {
-    throw std::runtime_error("Default ell should be 2.0");
-  }
-  
   if (!approx_equal(solver.get_dflt_dbl_par(ScenarioReductionSolver::dblRho), 0.0)) {
     throw std::runtime_error("Default rho should be 0.0");
   }
@@ -330,7 +312,6 @@ REGISTER_TEST(default_values) {
   // Also verify that get_*_par returns the same defaults initially
   if (solver.get_int_par(ScenarioReductionSolver::intAlgorithm) != 1 ||
       solver.get_int_par(ScenarioReductionSolver::intShuffle) != 0 ||
-      !approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblEll), 2.0) ||
       !approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblRho), 0.0)) {
     throw std::runtime_error("get_*_par should return default values initially");
   }
@@ -809,7 +790,6 @@ REGISTER_TEST(solution_persistence) {
   // Save solver state
   int algorithm = solver.get_int_par(ScenarioReductionSolver::intAlgorithm);
   double rho = solver.get_dbl_par(ScenarioReductionSolver::dblRho);
-  double ell = solver.get_dbl_par(ScenarioReductionSolver::dblEll);
   std::vector<bool> solution = solver.get_reduced_atoms();
   double obj_value = solver.get_var_value();
   
@@ -818,7 +798,6 @@ REGISTER_TEST(solution_persistence) {
   solver2.set_Block(block);
   solver2.set_par(ScenarioReductionSolver::intAlgorithm, algorithm);
   solver2.set_par(ScenarioReductionSolver::dblRho, rho);
-  solver2.set_par(ScenarioReductionSolver::dblEll, ell);
   solver2.compute();
   
   // Verify same solution is obtained

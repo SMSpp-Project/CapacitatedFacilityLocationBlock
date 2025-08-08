@@ -61,8 +61,8 @@ namespace SMSpp_di_unipi_it {
  * The solver maps the CFL problem to scenario reduction as follows:
  * - Facilities represent selected scenarios (reduced set)
  * - Customers represent all scenarios (original set)
- * - Transportation costs encode distances between scenarios
- * - The objective minimizes the \f$\ell\f$-Wasserstein distance between
+ * - Transportation costs encode distances (already raised to power ell) between scenarios
+ * - The objective minimizes the \f$\ell\f$-th power of the Wasserstein distance between
  *   the original and reduced probability distributions
  *
  * ### Requirements
@@ -142,8 +142,7 @@ class ScenarioReductionSolver : public Solver {
   /// public enum extending dbl_par_type_S for ScenarioReductionSolver
   enum dbl_par_type_SRS {
     dblRho = dblLastAlgPar,            ///< Minimum improvement threshold for local search
-    dblEll = dblLastAlgPar + 1,        ///< Power in ell-Wasserstein distance (default: 2.0)
-    dblLastParSRS                      ///< First allowed parameter for derived classes
+    dblLastParSRS = dblLastAlgPar + 1  ///< First allowed parameter for derived classes
   };
 
   /// public enum extending vint_par_type_S for ScenarioReductionSolver
@@ -214,11 +213,6 @@ class ScenarioReductionSolver : public Solver {
    */ 
   virtual int compute(bool changedvars = false) override;
 
-  /** @brief Returns the power parameter for the Wasserstein distance.
-   * @return the \f$\ell\f$ parameter (default: 2.0 for 2-Wasserstein)
-   */
-  [[nodiscard]] float get_ell() const { return ell; }
-
   /** @brief Checks if a solution is available.
    * @return true if compute() has been successfully called, false otherwise
    */
@@ -277,7 +271,7 @@ class ScenarioReductionSolver : public Solver {
 
   /** @brief Sets a double parameter.
    *
-   * @param par parameter identifier (dblRho, dblEll)
+   * @param par parameter identifier (dblRho)
    * @param value the parameter value
    * @throws std::invalid_argument if value is out of valid range
    */
@@ -353,8 +347,6 @@ class ScenarioReductionSolver : public Solver {
 
   std::vector<Index> indices_to_choose;  ///< scenarios not yet selected
   std::vector<Index> ind_red;            ///< indices in reduced set
-
-  float ell = 2.0;  ///< power parameter for \f$\ell\f$-Wasserstein distance
 
   const DVector* weights;                 ///< pointer to scenario probabilities
   const CMatrix* f_transportation_costs;  ///< pointer to distance matrix

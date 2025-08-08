@@ -170,7 +170,7 @@ int ScenarioReductionSolver::compute_dupacova()
   // Compute final distance
   double dot_product = std::inner_product(minimum_d.begin(), minimum_d.end(), weights->begin(), 0.0);
   dist_dupa = dot_product; // Save the distance from Dupacova for local search
-  f_solution_value = std::pow(dot_product, 1.0 / ell);
+  f_solution_value = dot_product; // Already the ell-th power of Wasserstein distance
   
   return kOK;
 }
@@ -202,7 +202,7 @@ int ScenarioReductionSolver::compute_baseline()
     ind_red.push_back(scenario_idx);
   }
   
-  // Calculate objective value (ell-Wasserstein distance)
+  // Calculate objective value (ell-th power of Wasserstein distance)
   std::vector<double> min_distances(nb_atoms);
   for (Index i = 0; i < nb_atoms; ++i) {
     min_distances[i] = std::numeric_limits<double>::infinity();
@@ -217,7 +217,7 @@ int ScenarioReductionSolver::compute_baseline()
   double total_distance = std::inner_product(min_distances.begin(), 
                                            min_distances.end(), 
                                            weights->begin(), 0.0);
-  f_solution_value = std::pow(total_distance, 1.0 / ell);
+  f_solution_value = total_distance; // Already the ell-th power of Wasserstein distance
   
   return kOK;
 }
@@ -255,8 +255,8 @@ int ScenarioReductionSolver::compute_local_search()
   // Update reduced_atoms vector from ind_red
   update_reduced_atoms();
   
-  // Calculate final Wasserstein distance
-  f_solution_value = std::pow(curr_d, 1.0 / ell);
+  // Calculate final ell-th power of Wasserstein distance
+  f_solution_value = curr_d;
   
   return kOK;
 }
@@ -656,12 +656,6 @@ void ScenarioReductionSolver::set_par(idx_type par, double value) {
       }
       rho = value;
       break;
-    case dblEll:
-      if (value <= 0.0) {
-        throw std::invalid_argument("ell must be positive");
-      }
-      ell = static_cast<float>(value);
-      break;
     default:
       Solver::set_par(par, value);
   }
@@ -707,8 +701,6 @@ double ScenarioReductionSolver::get_dbl_par(idx_type par) const {
   switch(par) {
     case dblRho:
       return rho;
-    case dblEll:
-      return static_cast<double>(ell);
     default:
       return Solver::get_dbl_par(par);
   }
@@ -748,7 +740,6 @@ int ScenarioReductionSolver::get_dflt_int_par(idx_type par) {
 double ScenarioReductionSolver::get_dflt_dbl_par(idx_type par) {
   switch(par) {
     case dblRho: return 0.0;
-    case dblEll: return 2.0;
     default: return 0.0;  // Base class default
   }
 }
