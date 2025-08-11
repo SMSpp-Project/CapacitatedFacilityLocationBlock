@@ -504,7 +504,7 @@ void CapacitatedFacilityLocationBlock::deserialize(
   f_max_facilities = max_fac.getSize();
  if ( f_max_facilities == 0)
   throw( std::invalid_argument( _prfx + "number of maximum facilities too small" ) );
- if ( f_max_facilities > f_n_facilities )
+ if ( f_max_facilities != iInf && f_max_facilities > f_n_facilities )
   throw( std::invalid_argument( _prfx + "number of maximum facilities too high" ) ); 
 
  // call the method of Block- - - - - - - - - - - - - - - - - - - - - - - - -
