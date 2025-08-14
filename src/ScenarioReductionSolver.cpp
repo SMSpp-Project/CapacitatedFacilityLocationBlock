@@ -217,7 +217,7 @@ int ScenarioReductionSolver::compute_baseline()
   double total_distance = std::inner_product(min_distances.begin(), 
                                            min_distances.end(), 
                                            weights->begin(), 0.0);
-  f_solution_value = total_distance; // Already the ell-th power of Wasserstein distance
+  f_solution_value = total_distance; 
   
   return kOK;
 }
@@ -599,6 +599,37 @@ void ScenarioReductionSolver::get_var_solution(Configuration* solc)
     if (y_var) {
       // Set value: 1.0 if facility/scenario selected, 0.0 otherwise
       y_var->set_value(reduced_atoms[i] ? 1.0 : 0.0);
+    }
+  }
+  
+  // Write solution to Block's x variables (assignments)
+  // For each customer (scenario), find the closest open facility (representative)
+  // and set x[facility][customer] = 1.0 for that assignment
+  if (f_transportation_costs) {
+    for (Index customer = 0; customer < nb_atoms; ++customer) {
+      // Find the closest open facility for this customer
+      Index best_facility = 0;
+      double min_cost = std::numeric_limits<double>::infinity();
+      
+      for (Index facility = 0; facility < nb_atoms; ++facility) {
+        // Only consider open facilities (selected representatives)
+        if (reduced_atoms[facility]) {
+          double cost = (*f_transportation_costs)[customer][facility];
+          if (cost < min_cost) {
+            min_cost = cost;
+            best_facility = facility;
+          }
+        }
+      }
+      
+      // Set all x variables for this customer
+      for (Index facility = 0; facility < nb_atoms; ++facility) {
+        ColVariable* x_var = cfl_block->get_x(facility, customer);
+        if (x_var) {
+          // Set 1.0 for the best assignment, 0.0 for all others
+          x_var->set_value((facility == best_facility && reduced_atoms[facility]) ? 1.0 : 0.0);
+        }
+      }
     }
   }
 }

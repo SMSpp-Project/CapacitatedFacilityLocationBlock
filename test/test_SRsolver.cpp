@@ -206,7 +206,7 @@ CapacitatedFacilityLocationBlock* create_test_block(int k) {
   }
   
   // Load data into block with k as the max number of facilities
-  cfl_block->load(nf, nc, caps, fcosts, dems, tcosts, false, k);
+  cfl_block->load(nf, nc, caps, fcosts, dems, tcosts, true, k);
   
   return cfl_block;
 }
@@ -621,7 +621,7 @@ REGISTER_TEST(solution_basic_functionality) {
     tcosts[1][0] = 2.0;  // Distance from scenario 1 to 0 (symmetric)
     tcosts[1][1] = 0.0;  // Distance from scenario 1 to 1
     
-    block->load(nf, nc, caps, fcosts, dems, tcosts, false, k);
+    block->load(nf, nc, caps, fcosts, dems, tcosts, true, k);
     
     // Create and configure solver
     ScenarioReductionSolver solver;
@@ -1107,7 +1107,7 @@ REGISTER_TEST(refresh_cached_data_error_handling) {
       }
     }
     
-    block->load(nf, nc, caps, fcosts, dems, tcosts, false, k);
+    block->load(nf, nc, caps, fcosts, dems, tcosts, true, k);
     
     ScenarioReductionSolver solver;
     
@@ -1218,7 +1218,7 @@ REGISTER_TEST(weight_normalization) {
       }
     }
     
-    block->load(nf, nc, caps, fcosts, dems, tcosts, false, k);
+    block->load(nf, nc, caps, fcosts, dems, tcosts, true, k);
     
     ScenarioReductionSolver solver;
     solver.set_Block(block);

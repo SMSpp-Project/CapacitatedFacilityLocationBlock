@@ -224,10 +224,15 @@ class ScenarioReductionSolver : public Solver {
    */
   [[nodiscard]] OFValue get_var_value() override;
 
-  /** @brief Writes the solution to the Block's y variables.
+  /** @brief Writes the solution to the Block's y and x variables.
    *
    * Sets the y[i] variables in the Block to 1.0 for selected scenarios
-   * and 0.0 for unselected ones.
+   * (representatives) and 0.0 for unselected ones.
+   * 
+   * Also sets the x[i][j] variables to represent optimal assignments:
+   * x[i][j] = 1.0 if customer j is assigned to facility i (based on 
+   * minimum transportation cost), 0.0 otherwise. This assignment information
+   * is essential for proper weight aggregation in scenario reduction.
    *
    * @param solc ignored configuration parameter (for base class compatibility)
    * @throws std::logic_error if no Block is set or no solution is available
