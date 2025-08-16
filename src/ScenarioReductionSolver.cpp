@@ -76,9 +76,8 @@ void ScenarioReductionSolver::set_Block(Block* block)
             throw std::runtime_error("ScenarioReductionSolver: unable to lock the Block");
         }
 
-        // Generate only abstract variables (we only need y variables for solution writing)
-        // Note: This still generates x variables which we don't use, but there's no
-        // built-in way to generate only y variables. This is acceptable overhead for now.
+        // Generate abstract variables to write back the solution (y variables)
+        // *AND* x variables which are necessary to infer the optimal weights
         f_Block->generate_abstract_variables();
 
         if (!owned) {
