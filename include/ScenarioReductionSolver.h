@@ -75,6 +75,15 @@ namespace SMSpp_di_unipi_it {
  * - Number of facilities must equal number of customers (square distance matrix)
  * - Transportation costs represent pairwise scenario distances
  *
+ * ### Reoptimization Policy
+ *
+ * This solver does not implement reoptimization based on Modifications. The
+ * scenario reduction problem is typically solved once to select a representative
+ * subset, and the implemented heuristics are already efficient enough that
+ * incremental updates would provide minimal benefit. All Modifications are
+ * cleared at the beginning of each compute() call, and the problem is solved
+ * from scratch.
+ *
  * ### Implemented Algorithms
  *
  * The solver provides four heuristic algorithms:

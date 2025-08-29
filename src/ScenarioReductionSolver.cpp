@@ -56,8 +56,7 @@ void ScenarioReductionSolver::set_Block(Block* block)
     
     // Check if this is the same block we already have
     if (block == f_Block) {
-        std::cout << "Block already set, nothing to do" << std::endl;
-        return;  // Nothing to do
+        return;  // Nothing to do - block already set
     }
 
     // Call base class implementation to set f_Block
@@ -106,6 +105,14 @@ int ScenarioReductionSolver::compute(bool changedvars)
   if (!get_Block()) {
     return kError;
   }
+  
+  // Clear Modifications list
+  // Note: This solver implements fast heuristics for scenario reduction that are
+  // typically used once to select a representative subset. Reoptimization based on
+  // Modifications is not considered as the entire problem is expected to be solved
+  // from scratch each time. The algorithms are already efficient enough that
+  // incremental updates would provide minimal benefit for the added complexity.
+  mod_clear();
   
   // Clear existing data and solution
   indices_to_choose.clear();
