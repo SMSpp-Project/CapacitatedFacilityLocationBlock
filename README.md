@@ -14,7 +14,7 @@ SMS++, among which:
   facility, and the splittable version where each customer can be served
   by any number of facilities.
 
-* `CapacitatedFacilityLocationBlock` supports three different formulations of
+* `CapacitatedFacilityLocationBlock` supports four different formulations of
   the problem:
 
   - The "natural formulation" (NF) in which the standard X[ j , i ] and
@@ -61,6 +61,13 @@ SMS++, among which:
 	that the unsplittable version of the problem cannot be represented in
 	the FF.
 
+  All three formulations above can optionally include a constraint on the
+  maximum number of facilities that can be opened (when wc & 4 in
+  generate_abstract_constraints). This adds the constraint:
+  ∑ Y[i] ≤ k, where k is the maximum number of facilities allowed.
+  This variant is particularly useful for scenario reduction applications
+  where selecting exactly k representative scenarios is required.
+
   The methods for loading, reading and changing the data of the instance in
   `CapacitatedFacilityLocationBlock` can all be used independently from which
   of the formulations is employed.
@@ -98,12 +105,27 @@ SMS++, among which:
   for both types of R3Block, except "back Modification" that is not
   implemented for the MCF R3Block.
 
+### ScenarioReductionSolver
+
+`ScenarioReductionSolver` is a specialized solver for scenario reduction problems formulated as (capacitated) facility location instances. It implements algorithms to select a representative subset of scenarios that aims to minimize a Wasserstein distance between the full scenario set and the chosen representative subset.
+
+**Available algorithms:**
+- **Baseline**: Simple greedy selection based on scenario probabilities
+- **Dupacova**: Forward selection algorithm that iteratively adds scenarios to minimize Wasserstein distance (default). 
+- **BestFit**: Local search with best improvement selection among all possible pair of choices.
+- **FirstFit**: Local search with first improvement selection.
+
+The solver can be configured through parameters:
+- `intAlgorithm`: Algorithm selection (0=Baseline, 1=Dupacova, 2=BestFit, 3=FirstFit)
+- `dblEll`: Power parameter for Wasserstein distance (default: 2.0)
+- `intShuffle`: Enable shuffling for FirstFit algorithm (currently only implemented for FirstFit, but could be extended to BestFit)
+- `intUseWarmstart`: Enable warm start for local search algorithms
+
 
 ## Getting started
 
 These instructions will let you build `CapacitatedFacilityLocationBlock` on
 your system.
-
 
 ### Requirements
 

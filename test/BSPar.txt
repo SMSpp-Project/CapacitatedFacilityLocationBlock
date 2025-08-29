@@ -1,0 +1,52 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - BSPar.txt- - - - - - - - - - - - - - - - -
+#
+# A txt description of a BlockSolverConfig for a
+# CapacitatedFacilityLocationBlock to be solved by both ScenarioReductionSolver
+# and HiGHSMILPSolver
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+BlockSolverConfig     # exact type of the Configuration object
+
+1  # the BlockSolverConfig is a "differential" one
+
+2  # number of Solvers in this BlockSolverConfig
+ScenarioReductionSolver  # First solver - our custom solver
+HiGHSMILPSolver       # Second solver - MILP solver
+
+2  # number of ComputeConfig in this BlockSolverConfig
+
+# ComputeConfig of the ScenarioReductionSolver
+ComputeConfig
+
+1  # f_diff == 1 ==> only provided parameters are changed
+
+0  # number of integer parameters
+0  # number of double parameters
+0  # number of string parameters
+0  # number of vector-of-int parameters
+0  # number of vector-of-double parameters
+0  # number of vector-of-string parameters
+
+* # no "extra" Configuration
+
+# ComputeConfig of the MILPSolver
+ComputeConfig
+
+1  # f_diff == 1 ==> only provided parameters are changed
+
+1  # number of integer parameters
+intLogVerb      0    # log verbosity of the MILPSolver
+
+1 # number of double parameters
+dblRelAcc 1e-6   # relative accuracy for the solver
+
+0 # number of string parameters
+0 # number of vector-of-int parameters
+0 # number of vector-of-double parameters
+0 # number of vector-of-string parameters
+
+* # no "extra" Configuration

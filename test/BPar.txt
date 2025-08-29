@@ -1,0 +1,45 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - BPar.txt- - - - - - - - - - - - - - - - - -
+#
+# A txt description of a BlockConfig for a CapacitatedFacilityLocationBlock
+# to generate the abstract formulation with all constraints activated
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+BlockConfig    # exact type of the Configuration object
+
+0  # the BlockConfig is not a "differential" one (0 = setting mode)
+
+# now the static constraints Configuration
+# (value=7 means all bits set: 1=customer satisfaction, 2=capacity, 4=max facilities)
+SimpleConfiguration<int>
+7
+
+# dynamic constraints Configuration
+* # [none]
+
+# static variables Configuration
+# (value=0 means standard formulation)
+SimpleConfiguration<int>
+0
+
+# dynamic variables Configuration
+* # [none]
+
+# objective Configuration
+* # [none]
+
+# is_feasible Configuration
+* # [none]
+
+# is_optimal Configuration
+* # [none]
+
+# solution Configuration
+* # [none]
+
+# extra Configuration
+* # [none]
+
+# end of BlockConfig- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
