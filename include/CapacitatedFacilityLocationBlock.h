@@ -2293,7 +2293,7 @@ class CapacitatedFacilityLocationBlockSbstMod
  *
  * - an m-vector of double for the facility solution
  *
- * - an  (m * n)-vector of double for the transportation solution
+ * - an (m * n)-vector of double for the transportation solution
  *
  * where m is the number of facilities and n is the number of customers. */
 

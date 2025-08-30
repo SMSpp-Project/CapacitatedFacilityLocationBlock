@@ -11,9 +11,6 @@
 #                                                                             #
 #        $ cmake --build <build-path> --target install                        #
 #                                                                             #
-#    Note: this file tries to respect the principles of Modern CMake,         #
-#          keep it in mind when editing it.                                   #
-#                                                                             #
 #                                Donato Meoli                                 #
 #                         Dipartimento di Informatica                         #
 #                             Universita' di Pisa                             #
@@ -106,6 +103,26 @@ add_subdirectory(tools)
 
 # ----- Custom commands and targets ----------------------------------------- #
 
+# Download txt.tgz from GitLab Package Registry if it doesn't exist
+set(TXT_URL "https://gitlab.com/api/v4/projects/24780184/packages/generic/txt/latest/txt.tgz")
+set(TXT_ARCHIVE ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz)
+set(TXT_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/download_txt.cmake)
+
+file(WRITE ${TXT_SCRIPT} "
+file(DOWNLOAD \"${TXT_URL}\" \"${TXT_ARCHIVE}\" SHOW_PROGRESS)
+")
+
+add_custom_command(
+        OUTPUT ${TXT_ARCHIVE}
+        COMMAND ${CMAKE_COMMAND} -E echo "Downloading txt.tgz from GitLab Package Registry..."
+        COMMAND ${CMAKE_COMMAND} -P ${TXT_SCRIPT}
+        COMMENT "Downloading txt.tgz"
+        VERBATIM
+)
+
+add_custom_target(download_txt
+        DEPENDS ${TXT_ARCHIVE})
+
 # Custom command to extract the txt.tgz archive if the .extracted file does not exist
 if (UNIX)
     set(TAR_FLAGS --warning=no-unknown-keyword -xzf)
@@ -114,17 +131,20 @@ elseif (WIN32)
 endif ()
 
 add_custom_command(
-        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted
         COMMAND tar ${TAR_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz
-        COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted
+        COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
         COMMENT "Extracting txt.tgz"
         VERBATIM
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz)
+        DEPENDS download_txt)
 
 # Create custom targets to run the txt extraction
 add_custom_target(extract_txt
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted)
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
+
+# Ensure that extract_txt is executed after the download
+add_dependencies(extract_txt download_txt)
 
 # Custom command to run tools/batch with the txt2nc4 exe if the .generated file does not exist
 if (UNIX)
@@ -135,7 +155,7 @@ if (UNIX)
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
             COMMENT "Running txt2nc4"
             VERBATIM
-            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4 ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted)
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4 ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
 elseif (WIN32)
     add_custom_command(
             OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
@@ -146,7 +166,7 @@ elseif (WIN32)
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
             COMMENT "Running txt2nc4"
             VERBATIM
-            DEPENDS $<TARGET_FILE:txt2nc4> ${CMAKE_CURRENT_SOURCE_DIR}/data/txt/.extracted)
+            DEPENDS $<TARGET_FILE:txt2nc4> ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
 endif ()
 
 # Create custom targets to run the nc4 generation
@@ -166,8 +186,9 @@ include(GNUInstallDirs)
 # Install the library
 install(TARGETS ${modName}
         EXPORT ${modName}Targets
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} # .dll
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} # .so .dylib
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}) # .lib
 
 # Install the headers
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/CapacitatedFacilityLocationBlock.h

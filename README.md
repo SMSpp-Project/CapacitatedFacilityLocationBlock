@@ -195,13 +195,46 @@ create the `../extlib/makefile-paths` out of the
 Check the [SMS++ installation wiki](https://gitlab.com/smspp/smspp-project/-/wikis/Customize-the-configuration#location-of-required-libraries)
 for further details.
 
+## Data
+
+We provide some data sets that are used, among other things, by some of the
+testers of the [test repo](https://gitlab.com/smspp/tests). Since they are
+large they are not included in the repo. They are automatically downloaded
+by Cmake if the test repo is included, but if you are not using Cmake to
+build the system you need to do it by hand, via
+
+```sh
+cd data
+wget https://gitlab.com/api/v4/projects/24780184/packages/generic/txt/latest/txt.tgz
+tar xzvf txt.tgz
+```
+
+This builds the following folders:
+
+- [data/txt/ORLib](data/txt/ORLib) that contains the [original
+  ORLib instances](http://people.brunel.ac.uk/~mastjjb/jeb/orlib/capinfo.html)
+  with an addition and minor tweaks) in the ORLib format, see
+  [data/txt/ORLib/doc](data/txt/ORLib/doc) for details
+
+- [data/txt/TBED](data/txt/TBED) that contains contains instances that have
+  been downloaded from
+  [here](https://or-brescia.unibs.it/instances/instances_sscflp) and are in
+  facility-oriented, demands-first format: see
+  [data/txt/ORLib/Reame.txt](data/txt/ORLib/Reame.txt) for details
+
+- [data/txt/Yang](data/txt/Yang) that contains contains instances that have
+  been downloaded from
+  [here](https://or-brescia.unibs.it/instances/instances_sscflp) and are in
+  facility-oriented, demands-last format: see
+  [data/txt/ORLib/format.pdf](data/txt/ORLib/format.pdf) for details
+
 
 ## Tools
 
-We provide a simple tool that reads CFL instances written in three different
-formats and convert them to the SMS++ native netCDF format supported by
-CapacitatedFacilityLocationBlock, or read a netCDF file and produce the
-corresponding text one.
+We provide a simple tool that reads CFL instances written in the three
+different formats (see `Data` above) and convert them to the SMS++ native
+netCDF format supported by `CapacitatedFacilityLocationBlock`, or read a
+netCDF file and produce the corresponding text one.
 
 You can run the tool from the `<build-dir>/tools` directory or install it
 with the library (see above). Run the tool without arguments for info on
@@ -212,9 +245,9 @@ txt2nc4
 ```
 
 A batch file is provided to build netCDF files for a test bed composed
-by three different sets of instances. First decompress `data/txt.tgz`
-in place and then run `data/batch` to have the instances produced in
-`data/nc4'.
+by three different sets of instances. First (obtain, see `Data` above and)
+decompress `data/txt.tgz`in place and then run `data/batch` to have the
+instances produced in `data/nc4'.
 
 
 ## Getting help
