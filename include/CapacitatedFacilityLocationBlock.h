@@ -1468,7 +1468,7 @@ public:
  /** Method to change the costs of an arbitrary subset of facilities. That is,
   * *( NCost + h ) becomes the new cost of facility nms[ h ] for all 0 <= h <
   * NCost.size(). \p ordered tells if \p nms is already ordered in increasing
-  * sense. As the the && tells, \p nms is "consumed" by the method, typically
+  * sense. As the && tells, \p nms is "consumed" by the method, typically
   * being shipped to the appropriate CapacitatedFacilityLocationBlockSbstMod
   * that is issued. */
 
@@ -1510,7 +1510,7 @@ public:
   * pairs ( facility , customer ). The matrix of transportation costs is
   * considered "flattened" into a vector in row-major format; see the comments
   * to the Range version for details.
-  * As the the && tells, \p nms is "consumed" by the method, typically being
+  * As the && tells, \p nms is "consumed" by the method, typically being
   * shipped to the appropriate CapacitatedFacilityLocationBlockSbstMod that
   * is issued. \p order tells if \p nms is already ordered in increasing
   * sense. */
@@ -1549,7 +1549,7 @@ public:
  /** Method to change the capacities of an arbitrary subset of facilities.
   * That is, *( NCop + h ) becomes the capacity of facility nms[ h ] for all
   * 0 <= h < NCap.size(). \p ordered tells if \p nms is already ordered in
-  * increasing sense. As the the && tells, \p nms is "consumed" by the method,
+  * increasing sense. As the && tells, \p nms is "consumed" by the method,
   * typically being shipped to the appropriate
   * CapacitatedFacilityLocationBlockSbstMod that is issued. */
 
@@ -1584,7 +1584,7 @@ public:
  /** Method to change the demands of an arbitrary subset of customers. That
   * is, *( NDem + h ) becomes the demand of customer nms[ h ] for all 0 <= h
   * < NDem.size(). \p ordered tells if \p nms is already ordered in increasing
-  * sense. As the the && tells, \p nms is "consumed" by the method, typically
+  * sense. As the && tells, \p nms is "consumed" by the method, typically
   * being shipped to the appropriate
   * CapacitatedFacilityLocationBlockSbstMod that is issued. */
 
@@ -2237,7 +2237,7 @@ class CapacitatedFacilityLocationBlockSbstMod
 
  ///< constructor: takes the Block *, the type, and the subset
  /**< Constructor: takes the CapacitatedFacilityLocationBlock *, the type,
-  * and the subset. As the the && tells, nms is "consumed" by the constructor
+  * and the subset. As the && tells, nms is "consumed" by the constructor
   * and its resources become property of the
   * CapacitatedFacilityLocationBlockSbstMod object.
   *
