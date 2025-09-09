@@ -95,6 +95,16 @@ namespace SMSpp_di_unipi_it {
  * - **FirstFit**: Local search accepting the first improvement found (with
  *   optional shuffling)
  *
+ * ### Configuration Support
+ *
+ * The solver supports BlockSolverConfig files with string parameter names:
+ * - "intAlgorithm": Algorithm selection (0-3)
+ * - "intShuffle": Enable shuffling for FirstFit
+ * - "intRandomSeed": Random seed for shuffling
+ * - "intUseWarmstart": Enable warm start for local search
+ * - "dblRho": Minimum improvement threshold
+ * - "vintWarmstartIndices": Custom warm start scenario indices
+ *
  * ### Thread Safety
  *
  * The solver is thread-safe and uses RAII locking for all public methods.
@@ -327,6 +337,36 @@ class ScenarioReductionSolver : public Solver {
    * @return the default value
    */
   double get_dflt_dbl_par(idx_type par) const override;
+
+  /** @brief Maps string parameter names to integer parameter indices.
+   * 
+   * Enables use of string parameter names in BlockSolverConfig files.
+   * Supported names: "intAlgorithm", "intShuffle", "intRandomSeed", "intUseWarmstart"
+   * 
+   * @param name parameter name as string
+   * @return parameter index or Inf<idx_type>() if not recognized
+   */
+  [[nodiscard]] idx_type int_par_str2idx(const std::string& name) const override;
+
+  /** @brief Maps string parameter names to double parameter indices.
+   * 
+   * Enables use of string parameter names in BlockSolverConfig files.
+   * Supported names: "dblRho"
+   * 
+   * @param name parameter name as string
+   * @return parameter index or Inf<idx_type>() if not recognized
+   */
+  [[nodiscard]] idx_type dbl_par_str2idx(const std::string& name) const override;
+
+  /** @brief Maps string parameter names to vector-of-int parameter indices.
+   * 
+   * Enables use of string parameter names in BlockSolverConfig files.
+   * Supported names: "vintWarmstartIndices"
+   * 
+   * @param name parameter name as string
+   * @return parameter index or Inf<idx_type>() if not recognized
+   */
+  [[nodiscard]] idx_type vint_par_str2idx(const std::string& name) const override;
 
 /** @} ---------------------------------------------------------------------*/
 /*----------------------- PRIVATE PART OF THE CLASS ------------------------*/

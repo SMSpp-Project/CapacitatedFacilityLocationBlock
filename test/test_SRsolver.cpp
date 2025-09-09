@@ -50,9 +50,11 @@
 #include <chrono>        // std::chrono
 #include <atomic>        // std::atomic
 #include <cstdlib>       // std::rand, std::srand
+#include <sstream>       // std::ostringstream
 
 #include "SMSTypedefs.h" // includes: algorithm, vector, map, functional, mutex
 #include "Configuration.h"
+#include "BlockSolverConfig.h"
 #include "ScenarioReductionSolver.h"
 #include "CapacitatedFacilityLocationBlock.h"
 
@@ -76,6 +78,9 @@ static int tests_run = 0;
 static int tests_passed = 0;
 static int tests_failed = 0;
 
+// Global verbose flag
+static bool verbose = false;
+
 // Test registry
 static std::map<std::string, std::function<TestResult()>> test_registry;
 
@@ -88,20 +93,43 @@ static std::map<std::string, std::function<TestResult()>> test_registry;
 
 // Helper to run a single test
 void run_test(const std::string& name, std::function<TestResult()> test_func) {
-  std::cout << "\n=== Running: " << name << " ===" << std::endl;
+  if (verbose) {
+    std::cout << "\n=== Running: " << name << " ===" << std::endl;
+  }
   tests_run++;
+  
+  // Redirect cout to null if not verbose during test execution
+  std::streambuf* orig_cout = nullptr;
+  std::ostringstream null_stream;
+  if (!verbose) {
+    orig_cout = std::cout.rdbuf();
+    std::cout.rdbuf(null_stream.rdbuf());
+  }
   
   try {
     TestResult result = test_func();
+    
+    // Restore cout
+    if (!verbose && orig_cout) {
+      std::cout.rdbuf(orig_cout);
+    }
+    
     if (result.passed) {
-      std::cout << "PASSED: " << result.message << std::endl;
+      if (verbose) {
+        std::cout << "PASSED: " << result.message << std::endl;
+      } else {
+        std::cout << "[PASS] " << name << std::endl;
+      }
       tests_passed++;
     } else {
-      std::cout << "FAILED: " << result.message << std::endl;
+      std::cout << "[FAIL] " << name << ": " << result.message << std::endl;
       tests_failed++;
     }
   } catch (const std::exception& e) {
-    std::cout << "FAILED with exception: " << e.what() << std::endl;
+    if (!verbose && orig_cout) {
+      std::cout.rdbuf(orig_cout);
+    }
+    std::cout << "[EXCEPTION] " << name << ": " << e.what() << std::endl;
     tests_failed++;
   }
 }
@@ -1100,18 +1128,167 @@ TestResult test_error_handling() {
 REGISTER_TEST("Test 4 - Error Handling & Edge Cases", test_error_handling);
 
 /*--------------------------------------------------------------------------*/
+/*---------------------------- TEST 5 - CONFIG FILE ------------------------*/
+/*--------------------------------------------------------------------------*/
+
+TestResult test_config_deserialization() {
+  try {
+    if (verbose) {
+      std::cout << "\n--- Part 1: Testing BlockSolverConfig deserialization ---\n";
+    }
+    
+    // Create solver and test config deserialization
+    ScenarioReductionSolver solver;
+    
+    // Parse BlockSolverConfig from file
+    Configuration* cfg = nullptr;
+    try {
+      cfg = Configuration::deserialize("BSConfig_SR.txt");
+    } catch (const std::exception& e) {
+      return {false, std::string("Failed to deserialize config: ") + e.what()};
+    }
+    
+    BlockSolverConfig* bsc = dynamic_cast<BlockSolverConfig*>(cfg);
+    if (!bsc) {
+      delete cfg;
+      return {false, "Failed to cast Configuration to BlockSolverConfig"};
+    }
+    
+    // Apply ComputeConfig to solver
+    if (bsc->get_SolverNames().size() != 1) {
+      delete bsc;
+      return {false, "Config should have exactly 1 solver"};
+    }
+    
+    if (bsc->get_SolverConfigs().size() != 1) {
+      delete bsc;
+      return {false, "Config should have exactly 1 ComputeConfig"};
+    }
+    
+    // Get the ComputeConfig and apply to solver
+    ComputeConfig* cc = bsc->get_SolverConfig(0);
+    solver.set_ComputeConfig(cc);
+    
+    // Verify parameters were set correctly
+    if (solver.get_int_par(ScenarioReductionSolver::intAlgorithm) != 1) {
+      delete bsc;
+      return {false, "intAlgorithm should be 1 (Dupacova) after config"};
+    }
+    
+    if (solver.get_int_par(ScenarioReductionSolver::intUseWarmstart) != 0) {
+      delete bsc;
+      return {false, "intUseWarmstart should be 0 after config"};
+    }
+    
+    if (solver.get_int_par(ScenarioReductionSolver::intShuffle) != 0) {
+      delete bsc;
+      return {false, "intShuffle should be 0 after config"};
+    }
+    
+    if (solver.get_int_par(ScenarioReductionSolver::intRandomSeed) != 0) {
+      delete bsc;
+      return {false, "intRandomSeed should be 0 after config"};
+    }
+    
+    if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblRho), 0.0, 1e-10)) {
+      delete bsc;
+      return {false, "dblRho should be 0.0 after config"};
+    }
+    
+    // Clean up config after verification
+    delete bsc;
+    
+    if (verbose) {
+      std::cout << "✓ Config deserialization successful\n";
+    }
+    
+    if (verbose) {
+      std::cout << "\n--- Part 2: Testing different algorithms via direct parameter setting ---\n";
+    }
+    
+    // Test setting different algorithms through set_par with enum values
+    solver.set_par(ScenarioReductionSolver::intAlgorithm, 0);  // Baseline
+    if (solver.get_int_par(ScenarioReductionSolver::intAlgorithm) != 0) {
+      return {false, "Failed to set algorithm to Baseline"};
+    }
+    
+    solver.set_par(ScenarioReductionSolver::intAlgorithm, 2);  // BestFit
+    if (solver.get_int_par(ScenarioReductionSolver::intAlgorithm) != 2) {
+      return {false, "Failed to set algorithm to BestFit"};
+    }
+    
+    solver.set_par(ScenarioReductionSolver::intAlgorithm, 3);  // FirstFit
+    if (solver.get_int_par(ScenarioReductionSolver::intAlgorithm) != 3) {
+      return {false, "Failed to set algorithm to FirstFit"};
+    }
+    
+    // Test setting other parameters
+    solver.set_par(ScenarioReductionSolver::intShuffle, 1);
+    if (solver.get_int_par(ScenarioReductionSolver::intShuffle) != 1) {
+      return {false, "Failed to set intShuffle"};
+    }
+    
+    solver.set_par(ScenarioReductionSolver::dblRho, 0.5);
+    if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblRho), 0.5, 1e-10)) {
+      return {false, "Failed to set dblRho"};
+    }
+    
+    if (verbose) {
+      std::cout << "✓ Parameter setting successful\n";
+      std::cout << "\n--- Part 3: Testing solver with config-loaded parameters ---\n";
+    }
+    
+    // Create a test block and solve with config-loaded solver
+    CapacitatedFacilityLocationBlock* block = create_test_block(2);  // k=2
+    
+    // Reset to Dupacova and solve
+    solver.set_par(ScenarioReductionSolver::intAlgorithm, 1);
+    solver.set_Block(block);
+    
+    int status = solver.compute();
+    if (status != Solver::kOK) {
+      delete block;
+      return {false, "Solver failed to compute with config-loaded parameters"};
+    }
+    
+    if (!solver.has_var_solution()) {
+      delete block;
+      return {false, "Solver should have solution after compute"};
+    }
+    
+    double obj_value = solver.get_var_value();
+    if (verbose) {
+      std::cout << "✓ Solver computed successfully with config parameters, objective: " 
+                << obj_value << "\n";
+    }
+    
+    delete block;
+    
+    return {true, "All config deserialization tests passed"};
+    
+  } catch (const std::exception& e) {
+    return {false, std::string("Exception: ") + e.what()};
+  }
+}
+
+REGISTER_TEST("Test 5 - BlockSolverConfig Deserialization", test_config_deserialization);
+
+/*--------------------------------------------------------------------------*/
 /*--------------------------------- MAIN -----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
 int main(int argc, char* argv[]) {
   std::cout << "ScenarioReductionSolver Test Suite\n";
-  std::cout << "==================================\n\n";
+  std::cout << "==================================\n";
   
-  if (argc > 1) {
-    std::string arg(argv[1]);
+  std::string test_name;
+  
+  // Parse command line arguments
+  for (int i = 1; i < argc; ++i) {
+    std::string arg(argv[i]);
     
     if (arg == "--list" || arg == "-l") {
-      std::cout << "Available tests:\n";
+      std::cout << "\nAvailable tests:\n";
       for (const auto& [name, _] : test_registry) {
         std::cout << "  " << name << "\n";
       }
@@ -1119,21 +1296,37 @@ int main(int argc, char* argv[]) {
     }
     
     if (arg == "--help" || arg == "-h") {
-      std::cout << "Usage: " << argv[0] << " [options] [test_name]\n\n";
+      std::cout << "\nUsage: " << argv[0] << " [options] [test_name]\n\n";
       std::cout << "Options:\n";
-      std::cout << "  --list, -l     List all available tests\n";
-      std::cout << "  --help, -h     Show this help message\n";
-      std::cout << "  test_name      Run only the specified test\n\n";
-      std::cout << "If no arguments are provided, all tests are run.\n";
+      std::cout << "  --list, -l        List all available tests\n";
+      std::cout << "  --verbose, -v     Enable verbose output\n";
+      std::cout << "  --help, -h        Show this help message\n";
+      std::cout << "  test_name         Run only the specified test\n\n";
+      std::cout << "If no test name is provided, all tests are run.\n";
+      std::cout << "By default, output is minimal (non-verbose).\n";
       return 0;
     }
     
-    // Run specific test
-    auto it = test_registry.find(arg);
+    if (arg == "--verbose" || arg == "-v") {
+      verbose = true;
+      continue;
+    }
+    
+    // Assume it's a test name
+    if (test_name.empty()) {
+      test_name = arg;
+    }
+  }
+  
+  std::cout << "\n";
+  
+  // Run specific test or all tests
+  if (!test_name.empty()) {
+    auto it = test_registry.find(test_name);
     if (it != test_registry.end()) {
       run_test(it->first, it->second);
     } else {
-      std::cerr << "Test '" << arg << "' not found\n";
+      std::cerr << "Error: Test '" << test_name << "' not found\n\n";
       std::cout << "Available tests:\n";
       for (const auto& [name, _] : test_registry) {
         std::cout << "  " << name << "\n";

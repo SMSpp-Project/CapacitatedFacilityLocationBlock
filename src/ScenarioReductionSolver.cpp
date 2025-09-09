@@ -782,6 +782,42 @@ double ScenarioReductionSolver::get_dflt_dbl_par(idx_type par) const {
 }
 
 /*--------------------------------------------------------------------------*/
+
+Solver::idx_type ScenarioReductionSolver::int_par_str2idx(const std::string& name) const {
+  if (name == "intAlgorithm")
+    return intAlgorithm;
+  
+  if (name == "intShuffle")
+    return intShuffle;
+  
+  if (name == "intRandomSeed")
+    return intRandomSeed;
+  
+  if (name == "intUseWarmstart")
+    return intUseWarmstart;
+  
+  return Solver::int_par_str2idx(name);
+}
+
+/*--------------------------------------------------------------------------*/
+
+Solver::idx_type ScenarioReductionSolver::dbl_par_str2idx(const std::string& name) const {
+  if (name == "dblRho")
+    return dblRho;
+  
+  return Solver::dbl_par_str2idx(name);
+}
+
+/*--------------------------------------------------------------------------*/
+
+Solver::idx_type ScenarioReductionSolver::vint_par_str2idx(const std::string& name) const {
+  if (name == "vintWarmstartIndices")
+    return vintWarmstartIndices;
+  
+  return Solver::vint_par_str2idx(name);
+}
+
+/*--------------------------------------------------------------------------*/
 /*---------------------------- PRIVATE METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
