@@ -102,7 +102,6 @@ namespace SMSpp_di_unipi_it {
  * - "intShuffle": Enable shuffling for FirstFit
  * - "intRandomSeed": Random seed for shuffling
  * - "intUseWarmstart": Enable warm start for local search
- * - "dblRho": Minimum improvement threshold
  * - "vintWarmstartIndices": Custom warm start scenario indices
  *
  * ### Thread Safety
@@ -160,8 +159,7 @@ class ScenarioReductionSolver : public Solver {
 
   /// public enum extending dbl_par_type_S for ScenarioReductionSolver
   enum dbl_par_type_SRS {
-    dblRho = dblLastAlgPar,            ///< Minimum improvement threshold for local search
-    dblLastParSRS = dblLastAlgPar + 1  ///< First allowed parameter for derived classes
+    dblLastParSRS = dblLastAlgPar      ///< First allowed parameter for derived classes
   };
 
   /// public enum extending vint_par_type_S for ScenarioReductionSolver
@@ -295,7 +293,7 @@ class ScenarioReductionSolver : public Solver {
 
   /** @brief Sets a double parameter.
    *
-   * @param par parameter identifier (dblRho)
+   * @param par parameter identifier
    * @param value the parameter value
    * @throws std::invalid_argument if value is out of valid range
    */
@@ -351,7 +349,6 @@ class ScenarioReductionSolver : public Solver {
   /** @brief Maps string parameter names to double parameter indices.
    * 
    * Enables use of string parameter names in BlockSolverConfig files.
-   * Supported names: "dblRho"
    * 
    * @param name parameter name as string
    * @return parameter index or Inf<idx_type>() if not recognized
@@ -389,12 +386,10 @@ class ScenarioReductionSolver : public Solver {
 
   Algorithm algorithm = Algorithm::Dupacova;  ///< selected reduction algorithm
 
-  double rho = 0.0;            ///< minimum improvement threshold for local search
   bool shuffle = false;        ///< whether to shuffle indices in FirstFit
   bool use_warmstart = false;  ///< whether to use warm start for local search
   std::vector<Index> warmstart_indices;  ///< custom warm start indices
   std::mt19937 rng{std::random_device{}()};  ///< random number generator
-  double dist_dupa = std::numeric_limits<double>::infinity();  ///< Dupacova distance cache
 
   Index nb_atoms;     ///< total number of scenarios
   Index nb_reduced;   ///< number of scenarios to select (k)
@@ -467,15 +462,6 @@ class ScenarioReductionSolver : public Solver {
    * @return Wasserstein distance of initial solution
    */
   double init_local_search();
-
-  /** @brief Checks if a swap provides sufficient improvement.
-   *
-   * @param trial_d candidate distance after swap
-   * @param curr_d current distance
-   * @param dist_dupa reference distance from Dupačová
-   * @return true if improvement is sufficient based on rho parameter
-   */
-  bool improvement_condition(double trial_d, double curr_d, double dist_dupa) const;
 
   /** @brief Finds best swap using exhaustive search (BestFit).
    *

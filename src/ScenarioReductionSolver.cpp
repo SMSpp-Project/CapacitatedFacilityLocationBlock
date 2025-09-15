@@ -205,7 +205,6 @@ int ScenarioReductionSolver::compute_dupacova()
   
   // Compute final distance
   double dot_product = std::inner_product(minimum_d.begin(), minimum_d.end(), weights->begin(), 0.0);
-  dist_dupa = dot_product; // Save the distance from Dupacova for local search
   f_solution_value = dot_product; // Already the ell-th power of Wasserstein distance
   
   return kOK;
@@ -305,7 +304,7 @@ int ScenarioReductionSolver::compute_local_search()
     }
     
     // Check if we found a valid improvement
-    if (i >= 0 && j >= 0 && improvement_condition(trial_d, curr_d, dist_dupa)) {
+    if (i >= 0 && j >= 0 && trial_d < curr_d) {
       double improvement_val = curr_d - trial_d;
       
       // Log iteration in table format (level 1)
@@ -424,18 +423,6 @@ double ScenarioReductionSolver::init_local_search()
   }
   
   return initial_dist;
-}
-
-/*--------------------------------------------------------------------------*/
-
-bool ScenarioReductionSolver::improvement_condition(
-  double trial_d, double curr_d, double dist_dupa) const
-{
-  if (rho <= 0.0) {
-    return trial_d < curr_d;
-  } else {
-    return trial_d < curr_d - rho * dist_dupa;
-  }
 }
 
 /*--------------------------------------------------------------------------*/
@@ -588,7 +575,7 @@ ScenarioReductionSolver::firstfit_selection(
     double trial_d = std::inner_product(combined_min.begin(), combined_min.end(), weights->begin(), 0.0);
     
     // Return first improvement found
-    if (improvement_condition(trial_d, curr_d, dist_dupa)) {
+    if (trial_d < curr_d) {
       return {j, trial_d};
     }
   }
@@ -782,16 +769,8 @@ void ScenarioReductionSolver::set_par(idx_type par, int value) {
 /*--------------------------------------------------------------------------*/
 
 void ScenarioReductionSolver::set_par(idx_type par, double value) {
-  switch(par) {
-    case dblRho:
-      if (value < 0.0) {
-        throw std::invalid_argument("rho must be non-negative");
-      }
-      rho = value;
-      break;
-    default:
-      Solver::set_par(par, value);
-  }
+  // No double parameters specific to ScenarioReductionSolver
+  Solver::set_par(par, value);
 }
 
 /*--------------------------------------------------------------------------*/
@@ -833,12 +812,8 @@ int ScenarioReductionSolver::get_int_par(idx_type par) const {
 /*--------------------------------------------------------------------------*/
 
 double ScenarioReductionSolver::get_dbl_par(idx_type par) const {
-  switch(par) {
-    case dblRho:
-      return rho;
-    default:
-      return Solver::get_dbl_par(par);
-  }
+  // No double parameters specific to ScenarioReductionSolver
+  return Solver::get_dbl_par(par);
 }
 
 /*--------------------------------------------------------------------------*/
@@ -873,10 +848,8 @@ int ScenarioReductionSolver::get_dflt_int_par(idx_type par) const {
 /*--------------------------------------------------------------------------*/
 
 double ScenarioReductionSolver::get_dflt_dbl_par(idx_type par) const {
-  switch(par) {
-    case dblRho: return 0.0;
-    default: return 0.0;  // Base class default
-  }
+  // No double parameters specific to ScenarioReductionSolver
+  return 0.0;  // Base class default
 }
 
 /*--------------------------------------------------------------------------*/
@@ -900,9 +873,7 @@ Solver::idx_type ScenarioReductionSolver::int_par_str2idx(const std::string& nam
 /*--------------------------------------------------------------------------*/
 
 Solver::idx_type ScenarioReductionSolver::dbl_par_str2idx(const std::string& name) const {
-  if (name == "dblRho")
-    return dblRho;
-  
+  // No double parameters specific to ScenarioReductionSolver
   return Solver::dbl_par_str2idx(name);
 }
 

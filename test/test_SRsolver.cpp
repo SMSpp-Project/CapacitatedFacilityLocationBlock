@@ -217,10 +217,7 @@ TestResult test_parameter_management() {
     solver.set_par(ScenarioReductionSolver::intRandomSeed, 12345);
     // Note: We can't verify the seed value, just that set_par doesn't throw
     
-    solver.set_par(ScenarioReductionSolver::dblRho, 0.01);
-    if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblRho), 0.01)) {
-      return {false, "Failed to set/get rho parameter"};
-    }
+    // dblRho parameter has been removed - no test needed
     
     // Part 2: Boundary value testing
     solver.set_par(ScenarioReductionSolver::intAlgorithm, 0);  // Min valid
@@ -233,10 +230,7 @@ TestResult test_parameter_management() {
       return {false, "Failed to set max algorithm value"};
     }
     
-    solver.set_par(ScenarioReductionSolver::dblRho, 1e-10);
-    if (!approx_equal(solver.get_dbl_par(ScenarioReductionSolver::dblRho), 1e-10)) {
-      return {false, "Failed to set small rho value"};
-    }
+    // Small value test for rho removed - parameter no longer exists
     
     // Part 3: Parameter validation and error handling
     try {
@@ -253,12 +247,7 @@ TestResult test_parameter_management() {
       // Expected
     }
     
-    try {
-      solver.set_par(ScenarioReductionSolver::dblRho, -1.0);
-      return {false, "Should throw for negative rho"};
-    } catch (const std::invalid_argument&) {
-      // Expected
-    }
+    // Negative rho test removed - parameter no longer exists
     
     // Part 4: Default parameter values
     ScenarioReductionSolver solver2;
@@ -275,9 +264,7 @@ TestResult test_parameter_management() {
       return {false, "Default random seed should be 0"};
     }
     
-    if (!approx_equal(solver2.get_dflt_dbl_par(ScenarioReductionSolver::dblRho), 0.0)) {
-      return {false, "Default rho should be 0.0"};
-    }
+    // Default rho test removed - parameter no longer exists
     
     // Verify get_*_par returns defaults initially
     if (solver2.get_int_par(ScenarioReductionSolver::intAlgorithm) != 1 ||
@@ -510,13 +497,11 @@ TestResult test_solution_handling() {
       solver.compute();
       
       int algorithm = solver.get_int_par(ScenarioReductionSolver::intAlgorithm);
-      double rho = solver.get_dbl_par(ScenarioReductionSolver::dblRho);
       std::vector<bool> solution = solver.get_reduced_atoms();
       
       ScenarioReductionSolver solver2;
       solver2.set_Block(block);
       solver2.set_par(ScenarioReductionSolver::intAlgorithm, algorithm);
-      solver2.set_par(ScenarioReductionSolver::dblRho, rho);
       solver2.compute();
       
       const auto& solution2 = solver2.get_reduced_atoms();
@@ -686,16 +671,11 @@ TestResult test_thread_safety() {
             
             // Each thread sets different parameter values
             solver.set_par(ScenarioReductionSolver::intAlgorithm, i % 4);
-            solver.set_par(ScenarioReductionSolver::dblRho, 0.1 * i);
             
             // Verify the values are what we just set
             int alg = solver.get_int_par(ScenarioReductionSolver::intAlgorithm);
-            double rho = solver.get_dbl_par(ScenarioReductionSolver::dblRho);
-            
+                  
             if (alg != i % 4) {
-              errors++;
-            }
-            if (std::abs(rho - 0.1 * i) > 1e-6) {
               errors++;
             }
             
