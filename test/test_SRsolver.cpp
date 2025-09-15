@@ -1274,6 +1274,173 @@ TestResult test_config_deserialization() {
 REGISTER_TEST("Test 5 - BlockSolverConfig Deserialization", test_config_deserialization);
 
 /*--------------------------------------------------------------------------*/
+/*------------------------- TEST 6: LOGGING --------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+TestResult test_logging() {
+  try {
+    // Create a simple test block
+    auto* block = new CapacitatedFacilityLocationBlock();
+    
+    // Create 5 scenarios with equal probabilities
+    int nf = 5;  // facilities (must equal customers for square matrix)
+    int nc = 5;  // customers (scenarios) 
+    int k = 2;   // Select 2 scenarios
+    
+    CapacitatedFacilityLocationBlock::DVector capacities(nf, 1.0);
+    CapacitatedFacilityLocationBlock::CVector fcosts(nf, 0.0); // No facility costs
+    CapacitatedFacilityLocationBlock::DVector demands(nc, 1.0/nc);
+    CapacitatedFacilityLocationBlock::CMatrix costs(boost::extents[nf][nc]);
+    
+    // Simple distance matrix
+    for (int i = 0; i < nf; ++i) {
+      for (int j = 0; j < nc; ++j) {
+        costs[i][j] = (i == j) ? 0.0 : std::abs(i - j) * 1.0;
+      }
+    }
+    
+    block->load(nf, nc, capacities, fcosts, demands, costs, true, k);
+    
+    // Test 1: Dupacova with logging
+    {
+      ScenarioReductionSolver solver;
+      solver.set_Block(block);
+      
+      // Capture log output
+      std::ostringstream log_stream;
+      solver.set_log(&log_stream);
+      solver.set_par(Solver::intLogVerb, 2);  // High verbosity
+      solver.set_par(ScenarioReductionSolver::intAlgorithm, 1); // Dupacova
+      
+      int status = solver.compute();
+      if (status != Solver::kOK) {
+        delete block;
+        return {false, "Dupacova solver failed"};
+      }
+      
+      std::string log_output = log_stream.str();
+      
+      // Check that log contains expected content
+      if (log_output.find("Dupacova") == std::string::npos) {
+        delete block;
+        return {false, "Log missing algorithm name"};
+      }
+      
+      // The iteration logs appear at verbosity level 2
+      if (log_output.find("iteration") == std::string::npos) {
+        // For Dupacova, we should at least see the algorithm name
+        // Iteration details are at higher verbosity
+        if (verbose) {
+          std::cout << "Note: Iteration details not logged (verbosity 2)\n";
+        }
+      }
+      
+      if (verbose) {
+        std::cout << "Dupacova log output:\n" << log_output << "\n";
+      }
+    }
+    
+    // Test 2: BestFit with logging
+    {
+      std::cout << "Starting BestFit test..." << std::endl;
+      ScenarioReductionSolver solver;
+      solver.set_Block(block);
+      
+      std::ostringstream log_stream;
+      solver.set_log(&log_stream);
+      solver.set_par(Solver::intLogVerb, 2);  // High verbosity for testing
+      solver.set_par(ScenarioReductionSolver::intAlgorithm, 2); // BestFit
+      
+      int status = solver.compute();
+      if (status != Solver::kOK) {
+        delete block;
+        return {false, "BestFit solver failed"};
+      }
+      
+      std::string log_output = log_stream.str();
+      
+      if (log_output.find("BestFit") == std::string::npos) {
+        delete block;
+        return {false, "BestFit log missing algorithm name"};
+      }
+      
+      // Always print for debugging
+      std::cout << "BestFit log output:\n" << log_output << "\n";
+      
+      if (log_output.find("converged") == std::string::npos) {
+        delete block;
+        return {false, "BestFit log missing convergence info"};
+      }
+    }
+    
+    // Test 3: FirstFit with logging to show table format
+    {
+      ScenarioReductionSolver solver;
+      solver.set_Block(block);
+      
+      std::ostringstream log_stream;
+      solver.set_log(&log_stream);
+      solver.set_par(Solver::intLogVerb, 2);  // High verbosity to see tables
+      solver.set_par(ScenarioReductionSolver::intAlgorithm, 3); // FirstFit
+      
+      int status = solver.compute();
+      if (status != Solver::kOK) {
+        delete block;
+        return {false, "FirstFit solver failed"};
+      }
+      
+      std::string log_output = log_stream.str();
+      
+      // With high verbosity, we should see the table
+      if (verbose) {
+        std::cout << "FirstFit log output:\n" << log_output << "\n";
+      }
+    }
+    
+    // Test 4: Baseline with logging
+    {
+      ScenarioReductionSolver solver;
+      solver.set_Block(block);
+      
+      std::ostringstream log_stream;
+      solver.set_log(&log_stream);
+      solver.set_par(Solver::intLogVerb, 1);
+      solver.set_par(ScenarioReductionSolver::intAlgorithm, 0); // Baseline
+      
+      int status = solver.compute();
+      if (status != Solver::kOK) {
+        delete block;
+        return {false, "Baseline solver failed"};
+      }
+      
+      std::string log_output = log_stream.str();
+      
+      if (log_output.find("Baseline") == std::string::npos) {
+        delete block;
+        return {false, "Baseline log missing algorithm name"};
+      }
+      
+      if (log_output.find("highest probability") == std::string::npos) {
+        delete block;
+        return {false, "Baseline log missing selection method"};
+      }
+      
+      if (verbose) {
+        std::cout << "Baseline log output:\n" << log_output << "\n";
+      }
+    }
+    
+    delete block;
+    return {true, "All logging tests passed"};
+    
+  } catch (const std::exception& e) {
+    return {false, std::string("Exception: ") + e.what()};
+  }
+}
+
+REGISTER_TEST("Test 6 - Logging", test_logging);
+
+/*--------------------------------------------------------------------------*/
 /*--------------------------------- MAIN -----------------------------------*/
 /*--------------------------------------------------------------------------*/
 

@@ -15,6 +15,14 @@
 #include <numeric>   // std::iota (not in SMSTypedefs)
 #include <unordered_map>
 #include <unordered_set>
+#include <iomanip>   // std::setw, std::setprecision for table formatting
+
+/*--------------------------------------------------------------------------*/
+/*-------------------------------- MACROS ----------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+// Logging macro following SMS++ convention (same as BundleSolver)
+#define BLOG( l , x ) if( f_log && ( LogVerb > l ) ) *f_log << x
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- NAMESPACE ----------------------------------*/
@@ -119,6 +127,14 @@ int ScenarioReductionSolver::compute(bool changedvars)
   ind_red.clear();
   std::fill(reduced_atoms.begin(), reduced_atoms.end(), false);
   
+  // Log algorithm and problem info (level 0 = always log if verbosity > 0)
+  BLOG( 0 , "ScenarioReductionSolver: reducing " << nb_atoms 
+           << " scenarios to " << nb_reduced 
+           << " using " << (algorithm == Algorithm::Baseline ? "Baseline" :
+                           algorithm == Algorithm::Dupacova ? "Dupacova" :
+                           algorithm == Algorithm::BestFit ? "BestFit" : "FirstFit")
+           << " algorithm" << std::endl );
+  
   int result;
   // Select the appropriate algorithm
   switch (algorithm) {
@@ -158,6 +174,15 @@ int ScenarioReductionSolver::compute_dupacova()
   // For every atom i, save the minimal distance among the current atoms j
   std::vector<double> minimum_d(n, std::numeric_limits<double>::infinity());
   
+  // Print table header for iterations (level 1)
+  BLOG( 1 , "\n"
+           << "  " << std::setw(6) << "Iter" 
+           << " | " << std::setw(10) << "Added" 
+           << "\n"
+           << "  " << std::string(6, '-') 
+           << "-+-" << std::string(10, '-')
+           << std::endl );
+  
   for(int k = 0; k < m; ++k) {
     // Find the closest atom to add on a greedy Wasserstein-based criterion
     int j_best, j_tmp;
@@ -171,6 +196,11 @@ int ScenarioReductionSolver::compute_dupacova()
     ind_red.push_back(j_best);
 
     indices_to_choose.erase(indices_to_choose.begin() + j_tmp);
+    
+    // Log iteration info in table format (level 1)
+    BLOG( 1 , "  " << std::setw(6) << (k+1) 
+             << " | " << std::setw(10) << ("Scen " + std::to_string(j_best))
+             << std::endl );
   }
   
   // Compute final distance
@@ -225,6 +255,11 @@ int ScenarioReductionSolver::compute_baseline()
                                            weights->begin(), 0.0);
   f_solution_value = total_distance; 
   
+  // Log result (level 0 so it shows with verbosity >= 1)
+  BLOG( 0 , "  Baseline: selected " << nb_reduced 
+           << " highest probability scenarios"
+           << ", objective = " << f_solution_value << std::endl );
+  
   return kOK;
 }
 
@@ -237,24 +272,65 @@ int ScenarioReductionSolver::compute_local_search()
   // Initialize local search with random indices
   double curr_d = init_local_search();
   
+  // Reset iteration counter
+  local_search_iterations = 0;
+  
+  // Print table header for iterations (level 1)
+  BLOG( 1 , "\n"
+           << "  " << std::setw(6) << "Iter" 
+           << " | " << std::setw(15) << "Objective"
+           << " | " << std::setw(12) << "Improvement"
+           << " | " << std::setw(20) << "Action"
+           << "\n"
+           << "  " << std::string(6, '-') 
+           << "-+-" << std::string(15, '-')
+           << "-+-" << std::string(12, '-')
+           << "-+-" << std::string(20, '-')
+           << std::endl );
+  
   bool improvement = true;
   while (improvement) {
+    local_search_iterations++;
+    
     int i, j;
     double trial_d;
     
     // Choose the strategy for picking the next pair
     if (algorithm == Algorithm::BestFit) {
       std::tie(i, j, trial_d) = pick_ij_bestfit(curr_d);
-    } else {
+    } else if (algorithm == Algorithm::FirstFit) {
       std::tie(i, j, trial_d) = pick_ij_firstfit(curr_d);
+    } else {
+      throw std::invalid_argument("compute_local_search() only works with BestFit and FirstFit");
     }
     
     // Check if we found a valid improvement
     if (i >= 0 && j >= 0 && improvement_condition(trial_d, curr_d, dist_dupa)) {
+      double improvement_val = curr_d - trial_d;
+      
+      // Log iteration in table format (level 1)
+      BLOG( 1 , "  " << std::setw(6) << local_search_iterations
+               << " | " << std::setw(15) << std::fixed << std::setprecision(6) << trial_d
+               << " | " << std::setw(12) << std::fixed << std::setprecision(6) << improvement_val
+               << " | " << "Swap " << i << " -> " << j
+               << std::endl );
+      
       curr_d = trial_d;
       swap_indices(i, j);
     } else {
       improvement = false;
+      
+      // Log final iteration with no improvement (level 1)
+      BLOG( 1 , "  " << std::setw(6) << local_search_iterations
+               << " | " << std::setw(15) << std::fixed << std::setprecision(6) << curr_d
+               << " | " << std::setw(12) << "No improve"
+               << " | " << "Converged"
+               << std::endl );
+      
+      // Summary (level 0)
+      BLOG( 0 , "\n  " << (algorithm == Algorithm::BestFit ? "BestFit" : "FirstFit")
+               << " converged after " << local_search_iterations << " iterations"
+               << ", final objective = " << std::fixed << std::setprecision(6) << curr_d << std::endl );
     }
   }
   
@@ -331,7 +407,23 @@ double ScenarioReductionSolver::init_local_search()
     }
   }
   
-  return std::inner_product(min_distances.begin(), min_distances.end(), weights->begin(), 0.0);
+  double initial_dist = std::inner_product(min_distances.begin(), min_distances.end(), weights->begin(), 0.0);
+  
+  // Log initialization method and initial objective (level 0 for summary info)
+  if (use_warmstart) {
+    if (!warmstart_indices.empty()) {
+      BLOG( 0 , "  Local search initialized with custom warm start indices"
+               << ", initial objective = " << initial_dist << std::endl );
+    } else {
+      BLOG( 0 , "  Local search initialized with Dupacova warm start"
+               << ", initial objective = " << initial_dist << std::endl );
+    }
+  } else {
+    BLOG( 0 , "  Local search initialized with random selection"
+             << ", initial objective = " << initial_dist << std::endl );
+  }
+  
+  return initial_dist;
 }
 
 /*--------------------------------------------------------------------------*/
@@ -678,6 +770,10 @@ void ScenarioReductionSolver::set_par(idx_type par, int value) {
     case intUseWarmstart:
       use_warmstart = (value != 0);
       break;
+    case intLogVerb:
+      LogVerb = value;
+      Solver::set_par(par, value);
+      break;
     default:
       Solver::set_par(par, value);
   }
@@ -727,6 +823,8 @@ int ScenarioReductionSolver::get_int_par(idx_type par) const {
       return 0;
     case intUseWarmstart:
       return use_warmstart ? 1 : 0;
+    case intLogVerb:
+      return LogVerb;
     default:
       return Solver::get_int_par(par);
   }

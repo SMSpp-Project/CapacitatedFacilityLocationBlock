@@ -409,6 +409,9 @@ class ScenarioReductionSolver : public Solver {
 
   IntSolution reduced_atoms;   ///< binary solution (true = selected)
   double f_solution_value;     ///< objective value (Wasserstein distance)
+  
+  int local_search_iterations;  ///< iteration counter for logging
+  int LogVerb = 0;              ///< verbosity of the log (cached from intLogVerb)
 
 /** @} ---------------------------------------------------------------------*/
 
