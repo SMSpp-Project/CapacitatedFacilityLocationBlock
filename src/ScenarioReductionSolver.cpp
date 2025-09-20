@@ -857,16 +857,19 @@ double ScenarioReductionSolver::get_dflt_dbl_par(idx_type par) const {
 Solver::idx_type ScenarioReductionSolver::int_par_str2idx(const std::string& name) const {
   if (name == "intAlgorithm")
     return intAlgorithm;
-  
+
   if (name == "intShuffle")
     return intShuffle;
-  
+
   if (name == "intRandomSeed")
     return intRandomSeed;
-  
+
   if (name == "intUseWarmstart")
     return intUseWarmstart;
-  
+
+  if (name == "intLogVerb")
+    return intLogVerb;
+
   return Solver::int_par_str2idx(name);
 }
 
