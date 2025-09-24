@@ -20,7 +20,6 @@ interactions with the project.
    This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
    Files that also may need to be updated with the new version number:
      - CMake files
-     - Conanfiles
 
 4. You may merge the Merge Request in once you have the sign-off of one 
    of the project maintainers, or if you do not have permission to do that,
