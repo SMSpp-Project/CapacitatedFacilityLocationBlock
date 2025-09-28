@@ -500,9 +500,9 @@ void CapacitatedFacilityLocationBlock::deserialize(
 
  f_max_facilities = iInf;
  auto max_fac = group.getDim( "MaxFacilities" );
- if ( ! max_fac.isNull() )
+ if( ! max_fac.isNull() )
   f_max_facilities = max_fac.getSize();
- if ( f_max_facilities == 0)
+ if( f_max_facilities == 0)
   throw( std::invalid_argument( _prfx + "number of maximum facilities too small" ) );
  if ( f_max_facilities != iInf && f_max_facilities > f_n_facilities )
   throw( std::invalid_argument( _prfx + "number of maximum facilities too high" ) ); 
