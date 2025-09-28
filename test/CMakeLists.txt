@@ -37,6 +37,7 @@ target_link_libraries(test_SRsolver PRIVATE
                       SMS++::CapacitatedFacilityLocationBlock)
 
 add_test(NAME test_SRsolver
-         COMMAND test_SRsolver)
+         COMMAND test_SRsolver
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # --------------------------------------------------------------------------- #
