@@ -38,7 +38,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 # This creates an ENABLE_TESTING option (default: ON) and enables the testing
 # using the ctest executable.
 # See: https://cmake.org/cmake/help/latest/manual/ctest.1.html
-#include(CTest)
+include(CTest)
 
 # Sets the default build type (if none was specified).
 # See: https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html
@@ -101,6 +101,10 @@ add_library(${modNamespace}::${modName} ALIAS ${modName})
 
 # ----- Subdirectories ------------------------------------------------------ #
 add_subdirectory(tools)
+
+if (BUILD_TESTING)
+    #add_subdirectory(test)
+endif ()
 
 # ----- Custom commands and targets ----------------------------------------- #
 

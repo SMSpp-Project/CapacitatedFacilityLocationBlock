@@ -1,5 +1,5 @@
 # --------------------------------------------------------------------------- #
-#    CMake file for CapacitatedFacilityLocation/test_SRsolver                 #
+#    CMake file for CapacitatedFacilityLocationBlock/test_SRsolver            #
 #                                                                             #
 #    In this file we define the unit tests for this library.                  #
 #    Tests that should be supported by ctest executable must be added         #
@@ -31,10 +31,10 @@ else ()
     endif ()
 endif ()
 
-# ----- CapacitatedFacilityLocation_test_SRsolver --------------------------- #
+# ----- CapacitatedFacilityLocationBlock_test_SRsolver ---------------------- #
 add_executable(test_SRsolver test_SRsolver.cpp)
 target_link_libraries(test_SRsolver PRIVATE
-                      SMS++::CapacitatedFacilityLocation)
+                      SMS++::CapacitatedFacilityLocationBlock)
 
 add_test(NAME test_SRsolver
          COMMAND test_SRsolver)
