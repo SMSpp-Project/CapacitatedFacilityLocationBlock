@@ -147,7 +147,7 @@ bool approx_equal(double a, double b, double epsilon = 1e-6) {
 // k is the number of facilities to select (must be positive)
 CapacitatedFacilityLocationBlock* create_test_block(int k) {
   if (k <= 0) {
-    throw std::invalid_argument("k must be positive");
+    throw( std::invalid_argument("k must be positive") );
   }
   
   auto cfl_block = new CapacitatedFacilityLocationBlock();
