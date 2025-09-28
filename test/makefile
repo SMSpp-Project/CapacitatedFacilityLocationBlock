@@ -80,14 +80,15 @@ include $(MILPSSDR)/makefile-c
 
 # main module (linking phase) - - - - - - - - - - - - - - - - - - - - - - - -
 
-MOBJ = $(SMS++OBJ) $(StcBlkOBJ) $(CFLBkOBJ)
+# Only include the actual object files, not the library
+MOBJ = $(StcBlkOBJ) $(CFLBkOBJ)
 
-# libraries - includes all necessary libraries
+# libraries - includes all necessary libraries, SMS++OBJ is the library itself
 MLIB = $(CFLBkLIB) $(MILPSLIB) $(StcBlkLIB) $(SMS++LIB)
 
-# Final compilation target
+# Final compilation target - put objects first, then library
 $(DIR)/$(NAME): $(DIR)/SR_test.o $(MOBJ)
-	$(CC) -o $(DIR)/$(NAME) $(DIR)/SR_test.o $(MOBJ) $(MLIB) $(SW)
+	$(CC) -o $(DIR)/$(NAME) $(DIR)/SR_test.o $(MOBJ) $(SMS++OBJ) $(MLIB) $(SW)
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
