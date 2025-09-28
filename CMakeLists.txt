@@ -103,7 +103,7 @@ add_library(${modNamespace}::${modName} ALIAS ${modName})
 add_subdirectory(tools)
 
 if (BUILD_TESTING)
-    #add_subdirectory(test)
+    add_subdirectory(test)
 endif ()
 
 # ----- Custom commands and targets ----------------------------------------- #
