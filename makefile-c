@@ -17,7 +17,8 @@
 #                                                                            #
 #   Output: $(CFLBkOBJ) = the final object(s) / library                      #
 #           $(CFLBkLIB) = external libraries + -L< libdirs >                 #
-#           $(CFLBkH)   = the .h files to include for MCFBlock / MCFSolver   #
+#           $(CFLBkH)   = the .h files to include for                        #
+#                         CapacitatedFacilityLocationBlock                   #
 #           $(CFLBkINC) = the -I$( CapacitatedFacilityLocationBlock          #
 #                         directory )                                        #
 #                                                                            #
