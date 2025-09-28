@@ -5,8 +5,8 @@
  * Test suite for ScenarioReductionSolver class.
  * 
  * Test 1 - Parameter Management:
- * - Part 1: Setting and getting all parameter types (intAlgorithm, intShuffle, 
- *           intRandomSeed, dblRho)
+ * - Part 1: Setting and getting all parameter types (intAlgorithm, intShuffle,
+ *           intRandomSeed)
  * - Part 2: Boundary value testing (min/max algorithm values, small rho)
  * - Part 3: Parameter validation and error handling (invalid algorithm, negative rho)
  * - Part 4: Default parameter values through get_dflt_*_par methods
@@ -223,7 +223,6 @@ TestResult test_parameter_management( ) {
   solver.set_par( ScenarioReductionSolver::intRandomSeed , 12345 );
   // Note: We can't verify the seed value, just that set_par doesn't throw
 
-  // dblRho parameter has been removed - no test needed
 
   // Part 2: Boundary value testing
   solver.set_par( ScenarioReductionSolver::intAlgorithm , 0 ); // Min valid
@@ -277,9 +276,7 @@ TestResult test_parameter_management( ) {
 
   // Verify get_*_par returns defaults initially
   if( solver2.get_int_par( ScenarioReductionSolver::intAlgorithm ) != 1 ||
-   solver2.get_int_par( ScenarioReductionSolver::intShuffle ) != 0 ||
-   ! approx_equal( solver2.get_dbl_par( ScenarioReductionSolver::dblRho ) ,
-                   0.0 ) ) {
+   solver2.get_int_par( ScenarioReductionSolver::intShuffle ) != 0 ) {
    return { false , "get_*_par should return default values initially" };
   }
 
@@ -938,8 +935,6 @@ TestResult test_thread_safety( ) {
      try {
       solver.lock();
       solver.set_par( ScenarioReductionSolver::intAlgorithm , iteration % 4 );
-      solver.set_par( ScenarioReductionSolver::dblRho ,
-                      0.01 * ( iteration % 10 ) );
       solver.unlock();
       iteration++;
      }
@@ -955,7 +950,6 @@ TestResult test_thread_safety( ) {
      try {
       solver.lock();
       solver.get_int_par( ScenarioReductionSolver::intAlgorithm );
-      solver.get_dbl_par( ScenarioReductionSolver::dblRho );
       solver.unlock();
      }
      catch( ... ) {
@@ -1270,11 +1264,6 @@ TestResult test_config_deserialization( ) {
    return { false , "intRandomSeed should be 0 after config" };
   }
 
-  if( ! approx_equal( solver.get_dbl_par( ScenarioReductionSolver::dblRho ) ,
-                      0.0 , 1e-10 ) ) {
-   delete bsc;
-   return { false , "dblRho should be 0.0 after config" };
-  }
 
   // Clean up config after verification
   delete bsc;
@@ -1310,11 +1299,6 @@ TestResult test_config_deserialization( ) {
    return { false , "Failed to set intShuffle" };
   }
 
-  solver.set_par( ScenarioReductionSolver::dblRho , 0.5 );
-  if( ! approx_equal( solver.get_dbl_par( ScenarioReductionSolver::dblRho ) ,
-                      0.5 , 1e-10 ) ) {
-   return { false , "Failed to set dblRho" };
-  }
 
   if( verbose ) {
    std::cout << "✓ Parameter setting successful\n";
