@@ -2,7 +2,7 @@
 ################################ makefile ####################################
 ##############################################################################
 #                                                                            #
-#   makefile of temporary test (for ScenarioReduction features)              #
+#   makefile of test (for ScenarioReduction features)                        #
 #                                                                            #
 #                                  Benoît Tran                               #
 #                          Dipartimento di Informatica                       #
@@ -74,47 +74,28 @@ include $(StcBlkSDR)/makefile
 CFLBkSDR = ../../CapacitatedFacilityLocationBlock
 include $(CFLBkSDR)/makefile-s
 
-# BundleSolver
-BNDSLVSDR = ../../BundleSolver
-include $(BNDSLVSDR)/makefile-s
-
-# LagrangianDualSolver
-LgDSLVSDR = ../../LagrangianDualSolver
-include $(LgDSLVSDR)/makefile
-
-# MILPSolver - we need it for ScenarioReductionSolver
+# MILPSolver 
 MILPSSDR = ../../MILPSolver
 include $(MILPSSDR)/makefile-c
 
-# LEMONSolver, assuming all dependencies (MCFBlock) are there already
-# (comment out if not required)
-# note: -std=c++20 is required if this is included
-#MCFLESDR = ../../LEMONSolver
-#include $(MCFLESDR)/makefile
-
-# Define explicit MILPS include paths to ensure it's found
-MILPS_INC = -I$(MILPSSDR)/include
-
 # main module (linking phase) - - - - - - - - - - - - - - - - - - - - - - - -
 
-# object files - includes all necessary objects
-# Note: MILPSOBJ is already included in BNDSLVOBJ, so we don't include it separately
-MOBJ = $(SMS++OBJ) $(StcBlkOBJ) $(BNDSLVOBJ) $(LgDSLVOBJ) $(CFLBkOBJ) $(MCFBkOBJ) $(MCFLEOBJ)
+MOBJ = $(SMS++OBJ) $(StcBlkOBJ) $(CFLBkOBJ)
 
 # libraries - includes all necessary libraries
-MLIB =  $(BNDSLVLIB) $(LgDSLVLIB) $(CFLBkLIB) $(SMS++LIB) $(MCFBkLIB) $(MCFLELIB) $(MILPSLIB) $(StcBlkLIB)
+MLIB = $(CFLBkLIB) $(MILPSLIB) $(StcBlkLIB) $(SMS++LIB)
 
 # Final compilation target
-$(DIR)/$(NAME): $(MOBJ) $(DIR)/SR_test.o
-	$(CC) -o $(DIR)/$(NAME) $^ $(MLIB) $(SW)
+$(DIR)/$(NAME): $(DIR)/SR_test.o $(MOBJ)
+	$(CC) -o $(DIR)/$(NAME) $(DIR)/SR_test.o $(MOBJ) $(MLIB) $(SW)
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
 # include directives - add MILPS_INC as an extra safety measure
-MINC =  $(SMS++INC) $(StcBlkINC) $(BNDSLVINC) $(LgDSLVINC) $(CFLBkINC) $(MCFBkINC) $(MCFLEINC) $(MILPSINC) $(MILPS_INC) -I../include
+MINC =  $(SMS++INC) $(StcBlkINC) $(CFLBkINC) $(MILPSINC) -I../include
 
 # includes
-MH =    $(SMS++H) $(StcBlkH) $(BNDSLVH) $(LgDSLVH) $(CFLBkH) $(MCFBkH) $(MCFLEH) $(MILPSH)
+MH =    $(SMS++H) $(StcBlkH) $(CFLBkH) $(MILPSH)
 
 # compile command for the SR_test.o
 $(DIR)/SR_test.o: $(DIR)/test_SRsolver.cpp $(MH)
