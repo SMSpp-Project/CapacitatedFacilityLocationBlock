@@ -2321,7 +2321,7 @@ class CapacitatedFacilityLocationSolution : public Solution {
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- ~CapacitatedFacilityLocationSolution() = default;
+ ~CapacitatedFacilityLocationSolution() override = default;
  ///< destructor: it is virtual, and empty
 
 /* METHODS DESCRIBING THE BEHAVIOR OF A CapacitatedFacilityLocationSolution */
