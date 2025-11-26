@@ -62,41 +62,38 @@ clean::
 # *H   is the list of all include files
 # *INC is the -I< include directories >
 
-# define input macros for SMS++ complete makefile, then include it
-SMS++SDR = ../../SMS++
-include $(SMS++SDR)/lib/makefile-inc
-
 # StochasticBlock
 StcBlkSDR = ../../StochasticBlock
-include $(StcBlkSDR)/makefile
+include $(StcBlkSDR)/makefile-c
 
 # CapacitatedFacilityLocationBlock
-CFLBkSDR = ../../CapacitatedFacilityLocationBlock
-include $(CFLBkSDR)/makefile-s
+# not necessary, StochasticBlock does that already
+#CFLBkSDR = ../../CapacitatedFacilityLocationBlock
+#include $(CFLBkSDR)/makefile-c
 
 # MILPSolver 
 MILPSSDR = ../../MILPSolver
-include $(MILPSSDR)/makefile-c
+include $(MILPSSDR)/makefile-s
 
 # main module (linking phase) - - - - - - - - - - - - - - - - - - - - - - - -
 
 # Only include the actual object files, not the library
-MOBJ = $(StcBlkOBJ) $(CFLBkOBJ)
+MOBJ = $(StcBlkOBJ) #$(CFLBkOBJ)
 
 # libraries - includes all necessary libraries, SMS++OBJ is the library itself
-MLIB = $(CFLBkLIB) $(MILPSLIB) $(StcBlkLIB) $(SMS++LIB)
+MLIB = $(MILPSLIB) $(StcBlkLIB) #$(SMS++LIB) $(CFLBkLIB) 
 
 # Final compilation target - put objects first, then library
 $(DIR)/$(NAME): $(DIR)/SR_test.o $(MOBJ)
-	$(CC) -o $(DIR)/$(NAME) $(DIR)/SR_test.o $(MOBJ) $(SMS++OBJ) $(MLIB) $(SW)
+	$(CC) -o $(DIR)/$(NAME) $(DIR)/SR_test.o $(MOBJ) $(MLIB) $(SW)
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
 # include directives - add MILPS_INC as an extra safety measure
-MINC =  $(SMS++INC) $(StcBlkINC) $(CFLBkINC) $(MILPSINC) -I../include
+MINC =  $(StcBlkINC) $(MILPSINC) -I../include # $(CFLBkINC) 
 
 # includes
-MH =    $(SMS++H) $(StcBlkH) $(CFLBkH) $(MILPSH)
+MH =    $(StcBlkH) $(MILPSH) # $(CFLBkH) 
 
 # compile command for the SR_test.o
 $(DIR)/SR_test.o: $(DIR)/test_SRsolver.cpp $(MH)
