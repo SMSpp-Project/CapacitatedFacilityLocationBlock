@@ -97,7 +97,8 @@ target_include_directories(
 # on this library.
 target_link_libraries(${modName} PUBLIC
                       ${modNamespace}::MCFBlock
-                      ${modNamespace}::BinaryKnapsackBlock)
+                      ${modNamespace}::BinaryKnapsackBlock
+                      ${CMAKE_THREAD_LIBS_INIT})
 
 # This alias is defined so that executables in this same project can use
 # the library with this notation.
