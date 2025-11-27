@@ -45,6 +45,10 @@ include(CTest)
 include(BuildType)
 
 # ----- Requirements -------------------------------------------------------- #
+# This sets the variable CMAKE_THREAD_LIBS_INIT, see:
+# https://cmake.org/cmake/help/latest/module/FindThreads.html
+find_package(Threads QUIET)
+
 # If it's not being called by the umbrella, we need to
 # look for the system-installed libraries.
 if (NOT hasParent)
