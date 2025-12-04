@@ -13,6 +13,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed 
 
+
+## [0.2.0] - 2025-12-XX
+
+### Added
+
+- tester for ScenarioReductionSolver
+
+- [huge] ScenarioReductionSolver implementing a bunch of
+  fast heuristics for the specific version of the problem
+  used in scenario reduction applications
+
+- possibility of a constraint on maximum number of facilities
+  (for scenario reduction applications)
+
+### Changed 
+
+- major data handling upgrade: instances are not included
+  in the repo for space/time efficiency but a script to
+  download them is provided
+
+- adapted to new standard organization of makefiles
+
+### Fixed 
+
+
 ## [0.1.1] - 2024-02-27
 
 ### Changed

@@ -2,7 +2,7 @@
 
 This project provides `CapacitatedFacilityLocationBlock`, an implementation
 of the Block concept for a "pretty basic version" of the Capacitated Facility
-Location (CFL) problem, a.k.a. the Capacitated Warehouse Location (CWL)
+Location (CFL) problem, a.k.a., the Capacitated Warehouse Location (CWL)
 problem.
 
 This class only represent the "basic version" of CFL and it is primarily
@@ -14,7 +14,7 @@ SMS++, among which:
   facility, and the splittable version where each customer can be served
   by any number of facilities.
 
-* `CapacitatedFacilityLocationBlock` supports four different formulations of
+* `CapacitatedFacilityLocationBlock` supports three different formulations of
   the problem:
 
   - The "natural formulation" (NF) in which the standard X[ j , i ] and
@@ -61,13 +61,6 @@ SMS++, among which:
 	that the unsplittable version of the problem cannot be represented in
 	the FF.
 
-  All three formulations above can optionally include a constraint on the
-  maximum number of facilities that can be opened (when wc & 4 in
-  generate_abstract_constraints). This adds the constraint:
-  ∑ Y[i] ≤ k, where k is the maximum number of facilities allowed.
-  This variant is particularly useful for scenario reduction applications
-  where selecting exactly k representative scenarios is required.
-
   The methods for loading, reading and changing the data of the instance in
   `CapacitatedFacilityLocationBlock` can all be used independently from which
   of the formulations is employed.
@@ -83,7 +76,32 @@ SMS++, among which:
 * `CapacitatedFacilityLocationBlock` supports reading the data from three
   different text input formats (as well as from its onw netCDF one).
 
-`CapacitatedFacilityLocationBlock` currently lacks some capabilities:
+However, `CapacitatedFacilityLocationBlock` is also useful to represent
+*scenario reduction* problems, whereby one wants to choose a (small)
+subset (facilities) of the (many) available scenarios (customers) so as to
+maxinimize the expected loss of accuracy in the corresponding stochastic
+optimization problem. Basically, a set of scenarios is replaced by a single
+one, assigning it the total probability of the original ones. For this
+application, all three formulations above can optionally include a
+constraint on the maximum number of facilities that can be opened (when
+wc & 4 in generate\_abstract\_constraints()). Furthermore, the
+`ScenarioReductionSolver` is provided that implements a bunch of fast
+heuristics for the specific version of CFL used in scenario reduction
+applications, i.e., such that
+
+* all facility capacities must equal 1.0 (allowing full probability mass
+  assignment to any selected scenario)
+  
+* customer demands represent scenario probabilities (automatically
+  normalized if they don't sum to 1.0
+
+* number of facilities must equal number of customers (square distance
+  matrix
+
+* transportation costs represent pairwise scenario distances
+
+
+Still, `CapacitatedFacilityLocationBlock` currently lacks some capabilities:
 
 * The transportation graph is fixed and complete, there is no way to
   specify that a specific user cannot be served by a specific facility
@@ -105,20 +123,36 @@ SMS++, among which:
   for both types of R3Block, except "back Modification" that is not
   implemented for the MCF R3Block.
 
+
 ### ScenarioReductionSolver
 
-`ScenarioReductionSolver` is a specialized solver for scenario reduction problems formulated as (capacitated) facility location instances. It implements algorithms to select a representative subset of scenarios that aims to minimize a Wasserstein distance between the full scenario set and the chosen representative subset.
+`ScenarioReductionSolver` is a specialized solver for scenario reduction
+problems formulated as CFL instances. It implements algorithms to select
+a representative subset of scenarios that aims to minimize a Wasserstein
+distance between the full scenario set and the chosen representative subset.
 
 **Available algorithms:**
+
 - **Baseline**: Simple greedy selection based on scenario probabilities
-- **Dupacova**: Forward selection algorithm that iteratively adds scenarios to minimize Wasserstein distance (default). 
-- **BestFit**: Local search with best improvement selection among all possible pair of choices.
+
+- **Dupacova**: Forward selection algorithm that iteratively adds scenarios
+  to minimize Wasserstein distance (default). 
+
+- **BestFit**: Local search with best improvement selection among all
+  possible pair of choices.
+
 - **FirstFit**: Local search with first improvement selection.
 
 The solver can be configured through parameters:
-- `intAlgorithm`: Algorithm selection (0=Baseline, 1=Dupacova, 2=BestFit, 3=FirstFit)
+
+- `intAlgorithm`: Algorithm selection (0=Baseline, 1=Dupacova, 2=BestFit,
+  3=FirstFit)
+
 - `dblEll`: Power parameter for Wasserstein distance (default: 2.0)
-- `intShuffle`: Enable shuffling for FirstFit algorithm (currently only implemented for FirstFit, but could be extended to BestFit)
+
+- `intShuffle`: Enable shuffling for FirstFit algorithm (currently only
+  implemented for FirstFit, but could be extended to BestFit)
+
 - `intUseWarmstart`: Enable warm start for local search algorithms
 
 
@@ -273,6 +307,9 @@ code of conduct, and the process for submitting merge requests to us.
 
 ### Contributors
 
+- **Benoit Tran**  
+  Dipartimento di Informatica  
+  Università di Pisa
 
 ## License
 
