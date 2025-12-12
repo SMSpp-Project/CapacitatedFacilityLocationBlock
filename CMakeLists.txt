@@ -11,16 +11,14 @@
 #                                                                             #
 #        $ cmake --build <build-path> --target install                        #
 #                                                                             #
-#    Note: this file tries to respect the principles of Modern CMake,         #
-#          keep it in mind when editing it.                                   #
-#                                                                             #
-#                              Niccolo' Iardella                              #
+#                                Donato Meoli                                 #
 #                         Dipartimento di Informatica                         #
 #                             Universita' di Pisa                             #
 # --------------------------------------------------------------------------- #
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.16)
+cmake_policy(VERSION 3.15)
 project(CapacitatedFacilityLocationBlock
-        VERSION 0.4.0
+        VERSION 0.2.0
         DESCRIPTION "SMS++ CapacitatedFacilityLocationBlock module"
         HOMEPAGE_URL https://gitlab.com/smspp/capacitatedfacilitylocationblock
         LANGUAGES C CXX)
@@ -40,19 +38,23 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 # This creates an ENABLE_TESTING option (default: ON) and enables the testing
 # using the ctest executable.
 # See: https://cmake.org/cmake/help/latest/manual/ctest.1.html
-#include(CTest)
+include(CTest)
 
 # Sets the default build type (if none was specified).
 # See: https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html
 include(BuildType)
 
 # ----- Requirements -------------------------------------------------------- #
+# This sets the variable CMAKE_THREAD_LIBS_INIT, see:
+# https://cmake.org/cmake/help/latest/module/FindThreads.html
+find_package(Threads QUIET)
+
 # If it's not being called by the umbrella, we need to
 # look for the system-installed libraries.
 if (NOT hasParent)
     find_package(MCFBlock REQUIRED)
     find_package(BinaryKnapsackBlock REQUIRED)
-endif()
+endif ()
 
 # ----- Configuration header ------------------------------------------------ #
 # This will generate a *Config.h header in the build directory.
@@ -70,7 +72,8 @@ target_compile_features(${modName} PUBLIC cxx_std_17)
 # INTERFACE can be used for sources that should not be added to this library
 # but should be added to anything that links to it.
 # Note: do not GLOB files here.
-target_sources(${modName} PRIVATE CapacitatedFacilityLocationBlock.cpp)
+target_sources(${modName} PRIVATE src/CapacitatedFacilityLocationBlock.cpp
+                                  src/ScenarioReductionSolver.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
@@ -84,7 +87,7 @@ target_sources(${modName} PRIVATE CapacitatedFacilityLocationBlock.cpp)
 # installed in the system will look into the INSTALL_INTERFACE path.
 target_include_directories(
         ${modName} PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include/${modNamespace}>)
 
 # When linking other targets to the library with target_link_libraries(),
@@ -94,7 +97,8 @@ target_include_directories(
 # on this library.
 target_link_libraries(${modName} PUBLIC
                       ${modNamespace}::MCFBlock
-                      ${modNamespace}::BinaryKnapsackBlock)
+                      ${modNamespace}::BinaryKnapsackBlock
+                      ${CMAKE_THREAD_LIBS_INIT})
 
 # This alias is defined so that executables in this same project can use
 # the library with this notation.
@@ -102,6 +106,85 @@ add_library(${modNamespace}::${modName} ALIAS ${modName})
 
 # ----- Subdirectories ------------------------------------------------------ #
 add_subdirectory(tools)
+
+if (BUILD_TESTING)
+    add_subdirectory(test)
+endif ()
+
+# ----- Custom commands and targets ----------------------------------------- #
+
+# Download txt.tgz from GitLab Package Registry if it doesn't exist
+set(TXT_URL "https://gitlab.com/api/v4/projects/24780184/packages/generic/txt/latest/txt.tgz")
+set(TXT_ARCHIVE ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz)
+set(TXT_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/download_txt.cmake)
+
+file(WRITE ${TXT_SCRIPT} "
+file(DOWNLOAD \"${TXT_URL}\" \"${TXT_ARCHIVE}\" SHOW_PROGRESS)
+")
+
+add_custom_command(
+        OUTPUT ${TXT_ARCHIVE}
+        COMMAND ${CMAKE_COMMAND} -E echo "Downloading txt.tgz from GitLab Package Registry..."
+        COMMAND ${CMAKE_COMMAND} -P ${TXT_SCRIPT}
+        COMMENT "Downloading txt.tgz"
+        VERBATIM
+)
+
+add_custom_target(download_txt
+        DEPENDS ${TXT_ARCHIVE})
+
+# Custom command to extract the txt.tgz archive if the .extracted file does not exist
+if (UNIX)
+    set(TAR_FLAGS --warning=no-unknown-keyword -xzf)
+elseif (WIN32)
+    set(TAR_FLAGS xzf)
+endif ()
+
+add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted
+        COMMAND tar ${TAR_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz
+        COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
+        COMMENT "Extracting txt.tgz"
+        VERBATIM
+        DEPENDS download_txt)
+
+# Create custom targets to run the txt extraction
+add_custom_target(extract_txt
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
+
+# Ensure that extract_txt is executed after the download
+add_dependencies(extract_txt download_txt)
+
+# Custom command to run tools/batch with the txt2nc4 exe if the .generated file does not exist
+if (UNIX)
+    add_custom_command(
+            OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/batch ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4
+            COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
+            COMMENT "Running txt2nc4"
+            VERBATIM
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4 ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
+elseif (WIN32)
+    add_custom_command(
+            OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+            # using Git for Windows that includes Git Bash
+            COMMAND "C:/Program Files/Git/bin/bash.exe"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/batch" "$<TARGET_FILE:txt2nc4>"
+            COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
+            COMMENT "Running txt2nc4"
+            VERBATIM
+            DEPENDS $<TARGET_FILE:txt2nc4> ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
+endif ()
+
+# Create custom targets to run the nc4 generation
+add_custom_target(run_txt2nc4
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated)
+
+# Ensure that run_txt2nc4 is executed after the build
+add_dependencies(run_txt2nc4 txt2nc4)
 
 # ----- Install instructions ------------------------------------------------ #
 # The following commands are used when installing the library
@@ -113,11 +196,12 @@ include(GNUInstallDirs)
 # Install the library
 install(TARGETS ${modName}
         EXPORT ${modName}Targets
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} # .dll
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} # .so .dylib
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}) # .lib
 
 # Install the headers
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/CapacitatedFacilityLocationBlock.h
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/CapacitatedFacilityLocationBlock.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace})
 
 # Install the auto-generated configuration header (see above).
@@ -173,7 +257,7 @@ endif ()
 # Using this with the umbrella project is too messy.
 if (NOT hasParent)
     set(CPACK_PACKAGE_VENDOR "SMS++ Team")
-    set(CPACK_PACKAGE_CONTACT "Niccolo' Iardella")
+    set(CPACK_PACKAGE_CONTACT "Donato Meoli")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${PROJECT_DESCRIPTION})
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_LIST_DIR}/LICENSE")
     set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_LIST_DIR}/README.md")

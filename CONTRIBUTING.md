@@ -15,17 +15,15 @@ interactions with the project.
 2. Update the [CHANGELOG.md](CHANGELOG.md) accordingly. The format is based
    on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-3. Increase the version numbers to the new version that this Merge Request
-   would represent. This project adheres to
-   [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+3. Increase the version numbers to the new version that this Merge Request would
+   represent.
+   This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
    Files that also may need to be updated with the new version number:
      - CMake files
-     - Conanfiles
 
 4. You may merge the Merge Request in once you have the sign-off of one 
    of the project maintainers, or if you do not have permission to do that,
    you may request the maintainer to merge it for you.
-
 
 ## Code of Conduct
 

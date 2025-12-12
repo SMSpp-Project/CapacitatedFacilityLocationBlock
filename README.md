@@ -2,22 +2,22 @@
 
 This project provides `CapacitatedFacilityLocationBlock`, an implementation
 of the Block concept for a "pretty basic version" of the Capacitated Facility
-Location (CFL) problem, a.k.a. the Capacitated Warehouse Location (CWL)
+Location (CFL) problem, a.k.a., the Capacitated Warehouse Location (CWL)
 problem.
 
 This class only represent the "basic version" of CFL and it is primarily
 intended as a "didactic" implementation for showing some of the features of
 SMS++, among which:
 
-* `CapacitatedFacilityLocationBlock` supports both the unsplittable version
+- `CapacitatedFacilityLocationBlock` supports both the unsplittable version
   of the problem, where each customer need be served by exactly one
   facility, and the splittable version where each customer can be served
   by any number of facilities.
 
-* `CapacitatedFacilityLocationBlock` supports three different formulations of
+- `CapacitatedFacilityLocationBlock` supports three different formulations of
   the problem:
 
-  - The "natural formulation" (NF) in which the standard X[ j , i ] and
+  * The "natural formulation" (NF) in which the standard X[ j , i ] and
     Y[ i ] variables and the corresponding constraints are added to the
     `CapacitatedFacilityLocationBlock`. The formulation only has the two
 	natural (static) groups of constraints corresponding to customer demand
@@ -26,7 +26,7 @@ SMS++, among which:
 	Y[ i ]) to be dynamically separated (the option actually applies to
 	all formulations, although it makes no sense for the KF one below).
 
-  - The Lagrange-friendly "knapsack formulation" (KF), where the
+  * The Lagrange-friendly "knapsack formulation" (KF), where the
     `CapacitatedFacilityLocationBlock` "grows" m (number of facilities)
     sub-Block, each of type `BinaryKnapsackBlock` and n (number of customers)
 	+ 1 variables. Sub-Block i corresponds to facility i: the first n
@@ -40,7 +40,7 @@ SMS++, among which:
 	it in order to compute tight lower bounds and the corresponding
 	convexified primal solutions.
 
-  - The Benders-friendly "flow formulation" (FF), where
+  * The Benders-friendly "flow formulation" (FF), where
     `CapacitatedFacilityLocationBlock` "grows" two sub-Block. The first one
     is an `AbstractBlock` that only has the m kBinary design variables
 	Y[ i ]. The second is instead a `MCFBlock` representing the continuous
@@ -65,7 +65,7 @@ SMS++, among which:
   `CapacitatedFacilityLocationBlock` can all be used independently from which
   of the formulations is employed.
 
-* `CapacitatedFacilityLocationBlock` supports reformulations/relaxations of
+- `CapacitatedFacilityLocationBlock` supports reformulations/relaxations of
   the problem via the "R3Block" mechanism; in particular, besides the
   "copy" R3Block, also the "flow relaxation" of the
   CapacitatedFacilityLocationBlock is supported where the R3Block is a
@@ -73,16 +73,29 @@ SMS++, among which:
   right costs on the "facility arcs"). Both the "exact" and "approximate"
   relaxations are supported, as described in the flow formulation.
 
-* `CapacitatedFacilityLocationBlock` supports reading the data from three
+- `CapacitatedFacilityLocationBlock` supports reading the data from three
   different text input formats (as well as from its onw netCDF one).
 
-`CapacitatedFacilityLocationBlock` currently lacks some capabilities:
+However, `CapacitatedFacilityLocationBlock` is also useful to represent
+*scenario reduction* problems, whereby one wants to choose a (small)
+subset (facilities) of the (many) available scenarios (customers) so as to
+maxinimize the expected loss of accuracy in the corresponding stochastic
+optimization problem. Basically, a set of scenarios is replaced by a single
+one, assigning it the total probability of the original ones. For this
+application, all three formulations above can optionally include a
+constraint on the maximum number of facilities that can be opened (when
+wc & 4 in generate\_abstract\_constraints()). Furthermore, the
+`ScenarioReductionSolver` is provided that implements a bunch of fast
+heuristics for the specific version of CFL used in scenario reduction
+applications, 
 
-* The transportation graph is fixed and complete, there is no way to
+Still, `CapacitatedFacilityLocationBlock` currently lacks some capabilities:
+
+- The transportation graph is fixed and complete, there is no way to
   specify that a specific user cannot be served by a specific facility
   (save by placing a huge cost on the corresponding arc).
 
-* Changing customers' demands via the abstract representation is not
+- Changing customers' demands via the abstract representation is not
   allowed in the SF and the KF, since the same demand is replicated in
   multiple constraints; one could ask that all the changes happen at the
   same time and that the corresponding Modification are bunched together in
@@ -90,20 +103,64 @@ SMS++, among which:
   yet. The change is instead possible in the Flow Formulation where demands
   are node deficits.
 
-* Changing the splittable/unsplittable form of the problem, i.e., the
+- Changing the splittable/unsplittable form of the problem, i.e., the
   integrality of all variables x[ i ][ j ], via the abstract
   representation is never allowed.
 
-* map\_[forward/back]\_[Modification/Solution]() are fully implemented
+- map\_[forward/back]\_[Modification/Solution]() are fully implemented
   for both types of R3Block, except "back Modification" that is not
   implemented for the MCF R3Block.
+
+
+### ScenarioReductionSolver
+
+`ScenarioReductionSolver` is a specialized solver for scenario reduction
+problems formulated as CFL instances. i.e., such that
+
+- all facility capacities must equal 1.0 (allowing full probability mass
+  assignment to any selected scenario)
+  
+- customer demands represent scenario probabilities (automatically
+  normalized if they don't sum to 1.0
+
+- number of facilities must equal number of customers (square distance
+  matrix
+
+- transportation costs represent pairwise scenario distances
+
+It implements algorithms to select a representative subset of scenarios 
+that aims to minimize a Wasserstein distance between the full scenario set
+and the chosen representative subset.
+
+**Available algorithms:**
+
+- **Baseline**: Simple greedy selection based on scenario probabilities
+
+- **Dupacova**: Forward selection algorithm that iteratively adds scenarios
+  to minimize Wasserstein distance (default). 
+
+- **BestFit**: Local search with best improvement selection among all
+  possible pair of choices.
+
+- **FirstFit**: Local search with first improvement selection.
+
+The solver can be configured through parameters:
+
+- `intAlgorithm`: Algorithm selection (0=Baseline, 1=Dupacova, 2=BestFit,
+  3=FirstFit)
+
+- `dblEll`: Power parameter for Wasserstein distance (default: 2.0)
+
+- `intShuffle`: Enable shuffling for FirstFit algorithm (currently only
+  implemented for FirstFit, but could be extended to BestFit)
+
+- `intUseWarmstart`: Enable warm start for local search algorithms
 
 
 ## Getting started
 
 These instructions will let you build `CapacitatedFacilityLocationBlock` on
 your system.
-
 
 ### Requirements
 
@@ -123,7 +180,7 @@ Configure and build the library with:
 mkdir build
 cd build
 cmake ..
-make
+cmake --build .
 ```
 
 The library has the same configuration options of
@@ -132,7 +189,7 @@ The library has the same configuration options of
 Optionally, install the library in the system with:
 
 ```sh
-sudo make install
+cmake --install .
 ```
 
 
@@ -148,84 +205,71 @@ target_link_libraries(<my_target> SMS++::CapacitatedFacilityLocationBlock)
 
 ### Build and install with makefiles
 
-Carefully hand-crafted makefiles have also been developed for those
-unwilling to use CMake. General instructions are:
+Carefully hand-crafted makefiles have also been developed for those unwilling
+to use CMake. Makefiles build the executable in-source (in the same directory
+tree where the code is) as opposed to out-of-source (in the copy of the
+directory tree constructed in the build/ folder) and therefore it is more
+convenient when having to recompile often, such as when developing/debugging
+a new module, as opposed to the compile-and-forget usage envisioned by CMake.
 
-- The arrangements of folders must be that envisioned by the
-  [Umbrella SMS++ Project](https://gitlab.com/smspp/smspp-project)
+Each executable using `CapacitatedFacilityLocationBlock`, such as the
+[tester for multiple features of `CapacitatedFacilityLocationBlock`](https://gitlab.com/smspp/tests/-/blob/develop/CapacitatedFacilityLocation/test.cpp?ref_type=heads),
+has to include a "main makefile" of the module, which typically is either
+[makefile-c](makefile-c) including all necessary libraries comprised the
+"core SMS++" one, or [makefile-s](makefile-s) including all necessary
+libraries but not the "core SMS++" one (for the common case in which this is
+used together with other modules that already include them). These in turn
+recursively include all the required other makefiles, hence one should only
+need to edit the "main makefile" for compilation type (C++ compiler and its
+options) and it all should be good to go. In case some of the external
+libraries are not at their default location, it should only be necessary to
+create the `../extlib/makefile-paths` out of the
+`extlib/makefile-default-paths-*` for your OS `*` and edit the relevant bits
+(commenting out all the rest).
 
-- The main step is to edit the makefiles into ../extlib/. There is
-  one for each of the external libraries that any module requires,
-  starting with
+Check the [SMS++ installation wiki](https://gitlab.com/smspp/smspp-project/-/wikis/Customize-the-configuration#location-of-required-libraries)
+for further details.
 
-  = [Boost](https://www.boost.org)
+## Data
 
-  = [Eigen](http://eigen.tuxfamily.org)
-
-  = [netCDF-C++](https://www.unidata.ucar.edu/software/netcdf)
-
-  that are required by the "core" SMS++ library and therefore by
-  everyone. Setting the
-
-```make
-lib*INC = -I<paths to include files directories>
-lib*LIB = -L<paths to lib files directories> -l<libs>
-```
-
-  in each allows one to set any non-standard path if the library is
-  not installed in the system (or leave them empty if they are).
-
-- The "core" SMS++ classes have a makefile for building the
-  corresponding library in
-
-```sh
-SMS++/lib/makefile-lib
-```
-
-  The makefile allow to choose the compiler name and the
-  optimization/debug. This builds the lib/libSMS++.a that can be
-  linked upon. Also, the
+We provide some data sets that are used, among other things, by some of the
+testers of the [test repo](https://gitlab.com/smspp/tests). Since they are
+large they are not included in the repo. They are automatically downloaded
+by Cmake if the test repo is included, but if you are not using Cmake to
+build the system you need to do it by hand, via
 
 ```sh
-SMS++/lib/makefile-inc
+cd data
+wget https://gitlab.com/api/v4/projects/24780184/packages/generic/txt/latest/txt.tgz
+tar xzvf txt.tgz
 ```
 
-  file is provided for allowing external makefiles to ensure that
-  the library is up-to-date (useful in case one is actually
-  developing it). The simplest way to learn how to use it is to
-  check the makefiles of the tools
+This builds the following folders:
 
-```sh
-CapacitatedFacilityLocationBlock/tools/makefile
-```
+- [data/txt/ORLib](data/txt/ORLib) that contains the [original
+  ORLib instances](http://people.brunel.ac.uk/~mastjjb/jeb/orlib/capinfo.html)
+  with an addition and minor tweaks) in the ORLib format, see
+  [data/txt/ORLib/doc](data/txt/ORLib/doc) for details
 
-  Note that the "basic" makefile macros
+- [data/txt/TBED](data/txt/TBED) that contains contains instances that have
+  been downloaded from
+  [here](https://or-brescia.unibs.it/instances/instances_sscflp) and are in
+  facility-oriented, demands-first format: see
+  [data/txt/ORLib/Reame.txt](data/txt/ORLib/Reame.txt) for details
 
-```make
-CC =
-SW =
-```
-
-  for setting the c++ compiler and its options are "automatically
-  forwarded" from the makefile to these of the other SMS++ components, and
-  therefore (possibly at the cost of a make clean) ensure consistency during
-  the building process.
-
-  The `CapacitatedFacilityLocationBlock` makefile includes the ones from
-  `MCFBlock` and `BinaryKnapsackBlock`. In turn, `MCFBlock` depends
-  on the
-  [MCFClass project](https://github.com/frangio68/Min-Cost-Flow-Class)
-  that has a similar arrangement with its own extlib/ folder that must
-  be independently edited in an analogous way.
-
+- [data/txt/Yang](data/txt/Yang) that contains contains instances that have
+  been downloaded from
+  [here](https://or-brescia.unibs.it/instances/instances_sscflp) and are in
+  facility-oriented, demands-last format: see
+  [data/txt/ORLib/format.pdf](data/txt/ORLib/format.pdf) for details
 
 
 ## Tools
 
-We provide a simple tool that reads CFL instances written in three different
-formats and convert them to the SMS++ native netCDF format supported by
-CapacitatedFacilityLocationBlock, or read a netCDF file and produce the
-corresponding text one.
+We provide a simple tool that reads CFL instances written in the three
+different formats (see `Data` above) and convert them to the SMS++ native
+netCDF format supported by `CapacitatedFacilityLocationBlock`, or read a
+netCDF file and produce the corresponding text one.
 
 You can run the tool from the `<build-dir>/tools` directory or install it
 with the library (see above). Run the tool without arguments for info on
@@ -236,16 +280,16 @@ txt2nc4
 ```
 
 A batch file is provided to build netCDF files for a test bed composed
-by three different sets of instances. First decompress `data/txt.tgz`
-in place and then run `data/batch` to have the instances produced in
-`data/nc4'.
+by three different sets of instances. First (obtain, see `Data` above and)
+decompress `data/txt.tgz`in place and then run `data/batch` to have the
+instances produced in `data/nc4'.
 
 
 ## Getting help
 
 If you need support, you want to submit bugs or propose a new feature,
-you can
-[open a new issue](https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/issues/new).
+you can [open a new
+issue](https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/issues/new).
 
 
 ## Contributing
@@ -264,6 +308,9 @@ code of conduct, and the process for submitting merge requests to us.
 
 ### Contributors
 
+- **Benoit Tran**  
+  Dipartimento di Informatica  
+  Università di Pisa
 
 ## License
 

@@ -5,14 +5,24 @@
 # This is needed for setting the runtime path when installing.
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-# Since we are using the block factory, objects from statically linked libraries
+# Since we are using the block factory, objects from linked libraries
 # may wrongly appear unused, and by default the linker does not include them,
 # so we have to force the linking.
-if (NOT BUILD_SHARED_LIBS)
-    if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-        add_link_options("-Wl,-all_load")
-    else()
-        add_link_options("-Wl,--whole-archive,--allow-multiple-definition")
+if (BUILD_SHARED_LIBS)
+    if (MSVC)
+        add_link_options("/OPT:NOREF")
+    elseif (UNIX AND (NOT APPLE))
+        add_link_options("-Wl,--no-as-needed")
+    endif ()
+else ()
+    if (MSVC)
+        add_link_options("/WHOLEARCHIVE" "/FORCE:MULTIPLE")
+    else () # Unix
+        if (APPLE)
+            add_link_options("-Wl,-all_load")
+        else ()
+            add_link_options("-Wl,--whole-archive,--allow-multiple-definition")
+        endif ()
     endif ()
 endif ()
 

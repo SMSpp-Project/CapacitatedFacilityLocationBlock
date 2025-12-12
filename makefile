@@ -39,24 +39,31 @@
 ##############################################################################
 
 
-# macroes to be exported- - - - - - - - - - - - - - - - - - - - - - - - - - -
+# macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-CFLBkOBJ = $(CFLBkSDR)/CapacitatedFacilityLocationBlock.o
+CFLBkOBJ = $(CFLBkSDR)/obj/CapacitatedFacilityLocationBlock.o \
+	$(CFLBkSDR)/obj/ScenarioReductionSolver.o
 
-CFLBkINC = -I$(CFLBkSDR)
+CFLBkINC = -I$(CFLBkSDR)/include
 
-CFLBkH   = $(CFLBkSDR)/CapacitatedFacilityLocationBlock.h
+CFLBkH   = $(CFLBkSDR)/include/CapacitatedFacilityLocationBlock.h \
+	$(CFLBkSDR)/include/ScenarioReductionSolver.h
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 clean::
-	rm -f $(CFLBkOBJ) $(CFLBkSDR)*~
+	rm -f $(CFLBkOBJ) $(CFLBkSDR)/*~
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
-$(CFLBkSDR)/CapacitatedFacilityLocationBlock.o: $(BKBkOBJ) $(MCFBkOBJ) \
-	$(CFLBkSDR)/CapacitatedFacilityLocationBlock.cpp $(SMS++OBJ)
-	$(CC) -c $(CFLBkSDR)/CapacitatedFacilityLocationBlock.cpp -o $@ \
+$(CFLBkSDR)/obj/CapacitatedFacilityLocationBlock.o: $(BKBkOBJ) $(MCFBkOBJ) \
+	$(CFLBkSDR)/src/CapacitatedFacilityLocationBlock.cpp $(SMS++OBJ)
+	$(CC) -c $(CFLBkSDR)/src/CapacitatedFacilityLocationBlock.cpp -o $@ \
 	$(CFLBkINC) $(BKBkINC) $(MCFBkINC) $(SMS++INC) $(SW)
+
+$(CFLBkSDR)/obj/ScenarioReductionSolver.o: $(BKBkOBJ) $(MCFBkOBJ) \
+	$(CFLBkSDR)/src/ScenarioReductionSolver.cpp $(SMS++OBJ)
+	$(CC) -c $(CFLBkSDR)/src/ScenarioReductionSolver.cpp -o $@ \
+	$(StcBlkINC) $(CFLBkINC) $(BKBkINC) $(MCFBkINC) $(SMS++INC) $(MILPSINC) $(SW)
 
 ########################## End of makefile ###################################

@@ -2,27 +2,27 @@
 ################################ makefile ####################################
 ##############################################################################
 #                                                                            #
-#   makefile of txt2nc4                                                      #
+#   makefile of test (for ScenarioReduction features)                        #
 #                                                                            #
-#                              Antonio Frangioni                             #
+#                                  Benoît Tran                               #
 #                          Dipartimento di Informatica                       #
 #                              Universita' di Pisa                           #
 #                                                                            #
 ##############################################################################
 
-# module name
-NAME = txt2nc4
+# module name - updated to match the new test
+NAME = SR_test
 
 # basic directory
 DIR = .
 
 # common flags
-COMMON_SW = -std=c++17 -ferror-limit=1
+COMMON_SW = -std=c++20 -ferror-limit=1 -Wno-enum-compare
 
 # debug switches
-SW_DEBUG = -g -glldb -fno-inline $(COMMON_SW)
+SW_DEBUG = -g3 -glldb -fno-inline $(COMMON_SW) -DCLANG_1200_0_32_27_PATCH
 # debug switches with address sanitizer and extra pedantic warning
-SW_DEBUG_ASAN = -g3 -glldb -fno-inline $(COMMON_SW) -fsanitize=undefined -fsanitize=address -fno-omit-frame-pointer -Wpedantic -Wextra -Wno-unused-parameter -Wno-enum-compare -DCLANG_1200_0_32_27_PATCH
+SW_DEBUG_ASAN = -g3 -glldb -fno-inline $(COMMON_SW) -fsanitize=undefined -fsanitize=address -fno-omit-frame-pointer -Wpedantic -Wextra -Wno-unused-parameter -Wno-enum-compare -Wno-deprecated-copy-with-user-provided-copy
 # production switches
 SW_RELEASE = -O3 $(COMMON_SW) -DNDEBUG -DCLANG_1200_0_32_27_PATCH
 
@@ -31,27 +31,22 @@ CC = clang++
 
 # default target- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-BUILD_MODE = release
-
-default: $(BUILD_MODE)
+default: release
 
 # debug target- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 debug: SW = $(SW_DEBUG)
-debug: BUILD_MODE = debug
-debug: $(NAME)
+debug: $(DIR)/$(NAME)
 
-# debug_asan target- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# debug_asan target - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 debug_asan: SW = $(SW_DEBUG_ASAN)
-debug_asan: BUILD_MODE = debug
-debug_asan: $(NAME)
+debug_asan: $(DIR)/$(NAME)
 
 # release target- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 release: SW = $(SW_RELEASE)
-release: BUILD_MODE = release
-release: $(NAME)
+release: $(DIR)/$(NAME)
 
 # clean target- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -67,49 +62,42 @@ clean::
 # *H   is the list of all include files
 # *INC is the -I< include directories >
 
+# StochasticBlock
+StcBlkSDR = ../../StochasticBlock
+include $(StcBlkSDR)/makefile-c
+
 # CapacitatedFacilityLocationBlock
-CFLBkSDR = ..
-include $(CFLBkSDR)/makefile-c
+# not necessary, StochasticBlock does that already
+#CFLBkSDR = ../../CapacitatedFacilityLocationBlock
+#include $(CFLBkSDR)/makefile-c
+
+# MILPSolver 
+MILPSSDR = ../../MILPSolver
+include $(MILPSSDR)/makefile-s
 
 # main module (linking phase) - - - - - - - - - - - - - - - - - - - - - - - -
 
-# object files
-MOBJ =  $(CFLBkOBJ)
+# Only include the actual object files, not the library
+MOBJ = $(StcBlkOBJ) #$(CFLBkOBJ)
 
-# libraries
-MLIB =  $(CFLBkLIB)
+# libraries - includes all necessary libraries, SMS++OBJ is the library itself
+MLIB = $(MILPSLIB) $(StcBlkLIB) #$(SMS++LIB) $(CFLBkLIB) 
 
-$(NAME): $(MOBJ) $(DIR)/$(NAME).o
-	$(CC) -o $(NAME) $(DIR)/$(NAME).o $(MOBJ) $(MLIB) $(SW)
+# Final compilation target - put objects first, then library
+$(DIR)/$(NAME): $(DIR)/SR_test.o $(MOBJ)
+	$(CC) -o $(DIR)/$(NAME) $(DIR)/SR_test.o $(MOBJ) $(MLIB) $(SW)
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
-# include directives
-MINC =  $(CFLBkINC)
+# include directives - add MILPS_INC as an extra safety measure
+MINC =  $(StcBlkINC) $(MILPSINC) -I../include # $(CFLBkINC) 
 
 # includes
-MH =    $(CFLBkH)
+MH =    $(StcBlkH) $(MILPSH) # $(CFLBkH) 
 
-# compile command
-
-$(DIR)/$(NAME).o: $(DIR)/$(NAME).cpp $(MH)
-	$(CC) -c $*.cpp -o $@ $(MINC) $(SW)
-
-# install/uninstall - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-# check if the user is in the sudoers file
-ifeq ($(shell id -u),0)
-    prefix = /opt/smspp-project
-else
-    prefix = $(HOME)/smspp-project
-endif
-bindir = $(prefix)/$(BUILD_MODE)/bin
-
-install: $(NAME)
-	install -s -D $(NAME) $(DESTDIR)$(bindir)/$(NAME)
-
-uninstall:
-	rm -f $(DESTDIR)$(bindir)/$(NAME)
+# compile command for the SR_test.o
+$(DIR)/SR_test.o: $(DIR)/test_SRsolver.cpp $(MH)
+	$(CC) -c $(DIR)/test_SRsolver.cpp -o $@ $(MINC) $(SW)
 
 # distclean target- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -117,6 +105,6 @@ distclean: clean
 
 # phony targets - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-.PHONY: debug debug_asan release install uninstall clean distclean
+.PHONY: debug debug_asan release clean distclean
 
 ############################ End of makefile #################################

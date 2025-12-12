@@ -5,11 +5,11 @@
 #   complete makefile of CapacitatedFacilityLocationBlock                    #
 #                                                                            #
 #   The makefile defines internally all external libraries required by       #
-#   CapacitatedFacilityLocationBlock, exluding the SMS++ core ones whose     #
+#   CapacitatedFacilityLocationBlock, excluding the SMS++ core ones whose    #
 #   symbols are assumed to have been defined already (typically by including #
 #   SMS++/lib/makefile). Accordingly, all necessary OBJ, H, -I directives,   #
-#   external libraries  + -L<libdirs> are added to the corresponding MCFBk*  #
-#   macros.                                                                  #
+#   external libraries  + -L< libdirs > are added to the corresponding       #
+#   MCFBk* macros.                                                           #
 #                                                                            #
 #   Input:  $(CC)       = compiler command                                   #
 #           $(SW)       = compiler options                                   #
@@ -20,8 +20,9 @@
 #           $(CFLBkODR) = the directory where the objects have to be put     #
 #                                                                            #
 #   Output: $(CFLBkOBJ) = the final object(s) / library                      #
-#           $(CFLBkLIB) = external libraries + -L<libdirs>                   #
-#           $(CFLBkH)   = the .h files to include for MCFBlock / MCFSolver   #
+#           $(CFLBkLIB) = external libraries + -L< libdirs >                 #
+#           $(CFLBkH)   = the .h files to include for                        #
+#                         CapacitatedFacilityLocationBlock                   #
 #           $(CFLBkINC) = the -I$( CapacitatedFacilityLocationBlock          #
 #                         directory )                                        #
 #                                                                            #
@@ -37,27 +38,27 @@
 # each module outputs some macros to be used here:
 # *OBJ is the final object/library
 # *H   is the list of all include files
-# *INC is the -I<include directories>
+# *INC is the -I< include directories >
 
 # define input macros for MCFBlock complete makefile sans SMS++, include it
-MCFBkSDR = $(CFLBkSDR)../MCFBlock/
-include $(MCFBkSDR)makefile-s
+MCFBkSDR = $(CFLBkSDR)/../MCFBlock
+include $(MCFBkSDR)/makefile-s
 
 # define input macros for BinaryKnapsackBlock makefile, include it
-BKBkSDR = $(CFLBkSDR)../BinaryKnapsackBlock/
-include $(BKBkSDR)makefile
+BKBkSDR = $(CFLBkSDR)/../BinaryKnapsackBlock
+include $(BKBkSDR)/makefile
 
 # include the makefile requiring all external modules in input
 include $(CFLBkSDR)/makefile
 
-# macroes to be exported- - - - - - - - - - - - - - - - - - - - - - - - - - -
+# macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # append external -I directives to CFLBkINC, CFLBkOBJ and CFLBkH as defined
 # by the makefile, thus the := assignment has to be used (use GNU make)
-CFLBkOBJ := $(CFLBkOBJ) $(MCFBkOBJ) $(BKBkOBJ) $(SMS++OBJ)
-CFLBkINC := $(CFLBkINC) $(MCFBkINC) $(BKBkINC) $(SMS++INC)
+CFLBkOBJ := $(CFLBkOBJ) $(MCFBkOBJ) $(BKBkOBJ)
+CFLBkINC := $(CFLBkINC) $(MCFBkINC) $(BKBkINC)
 
-# external libreries for CapacitatedFacilityLocationBlock
+# external libraries for CapacitatedFacilityLocationBlock
 CFLBkLIB = $(MCFBkLIB) $(BKBkLIB) $(SMS++LIB)
 
 ############################ End of makefile #################################

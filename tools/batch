@@ -1,36 +1,30 @@
-#/usr/bin/env bash
+#!/usr/bin/env bash
+
+txt2nc4=${1:-./txt2nc4}
 
 # ORLib instances (ORLib format == C)
 
-for size in 102 103 104 111 112 113 114 121 122 123 124 131 132 134 41 42 43 44 51 61 62 63 64 71 72 73 74 81 82 84 91 92 93 94 a1 a2 a3 a4 b1 b2 b3 b4 c1 c2 c3 c4
-do
-
-./txt2nc4 ../data/txt/ORLib/cap${size}.txt C ../data/nc4/ORLib/cap${size}.nc4
-
+for size in 102 103 104 111 112 113 114 121 122 123 124 131 132 134 \
+            41 42 43 44 51 61 62 63 64 71 72 73 74 81 82 84 91 92 93 94 \
+            a1 a2 a3 a4 b1 b2 b3 b4 c1 c2 c3 c4; do
+  mkdir -p "../data/nc4/ORLib" # ensure directory exists
+  "$txt2nc4" ../data/txt/ORLib/cap${size}.txt C ../data/nc4/ORLib/cap${size}.nc4
 done
-
 
 # TBED instances (facility-oriented demand-first == F)
 
-for size in 300 300_1500 500 700 1000
-do
-for (( num=1 ; num<=20 ; num++ ))
-do
-
-./txt2nc4 ../data/txt/TBED/${size}/i${size}_${num}.txt F ../data/nc4/TBED/${size}/i${size}_${num}.nc4
-
+for size in 300 300_1500 500 700 1000; do
+  for (( num = 1 ; num <= 20 ; num++ )); do
+    mkdir -p "../data/nc4/TBED/${size}" # ensure directory exists
+    "$txt2nc4" ../data/txt/TBED/${size}/i${size}_${num}.txt F ../data/nc4/TBED/${size}/i${size}_${num}.nc4
+  done
 done
-done
-
 
 # Yang instances (facility-oriented demand-last == L)
 
-for size in 30-200 60-200 60-300 80-400
-do
-for (( num=1 ; num<=5 ; num++ ))
-do
-
-./txt2nc4 ../data/txt/Yang/${size}/${size}-${num}.txt L ../data/nc4/Yang/${size}/${size}-${num}.nc4
-
-done
+for size in 30-200 60-200 60-300 80-400; do
+  for (( num = 1 ; num <= 5 ; num++ )); do
+    mkdir -p "../data/nc4/Yang/${size}" # ensure directory exists
+    "$txt2nc4" ../data/txt/Yang/${size}/${size}-${num}.txt L ../data/nc4/Yang/${size}/${size}-${num}.nc4
+  done
 done

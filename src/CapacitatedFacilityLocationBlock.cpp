@@ -8,7 +8,11 @@
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * Copyright &copy; by Antonio Frangioni
+ * \author Benoît Tran \n
+ *         Dipartimento di Informatica \n
+ *         Universita' di Pisa \n
+ *
+ * \copyright &copy; by Antonio Frangioni
  */
 /*--------------------------------------------------------------------------*/
 /*---------------------------- IMPLEMENTATION ------------------------------*/
@@ -51,36 +55,39 @@ using v_coeff_pair = LinearFunction::v_coeff_pair;
 /*-------------------------------- CONSTANTS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-static constexpr unsigned char FormMsk = 3;
+static constexpr unsigned short FormMsk = 3;
 // mask for removing all but the first two bits and only leaving the
 // formulation (irrespective of if it is splittable or not)
 
-static constexpr unsigned char StdForm = 0;
+static constexpr unsigned short StdForm = 0;
 // the "standard" formulation is used
 
-static constexpr unsigned char KskForm = 1;
+static constexpr unsigned short KskForm = 1;
 // the "knapsack" formulation is used
 
-static constexpr unsigned char FlwForm = 2;
+static constexpr unsigned short FlwForm = 2;
 // the "flow" formulation is used
 
-static constexpr unsigned char UnSpltF = 4;
+static constexpr unsigned short UnSpltF = 4;
 // 3rd bit of AR == 1 if the problem is unsplittable (the X[] are integer)
 
-static constexpr unsigned char HasVar = 8;
+static constexpr unsigned short HasVar = 8;
 // 4th bit of AR == 1 if the Variable have been constructed
 
-static constexpr unsigned char HasObj = 16;
+static constexpr unsigned short HasObj = 16;
 // 5th bit of AR == 1 if the Objective has been constructed
 
-static constexpr unsigned char HasSatCns = 32;
+static constexpr unsigned short HasSatCns = 32;
 // 6th bit of AR == 1 if the customer satisfaction Constraints are constructed
 
-static constexpr unsigned char HasCapCns = 64;
+static constexpr unsigned short HasCapCns = 64;
 // 7th bit of AR == 1 if the capacity Constraints are constructed
 
-static constexpr unsigned char HasStrngCns = 128;
+static constexpr unsigned short HasStrngCns = 128;
 // 8th bit of AR == 1 if the strong Linking Constraints are separated
+
+static constexpr unsigned short HasMaxCns = 256;
+// 9th bit of AR == 1 if the maximum number facility Constraint is constructed
 
 static constexpr unsigned char yFree = 0;  // facility is free
 
@@ -165,7 +172,7 @@ SMSpp_insert_in_factory_cpp_1( CapacitatedFacilityLocationSolution );
 void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
 					     DVector && Q , CVector && F ,
 					     DVector && D , CMatrix && C ,
-					     bool unsplt )
+					     bool unsplt , Index k)
 {
  static const std::string _prfx = "CapacitatedFacilityLocationBlock::load: ";
 
@@ -199,6 +206,13 @@ void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
   throw( std::invalid_argument( _prfx +
 			   "transportation cost matrix has wrong shape"	) );
 
+ if ( k == 0 )
+  throw( std::invalid_argument( _prfx + "number of maximum facilities too small" ) );
+ if (k != iInf && k > m) {
+  throw(std::invalid_argument(_prfx + "number of maximum facilities too large"));
+}
+
+
  // erase existing abstract representation, if any - - - - - - - - - - - - - -
 
  if( AR & ~7 )
@@ -208,6 +222,7 @@ void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
 
  f_n_facilities = m;
  f_n_customers = n;
+
 
  v_capacity = std::move( Q );
  v_f_cost = std::move( F );
@@ -223,6 +238,8 @@ void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
  f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
 
  f_unsplittable = unsplt;
+ f_max_facilities = k;
+
 
  // throw Modification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // note: this is a NBModification, the "nuclear option"
@@ -373,6 +390,7 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input ,
 
  f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
  f_unsplittable = false;
+ f_max_facilities = iInf;
 
  // issue Modification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // note: this is a NBModification, the "nuclear option"
@@ -483,7 +501,16 @@ void CapacitatedFacilityLocationBlock::deserialize(
   f_unsplittable = ( unsplt.getSize() > 0 );
 
  f_cond_lower = f_cond_upper = dNaN;  // reset conditional bounds
- 
+
+ f_max_facilities = iInf;
+ auto max_fac = group.getDim( "MaxFacilities" );
+ if( ! max_fac.isNull() )
+  f_max_facilities = max_fac.getSize();
+ if( f_max_facilities == 0)
+  throw( std::invalid_argument( _prfx + "number of maximum facilities too small" ) );
+ if ( f_max_facilities != iInf && f_max_facilities > f_n_facilities )
+  throw( std::invalid_argument( _prfx + "number of maximum facilities too high" ) ); 
+
  // call the method of Block- - - - - - - - - - - - - - - - - - - - - - - - -
  // inside this the NBModification, the "nuclear option",  is issued
 
@@ -538,8 +565,8 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   return;
   }
 
- if( ( wf & FormMsk ) == 1 ) {  // "knapsack formulation" (KF)- - - - - - - -
-                                //- - - - - - - - - - - - - - - - - - - - - -
+ if( ( wf & FormMsk ) == KskForm ) {  // "knapsack formulation" (KF)- - - - -
+                                      //- - - - - - - - - - - - - - - - - - -
   AR |= KskForm;
   // construct one knapsack problem for each facility
   v_Block.resize( f_n_facilities );
@@ -584,8 +611,8 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   return;
   }
 
- if( ( wf & FormMsk ) >= 2 ) {  // "flow formulation" (FF)- - - - - - - - - -
-                                //- - - - - - - - - - - - - - - - - - - - - -
+ if( ( wf & FormMsk ) >= FlwForm ) {  // "flow formulation" (FF)- - - - - - -
+                                      //- - - - - - - - - - - - - - - - - - -
   if( f_unsplittable )
    throw( std::invalid_argument(
 	   "unsplittable problem not supported with the Flow Formulation" ) );
@@ -641,7 +668,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
  if( ! ( AR & HasVar ) )
   throw( std::logic_error( _prfx + "generate_abstract_variables not called" ) );
 
- Index wc = 3;
+ Index wc = 7;  // Generate all constraints by default (satisfaction + capacity + max facilities)
  if( ( ! stcc ) && f_BlockConfig )
   stcc = f_BlockConfig->f_static_constraints_Configuration;
  if( auto sci = dynamic_cast< SimpleConfiguration< int > * >( stcc ) )
@@ -686,6 +713,19 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
    AR |= HasCapCns;
    }
 
+  if( ( wc & 4 ) && ( ! ( AR & HasMaxCns ) ) ) {
+    v_coeff_pair coeffs( f_n_facilities );
+
+    for( Index i = 0 ; i < f_n_facilities ; ++i )
+     coeffs[ i ] = std::make_pair( & v_y[ i ] , double( 1 ) );
+
+    maxF.set_lhs( -Inf< double >() );
+    maxF.set_rhs( f_max_facilities );
+    maxF.set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
+
+    add_static_constraint( maxF , "maxF" ); 
+   AR |= HasMaxCns;
+  }
   goto Strong_Linking;
   }
 
@@ -2475,7 +2515,7 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
   f_mod_skip = true;
 
   switch( AR & FormMsk ) {
-   case( StdForm ):    // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( StdForm ):    // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto & capi : v_cap )
      LF( capi.get_function()
 	 )->modify_coefficients( DVector( NDem , NDem + nms.size() ) ,
@@ -2583,6 +2623,48 @@ void CapacitatedFacilityLocationBlock::chg_customer_demand( Demand NDem ,
  #endif
 
  }  // end( CapacitatedFacilityLocationBlock::chg_customers_demand )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::chg_max_facilities( Index NMaxFac ,
+			     ModParam issueMod , ModParam issueAMod )
+{
+ if( NMaxFac != iInf && NMaxFac < 1 )
+  throw( std::invalid_argument( "number of maximum facilities too small" ) );
+ if( NMaxFac != iInf && NMaxFac > f_n_facilities )
+  throw( std::invalid_argument( "number of maximum facilities too high" ) );
+
+ if( f_max_facilities == NMaxFac )
+  return;
+
+ // reset conditional bounds
+ f_cond_lower = NAN;
+ f_cond_upper = NAN;
+
+ // update the physical representation
+ if( not_dry_run( issueMod ) )
+  f_max_facilities = NMaxFac;
+
+ // update abstract representation if it exists
+ if( not_dry_run( issueAMod ) && ( AR & HasMaxCns ) ) {
+  // update the max facilities constraint RHS
+  auto maxF_cnstr = get_static_constraint< FRowConstraint >( "maxF" );
+  if( maxF_cnstr )
+   maxF_cnstr->set_rhs( NMaxFac , issueAMod );
+  }
+
+ // issue "physical Modification"
+ if( issue_pmod( issueMod ) )
+  Block::add_Modification( std::make_shared< 
+                           CapacitatedFacilityLocationBlockMod >( this ,
+                           CapacitatedFacilityLocationBlockMod::eChgMxF ) ,
+                           Observer::par2chnl( issueMod ) );
+
+ #if CHECK_DS
+  CheckAbsVSPhys();
+ #endif
+
+ }  // end( CapacitatedFacilityLocationBlock::chg_max_facilities )
 
 /*--------------------------------------------------------------------------*/
 
@@ -3125,7 +3207,7 @@ void CapacitatedFacilityLocationBlock::fix_open_facility( Index i ,
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::chg_UnSplittable( bool unsplt ,
-							 ModParam issueMod  ,
+							 ModParam issueMod ,
 							 ModParam issueAMod )
 {
  if( unsplt == f_unsplittable )  // changing to the same value
@@ -3203,6 +3285,7 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
   cnst.clear(); 
  for( auto & cnst : v_sat )  // clear the satisfaction constraints
   cnst.clear();
+ maxF.clear();               // clear max. opened facilities constraint
  f_obj.clear();              // clear the objective function
 
  if( ( AR & FormMsk ) == FlwForm ) {
@@ -4586,6 +4669,9 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
    case( CapacitatedFacilityLocationBlockMod::eChgSplt ):  //- - - - - - - -
     R3B->chg_UnSplittable( false , issuePMod , issueAMod );
     break;
+   case( CapacitatedFacilityLocationBlockMod::eChgMxF ):  // - - - - - - - -
+    // R3Block doesn't support max facilities constraint, so ignore it
+    break;
    default:
     throw( std::invalid_argument(
 		  "invalid type in CapacitatedFacilityLocationBlockMod" ) );
@@ -4846,7 +4932,8 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
   switch( tmod->type() ) {
    case( CapacitatedFacilityLocationBlockMod::eChgUnSplt ):  //- - - - - - -
    case( CapacitatedFacilityLocationBlockMod::eChgSplt ):  //- - - - - - - -
-    break;    // nothing to do, although it's a weird case
+   case( CapacitatedFacilityLocationBlockMod::eChgMxF ):  // - - - - - - - -
+    break;    // nothing to do for these types
    default:
     throw( std::invalid_argument(
 		  "invalid type in CapacitatedFacilityLocationBlockMod" ) );
@@ -5280,7 +5367,7 @@ void CapacitatedFacilityLocationSolution::deserialize(
 
 void CapacitatedFacilityLocationSolution::read( const Block * block )
 {
- auto CFLB = dynamic_cast<const CapacitatedFacilityLocationBlock * >( block );
+ auto CFLB = dynamic_cast< const CapacitatedFacilityLocationBlock * >( block );
  if( ! CFLB )
   throw( std::invalid_argument(
 		        "block is not a CapacitatedFacilityLocationBlock" ) );
