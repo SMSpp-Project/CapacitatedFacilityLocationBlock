@@ -9,15 +9,15 @@ This class only represent the "basic version" of CFL and it is primarily
 intended as a "didactic" implementation for showing some of the features of
 SMS++, among which:
 
-* `CapacitatedFacilityLocationBlock` supports both the unsplittable version
+- `CapacitatedFacilityLocationBlock` supports both the unsplittable version
   of the problem, where each customer need be served by exactly one
   facility, and the splittable version where each customer can be served
   by any number of facilities.
 
-* `CapacitatedFacilityLocationBlock` supports three different formulations of
+- `CapacitatedFacilityLocationBlock` supports three different formulations of
   the problem:
 
-  - The "natural formulation" (NF) in which the standard X[ j , i ] and
+  * The "natural formulation" (NF) in which the standard X[ j , i ] and
     Y[ i ] variables and the corresponding constraints are added to the
     `CapacitatedFacilityLocationBlock`. The formulation only has the two
 	natural (static) groups of constraints corresponding to customer demand
@@ -26,7 +26,7 @@ SMS++, among which:
 	Y[ i ]) to be dynamically separated (the option actually applies to
 	all formulations, although it makes no sense for the KF one below).
 
-  - The Lagrange-friendly "knapsack formulation" (KF), where the
+  * The Lagrange-friendly "knapsack formulation" (KF), where the
     `CapacitatedFacilityLocationBlock` "grows" m (number of facilities)
     sub-Block, each of type `BinaryKnapsackBlock` and n (number of customers)
 	+ 1 variables. Sub-Block i corresponds to facility i: the first n
@@ -40,7 +40,7 @@ SMS++, among which:
 	it in order to compute tight lower bounds and the corresponding
 	convexified primal solutions.
 
-  - The Benders-friendly "flow formulation" (FF), where
+  * The Benders-friendly "flow formulation" (FF), where
     `CapacitatedFacilityLocationBlock` "grows" two sub-Block. The first one
     is an `AbstractBlock` that only has the m kBinary design variables
 	Y[ i ]. The second is instead a `MCFBlock` representing the continuous
@@ -65,7 +65,7 @@ SMS++, among which:
   `CapacitatedFacilityLocationBlock` can all be used independently from which
   of the formulations is employed.
 
-* `CapacitatedFacilityLocationBlock` supports reformulations/relaxations of
+- `CapacitatedFacilityLocationBlock` supports reformulations/relaxations of
   the problem via the "R3Block" mechanism; in particular, besides the
   "copy" R3Block, also the "flow relaxation" of the
   CapacitatedFacilityLocationBlock is supported where the R3Block is a
@@ -73,7 +73,7 @@ SMS++, among which:
   right costs on the "facility arcs"). Both the "exact" and "approximate"
   relaxations are supported, as described in the flow formulation.
 
-* `CapacitatedFacilityLocationBlock` supports reading the data from three
+- `CapacitatedFacilityLocationBlock` supports reading the data from three
   different text input formats (as well as from its onw netCDF one).
 
 However, `CapacitatedFacilityLocationBlock` is also useful to represent
@@ -87,27 +87,15 @@ constraint on the maximum number of facilities that can be opened (when
 wc & 4 in generate\_abstract\_constraints()). Furthermore, the
 `ScenarioReductionSolver` is provided that implements a bunch of fast
 heuristics for the specific version of CFL used in scenario reduction
-applications, i.e., such that
-
-* all facility capacities must equal 1.0 (allowing full probability mass
-  assignment to any selected scenario)
-  
-* customer demands represent scenario probabilities (automatically
-  normalized if they don't sum to 1.0
-
-* number of facilities must equal number of customers (square distance
-  matrix
-
-* transportation costs represent pairwise scenario distances
-
+applications, 
 
 Still, `CapacitatedFacilityLocationBlock` currently lacks some capabilities:
 
-* The transportation graph is fixed and complete, there is no way to
+- The transportation graph is fixed and complete, there is no way to
   specify that a specific user cannot be served by a specific facility
   (save by placing a huge cost on the corresponding arc).
 
-* Changing customers' demands via the abstract representation is not
+- Changing customers' demands via the abstract representation is not
   allowed in the SF and the KF, since the same demand is replicated in
   multiple constraints; one could ask that all the changes happen at the
   same time and that the corresponding Modification are bunched together in
@@ -115,11 +103,11 @@ Still, `CapacitatedFacilityLocationBlock` currently lacks some capabilities:
   yet. The change is instead possible in the Flow Formulation where demands
   are node deficits.
 
-* Changing the splittable/unsplittable form of the problem, i.e., the
+- Changing the splittable/unsplittable form of the problem, i.e., the
   integrality of all variables x[ i ][ j ], via the abstract
   representation is never allowed.
 
-* map\_[forward/back]\_[Modification/Solution]() are fully implemented
+- map\_[forward/back]\_[Modification/Solution]() are fully implemented
   for both types of R3Block, except "back Modification" that is not
   implemented for the MCF R3Block.
 
@@ -127,9 +115,22 @@ Still, `CapacitatedFacilityLocationBlock` currently lacks some capabilities:
 ### ScenarioReductionSolver
 
 `ScenarioReductionSolver` is a specialized solver for scenario reduction
-problems formulated as CFL instances. It implements algorithms to select
-a representative subset of scenarios that aims to minimize a Wasserstein
-distance between the full scenario set and the chosen representative subset.
+problems formulated as CFL instances. i.e., such that
+
+- all facility capacities must equal 1.0 (allowing full probability mass
+  assignment to any selected scenario)
+  
+- customer demands represent scenario probabilities (automatically
+  normalized if they don't sum to 1.0
+
+- number of facilities must equal number of customers (square distance
+  matrix
+
+- transportation costs represent pairwise scenario distances
+
+It implements algorithms to select a representative subset of scenarios 
+that aims to minimize a Wasserstein distance between the full scenario set
+and the chosen representative subset.
 
 **Available algorithms:**
 
