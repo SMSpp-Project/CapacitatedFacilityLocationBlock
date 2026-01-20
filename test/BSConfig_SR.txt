@@ -1,21 +1,36 @@
-# Configuration for ScenarioReductionSolver
-# This config file sets up the ScenarioReductionSolver for scenario reduction
-# The solver interprets a CapacitatedFacilityLocationBlock as a scenario reduction problem
-BlockSolverConfig
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - BSConfig_SR.txt - - - - - - - - - - - - - - -
+#
+# A txt description of a BlockSolverConfig for a
+# CapacitatedFacilityLocationBlock containing a scenario reduction problem
+# for being used in the ScenarioReductionSolver tester.
+#
+#   Benoit Tran, Antonio Frangioni
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-1  # differential configuration
+BlockSolverConfig     # exact type of the Configuration object
 
-1  # number of solvers
+1  # the BlockSolverConfig is a "differential" one
+
+1  # number of (the names of) Solver in this BlockSolverConfig
+# now all the names of the Solver - - - - - - - - - - - - - - - - - - - - - -
+
 ScenarioReductionSolver  # name of Solver
 
-1  # number of ComputeConfig
+1  # number of ComputeConfig in this BlockSolverConfig
 
-# ScenarioReductionSolver ComputeConfig
-ComputeConfig
+# now all the ComputeConfig
+# 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-1  # differential
+ComputeConfig # exact type of the ComputeConfig object
+
+1  # f_diff == 0 ==> all non-provided parameters are set to the default value
+   # f_diff == 1 ==> all non-provided parameters are not changed
 
 4  # number of integer parameters
+# now all the integer parameters
 # Algorithm selection (0=Baseline, 1=Dupacova, 2=BestFit, 3=FirstFit)
 intAlgorithm                            1  # Dupacova: forward selection (default)
 intUseWarmstart                         0  # Use warm start for local search (0=false, 1=true)
@@ -30,3 +45,11 @@ intRandomSeed                           0  # Random seed for shuffling (0=defaul
 0  # number of vector-of-string parameters
 
 * # no extra configuration
+
+# end of 1st ComputeConfig- - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# end of BlockSolverConfig- - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - END BSConfig_SR.txt - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

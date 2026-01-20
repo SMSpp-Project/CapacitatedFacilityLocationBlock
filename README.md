@@ -2,22 +2,22 @@
 
 This project provides `CapacitatedFacilityLocationBlock`, an implementation
 of the Block concept for a "pretty basic version" of the Capacitated Facility
-Location (CFL) problem, a.k.a. the Capacitated Warehouse Location (CWL)
+Location (CFL) problem, a.k.a., the Capacitated Warehouse Location (CWL)
 problem.
 
 This class only represent the "basic version" of CFL and it is primarily
 intended as a "didactic" implementation for showing some of the features of
 SMS++, among which:
 
-* `CapacitatedFacilityLocationBlock` supports both the unsplittable version
+- `CapacitatedFacilityLocationBlock` supports both the unsplittable version
   of the problem, where each customer need be served by exactly one
   facility, and the splittable version where each customer can be served
   by any number of facilities.
 
-* `CapacitatedFacilityLocationBlock` supports four different formulations of
+- `CapacitatedFacilityLocationBlock` supports three different formulations of
   the problem:
 
-  - The "natural formulation" (NF) in which the standard X[ j , i ] and
+  * The "natural formulation" (NF) in which the standard X[ j , i ] and
     Y[ i ] variables and the corresponding constraints are added to the
     `CapacitatedFacilityLocationBlock`. The formulation only has the two
 	natural (static) groups of constraints corresponding to customer demand
@@ -26,7 +26,7 @@ SMS++, among which:
 	Y[ i ]) to be dynamically separated (the option actually applies to
 	all formulations, although it makes no sense for the KF one below).
 
-  - The Lagrange-friendly "knapsack formulation" (KF), where the
+  * The Lagrange-friendly "knapsack formulation" (KF), where the
     `CapacitatedFacilityLocationBlock` "grows" m (number of facilities)
     sub-Block, each of type `BinaryKnapsackBlock` and n (number of customers)
 	+ 1 variables. Sub-Block i corresponds to facility i: the first n
@@ -40,7 +40,7 @@ SMS++, among which:
 	it in order to compute tight lower bounds and the corresponding
 	convexified primal solutions.
 
-  - The Benders-friendly "flow formulation" (FF), where
+  * The Benders-friendly "flow formulation" (FF), where
     `CapacitatedFacilityLocationBlock` "grows" two sub-Block. The first one
     is an `AbstractBlock` that only has the m kBinary design variables
 	Y[ i ]. The second is instead a `MCFBlock` representing the continuous
@@ -61,18 +61,11 @@ SMS++, among which:
 	that the unsplittable version of the problem cannot be represented in
 	the FF.
 
-  All three formulations above can optionally include a constraint on the
-  maximum number of facilities that can be opened (when wc & 4 in
-  generate_abstract_constraints). This adds the constraint:
-  ∑ Y[i] ≤ k, where k is the maximum number of facilities allowed.
-  This variant is particularly useful for scenario reduction applications
-  where selecting exactly k representative scenarios is required.
-
   The methods for loading, reading and changing the data of the instance in
   `CapacitatedFacilityLocationBlock` can all be used independently from which
   of the formulations is employed.
 
-* `CapacitatedFacilityLocationBlock` supports reformulations/relaxations of
+- `CapacitatedFacilityLocationBlock` supports reformulations/relaxations of
   the problem via the "R3Block" mechanism; in particular, besides the
   "copy" R3Block, also the "flow relaxation" of the
   CapacitatedFacilityLocationBlock is supported where the R3Block is a
@@ -80,16 +73,29 @@ SMS++, among which:
   right costs on the "facility arcs"). Both the "exact" and "approximate"
   relaxations are supported, as described in the flow formulation.
 
-* `CapacitatedFacilityLocationBlock` supports reading the data from three
+- `CapacitatedFacilityLocationBlock` supports reading the data from three
   different text input formats (as well as from its onw netCDF one).
 
-`CapacitatedFacilityLocationBlock` currently lacks some capabilities:
+However, `CapacitatedFacilityLocationBlock` is also useful to represent
+*scenario reduction* problems, whereby one wants to choose a (small)
+subset (facilities) of the (many) available scenarios (customers) so as to
+maxinimize the expected loss of accuracy in the corresponding stochastic
+optimization problem. Basically, a set of scenarios is replaced by a single
+one, assigning it the total probability of the original ones. For this
+application, all three formulations above can optionally include a
+constraint on the maximum number of facilities that can be opened (when
+wc & 4 in generate\_abstract\_constraints()). Furthermore, the
+`ScenarioReductionSolver` is provided that implements a bunch of fast
+heuristics for the specific version of CFL used in scenario reduction
+applications, 
 
-* The transportation graph is fixed and complete, there is no way to
+Still, `CapacitatedFacilityLocationBlock` currently lacks some capabilities:
+
+- The transportation graph is fixed and complete, there is no way to
   specify that a specific user cannot be served by a specific facility
   (save by placing a huge cost on the corresponding arc).
 
-* Changing customers' demands via the abstract representation is not
+- Changing customers' demands via the abstract representation is not
   allowed in the SF and the KF, since the same demand is replicated in
   multiple constraints; one could ask that all the changes happen at the
   same time and that the corresponding Modification are bunched together in
@@ -97,28 +103,57 @@ SMS++, among which:
   yet. The change is instead possible in the Flow Formulation where demands
   are node deficits.
 
-* Changing the splittable/unsplittable form of the problem, i.e., the
+- Changing the splittable/unsplittable form of the problem, i.e., the
   integrality of all variables x[ i ][ j ], via the abstract
   representation is never allowed.
 
-* map\_[forward/back]\_[Modification/Solution]() are fully implemented
+- map\_[forward/back]\_[Modification/Solution]() are fully implemented
   for both types of R3Block, except "back Modification" that is not
   implemented for the MCF R3Block.
 
+
 ### ScenarioReductionSolver
 
-`ScenarioReductionSolver` is a specialized solver for scenario reduction problems formulated as (capacitated) facility location instances. It implements algorithms to select a representative subset of scenarios that aims to minimize a Wasserstein distance between the full scenario set and the chosen representative subset.
+`ScenarioReductionSolver` is a specialized solver for scenario reduction
+problems formulated as CFL instances. i.e., such that
+
+- all facility capacities must equal 1.0 (allowing full probability mass
+  assignment to any selected scenario)
+  
+- customer demands represent scenario probabilities (automatically
+  normalized if they don't sum to 1.0
+
+- number of facilities must equal number of customers (square distance
+  matrix
+
+- transportation costs represent pairwise scenario distances
+
+It implements algorithms to select a representative subset of scenarios 
+that aims to minimize a Wasserstein distance between the full scenario set
+and the chosen representative subset.
 
 **Available algorithms:**
+
 - **Baseline**: Simple greedy selection based on scenario probabilities
-- **Dupacova**: Forward selection algorithm that iteratively adds scenarios to minimize Wasserstein distance (default). 
-- **BestFit**: Local search with best improvement selection among all possible pair of choices.
+
+- **Dupacova**: Forward selection algorithm that iteratively adds scenarios
+  to minimize Wasserstein distance (default). 
+
+- **BestFit**: Local search with best improvement selection among all
+  possible pair of choices.
+
 - **FirstFit**: Local search with first improvement selection.
 
 The solver can be configured through parameters:
-- `intAlgorithm`: Algorithm selection (0=Baseline, 1=Dupacova, 2=BestFit, 3=FirstFit)
+
+- `intAlgorithm`: Algorithm selection (0=Baseline, 1=Dupacova, 2=BestFit,
+  3=FirstFit)
+
 - `dblEll`: Power parameter for Wasserstein distance (default: 2.0)
-- `intShuffle`: Enable shuffling for FirstFit algorithm (currently only implemented for FirstFit, but could be extended to BestFit)
+
+- `intShuffle`: Enable shuffling for FirstFit algorithm (currently only
+  implemented for FirstFit, but could be extended to BestFit)
+
 - `intUseWarmstart`: Enable warm start for local search algorithms
 
 
@@ -273,6 +308,9 @@ code of conduct, and the process for submitting merge requests to us.
 
 ### Contributors
 
+- **Benoit Tran**  
+  Dipartimento di Informatica  
+  Università di Pisa
 
 ## License
 
