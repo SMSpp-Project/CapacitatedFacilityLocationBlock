@@ -11,7 +11,7 @@
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \author Benoît Tran \n
+ * \author Benoit Tran \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
