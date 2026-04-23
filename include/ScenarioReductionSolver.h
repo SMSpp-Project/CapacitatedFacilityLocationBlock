@@ -37,8 +37,16 @@
 
 #include <random>
 
+#include "BlockSolverConfig.h"
 #include "CapacitatedFacilityLocationBlock.h"
 #include "Solver.h"
+
+// Forward declarations, full headers only needed in ScenarioReductionSolver.cpp
+// This keeps CapacitatedFacilityLocationBlock independent of StochasticBlock.
+namespace SMSpp_di_unipi_it {
+ class DiscreteScenarioSet;
+ class StochasticBlock;
+}
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- NAMESPACE ----------------------------------*/
@@ -147,13 +155,15 @@ namespace SMSpp_di_unipi_it {
   Baseline , // Select scenarios with the most pb. weights
   Dupacova , // Dupacova's forward algorithm (default)
   BestFit ,  // Local search with BestFit strategy
-  FirstFit  // Local search with FirstFit strategy
+  FirstFit , // Local search with FirstFit strategy
+  CSSC       // Cost-Space Scenario Clustering (problem-driven)
  };
 
  /// public enum extending int_par_type_S for ScenarioReductionSolver
  enum int_par_type_SRS {
   intAlgorithm = intLastAlgPar , ///< Algorithm selection (0=Baseline,
-                                 ///< 1=Dupacova, 2=BestFit, 3=FirstFit)
+                                 ///< 1=Dupacova, 2=BestFit, 3=FirstFit,
+                                 ///< 4=CSSC)
   intShuffle =
     intLastAlgPar + 1 ,  ///< Enable shuffling for FirstFit (0=false, 1=true)
   intRandomSeed = intLastAlgPar + 2 , ///< Random seed for shuffling
@@ -378,21 +388,23 @@ namespace SMSpp_di_unipi_it {
    const std::string & name ) const override;
 
  /** @} ---------------------------------------------------------------------*/
- /*----------------------- PRIVATE PART OF THE CLASS ------------------------*/
  /*--------------------------------------------------------------------------*/
- private:
+ /*----------------------- PROTECTED PART OF THE CLASS ----------------------*/
  /*--------------------------------------------------------------------------*/
- /*---------------------------- PRIVATE TYPES ------------------------------*/
+ /** Fields and methods declared protected so that derived classes such as
+  * CSSCScenarioReductionSolver can access them directly. */
+ protected:
+
+ /*--------------------------------------------------------------------------*/
+ /*---------------------------- PROTECTED TYPES ----------------------------*/
  /*--------------------------------------------------------------------------*/
 
  /// pair type for storing (scenario index, distance) in algorithms
  using IndexDistancePair = std::pair< Index , double >;
 
  /*--------------------------------------------------------------------------*/
- /*---------------------------- PRIVATE FIELDS ------------------------------*/
+ /*---------------------------- PROTECTED FIELDS ---------------------------*/
  /*--------------------------------------------------------------------------*/
- /** @name Private data members
-  * @{ */
 
  Algorithm algorithm = Algorithm::Dupacova; ///< selected reduction algorithm
 
@@ -418,6 +430,21 @@ namespace SMSpp_di_unipi_it {
 
  int local_search_iterations; ///< iteration counter for logging
  int LogVerb = 0;             ///< verbosity of the log (cached from intLogVerb)
+
+ /*--------------------------------------------------------------------------*/
+ /*----------------------- PROTECTED METHODS --------------------------------*/
+ /*--------------------------------------------------------------------------*/
+
+ /** Updates binary solution vector from index list. */
+ void update_reduced_atoms( );
+
+ /*--------------------------------------------------------------------------*/
+ /*----------------------- PRIVATE PART OF THE CLASS ------------------------*/
+ /*--------------------------------------------------------------------------*/
+ private:
+ /*--------------------------------------------------------------------------*/
+ /*---------------------------- PRIVATE TYPES ------------------------------*/
+ /*--------------------------------------------------------------------------*/
 
  /** @} ---------------------------------------------------------------------*/
 
@@ -513,12 +540,6 @@ namespace SMSpp_di_unipi_it {
   * @param j index of scenario to add to reduced set
   */
  void swap_indices( Index i , Index j );
-
- /** @brief Updates binary solution vector from index list.
-  *
-  * Synchronizes reduced_atoms with ind_red after modifications.
-  */
- void update_reduced_atoms( );
 
  /** @brief Validates warm start indices for correctness.
   *

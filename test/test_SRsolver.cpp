@@ -46,7 +46,10 @@
 
 #include "BlockSolverConfig.h"
 #include "CapacitatedFacilityLocationBlock.h"
+#include "CSSCScenarioReductionSolver.h"
+#include "DiscreteScenarioSet.h"
 #include "ScenarioReductionSolver.h"
+#include "StochasticBlock.h"
 
 #include <atomic>    // std::atomic
 #include <chrono>    // std::chrono
@@ -215,6 +218,108 @@ CapacitatedFacilityLocationBlock * create_test_block( int k ) {
 }
 
 /*--------------------------------------------------------------------------*/
+/// Helper struct for stochastic test setup (CSSC full pipeline)
+struct StochasticTestSetup {
+ StochasticBlock *                  stoch_block = nullptr;
+ CapacitatedFacilityLocationBlock * cfl_block   = nullptr;
+ DiscreteScenarioSet *              dss         = nullptr;
+
+ ~StochasticTestSetup( ) {
+  // stoch_block owns cfl_block (destructor deletes it)
+  delete stoch_block;
+  delete dss;
+ }
+};
+
+/*--------------------------------------------------------------------------*/
+/// Creates the full stochastic setup needed for CSSC Step 1 test
+/** Builds:
+ *   StochasticBlock
+ *     CapacitatedFacilityLocationBlock (N=4 scenarios, select k)
+ *   DiscreteScenarioSet with N=4 scenario vectors (demands)
+ *
+ * DataMapping: scenario[0..N) → cfl->chg_customer_demands(Range(0,N))
+ * So stoch_block->set_data(v) sets all 4 demands from vector v.
+ *
+ * NOTE: DiscreteScenarioSet has no public "load from memory" API.
+ * We add load_from_memory() to DSS (see DiscreteScenarioSet.h patch)
+ * or use the netCDF approach. Here we require the method to exist.
+ */
+StochasticTestSetup * create_stochastic_test_setup( int k ) {
+ if( k <= 0 ) throw std::invalid_argument( "k must be positive" );
+
+ const int N = 4;
+
+ // 1. Build inner CFL block
+ auto * cfl = new CapacitatedFacilityLocationBlock();
+
+ CapacitatedFacilityLocationBlock::CVector fcosts( N );
+ for( int i = 0 ; i < N ; ++i ) fcosts[ i ] = 100.0 * ( i + 1 );
+
+ CapacitatedFacilityLocationBlock::CMatrix tcosts(
+   boost::extents[ N ][ N ] );
+ for( int i = 0 ; i < N ; ++i )
+  for( int j = 0 ; j < N ; ++j )
+   tcosts[ i ][ j ] = ( i == j ) ? 0.0 : 10.0 * std::abs( i - j );
+
+ CapacitatedFacilityLocationBlock::DVector caps( N , 1.0 );
+ CapacitatedFacilityLocationBlock::DVector base_dems( N );
+ for( int i = 0 ; i < N ; ++i ) base_dems[ i ] = 0.25; // uniform base
+ cfl->load( N , N , caps , fcosts , base_dems , tcosts , true , k );
+
+ // 2. Wrap in StochasticBlock with DataMapping for demands
+ // Use set_inner_block() instead of constructor so that
+ // cfl->set_f_Block(stoch) is called, it means this establishes the parent link
+ // that compute_V_matrix() checks via f_Block->get_f_Block().
+ auto * stoch = new StochasticBlock();
+ stoch->set_inner_block( cfl , false ); // false = don't destroy previous
+
+ // SimpleDataMapping requires Caller=Block (not a subclass) due to
+ // AbstractPath::get_element<T> template constraints in SMS++.
+ // Use Caller=Block and retrieve function via Block::get_method<F>().
+ using SDM = SimpleDataMapping< Block::Range , Block::Range , double , Block >;
+ using F   = SDM::F;
+ const F * fptr = Block::get_method< F >(
+   "CapacitatedFacilityLocationBlock::chg_customer_demands" );
+ if( ! fptr )
+  throw std::runtime_error(
+    "create_stochastic_test_setup: chg_customer_demands not in method factory" );
+ auto dm = std::make_unique< SDM >(
+   fptr ,
+   cfl ,                    // Block*: CFL is a Block, implicit upcast
+   Block::Range( 0 , N ) , // from: scenario vector positions [0,N)
+   Block::Range( 0 , N ) ); // to: demand positions [0,N) in cfl
+ stoch->add_data_mapping( std::move( dm ) );
+
+ // 3. Build DiscreteScenarioSet with N distinct scenarios
+ // Scenario i: demands = [0.1+0.05*i, 0.2+0.05*i, 0.3+0.05*i, 0.4-0.15*i]
+ // normalized to sum=1 per scenario
+ auto * dss = new DiscreteScenarioSet();
+
+ std::vector< std::vector< double > > scenarios( N ,
+   std::vector< double >( N ) );
+ std::vector< double > weights( N , 1.0 / N );
+
+ for( int i = 0 ; i < N ; ++i ) {
+  double sum = 0.0;
+  for( int j = 0 ; j < N ; ++j ) {
+   scenarios[ i ][ j ] = 0.1 * ( j + 1 ) + 0.05 * i;
+   sum += scenarios[ i ][ j ];
+  }
+  for( int j = 0 ; j < N ; ++j ) scenarios[ i ][ j ] /= sum;
+ }
+
+ // Load into DSS, it requires load_from_memory() method in DiscreteScenarioSet
+ dss->load_from_memory( scenarios , weights );
+
+ auto * setup = new StochasticTestSetup();
+ setup->stoch_block = stoch;
+ setup->cfl_block   = cfl;
+ setup->dss         = dss;
+ return setup;
+}
+
+/*--------------------------------------------------------------------------*/
 /*------------------------------ TEST CASES --------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -243,12 +348,15 @@ TestResult test_parameter_management( ) {
    return { false , "Failed to set min algorithm value" };
   }
 
-  solver.set_par( ScenarioReductionSolver::intAlgorithm , 3 ); // Max valid
+  solver.set_par( ScenarioReductionSolver::intAlgorithm , 3 ); // Max valid (old)
   if( solver.get_int_par( ScenarioReductionSolver::intAlgorithm ) != 3 ) {
    return { false , "Failed to set max algorithm value" };
   }
 
-  // Small value test for rho removed - parameter no longer exists
+  solver.set_par( ScenarioReductionSolver::intAlgorithm , 4 ); // CSSC also valid
+  if( solver.get_int_par( ScenarioReductionSolver::intAlgorithm ) != 4 ) {
+   return { false , "Failed to set algorithm value 4 (CSSC)" };
+  }
 
   // Part 3: Parameter validation and error handling
   try {
@@ -260,8 +368,8 @@ TestResult test_parameter_management( ) {
   }
 
   try {
-   solver.set_par( ScenarioReductionSolver::intAlgorithm , 4 );
-   return { false , "Should throw for algorithm value > 3" };
+   solver.set_par( ScenarioReductionSolver::intAlgorithm , 5 );
+   return { false , "Should throw for algorithm value > 4" };
   }
   catch( const std::invalid_argument & ) {
    // Expected
@@ -1396,15 +1504,6 @@ TestResult test_logging( ) {
     return { false , "Log missing algorithm name" };
    }
 
-   // The iteration logs appear at verbosity level 2
-   if( log_output.find( "iteration" ) == std::string::npos ) {
-    // For Dupacova, we should at least see the algorithm name
-    // Iteration details are at higher verbosity
-    if( verbose ) {
-     std::cout << "Note: Iteration details not logged (verbosity 2)\n";
-    }
-   }
-
    if( verbose ) {
     std::cout << "Dupacova log output:\n" << log_output << "\n";
    }
@@ -1434,7 +1533,6 @@ TestResult test_logging( ) {
     return { false , "BestFit log missing algorithm name" };
    }
 
-   // Always print for debugging
    std::cout << "BestFit log output:\n" << log_output << "\n";
 
    if( log_output.find( "converged" ) == std::string::npos ) {
@@ -1461,7 +1559,6 @@ TestResult test_logging( ) {
 
    std::string log_output = log_stream.str();
 
-   // With high verbosity, we should see the table
    if( verbose ) {
     std::cout << "FirstFit log output:\n" << log_output << "\n";
    }
@@ -1509,6 +1606,223 @@ TestResult test_logging( ) {
 }
 
 REGISTER_TEST( "Test 6 - Logging" , test_logging );
+
+/*--------------------------------------------------------------------------*/
+/*----------------------- TEST 7 - CSSC ALGORITHM --------------------------*/
+/*--------------------------------------------------------------------------*/
+/** Test 7 - CSSC Algorithm:
+ *
+ * Tests the compute_cssc() method added to ScenarioReductionSolver.
+ * CSSC = Cost-Space Scenario Clustering (Keutchayan et al. 2023, alg. = 4).
+ *
+ * IMPORTANT ABOUT THIS TEST FILE'S CONTEXT:
+ * The tests here use create_test_block() which builds a plain
+ * CapacitatedFacilityLocationBlock (no StochasticBlock wrapper, no
+ * DiscreteScenarioSet).  In that context compute_cssc() cannot run Step 1
+ * (V matrix via sub-problem solves) because there is no StochasticBlock to
+ * inject individual scenarios.
+ *
+ * WHAT WE TEST HERE:
+ *   - Guard checks (no solver config → throw)
+ *   - Algorithm parameter accepts value 4
+ *   - Step 2 alone (MILP partitioning) using BSPar1.txt if available
+ *   - Output contract: same fields as all other compute_*() methods
+ *
+ * To test the FULL pipeline (Step 1 + Step 2), a separate integration test
+ * that builds a StochasticBlock + DiscreteScenarioSet is needed.
+ */
+/*--------------------------------------------------------------------------*/
+
+TestResult test_cssc_algorithm( ) {
+ try {
+
+  /*------------------------------------------------------------------------*/
+  /* Part 1: intAlgorithm = 4 is accepted as a valid parameter value        */
+  /*------------------------------------------------------------------------*/
+  {
+   ScenarioReductionSolver solver;
+
+   // Value 4 must NOT throw (CSSC is a valid algorithm)
+   try {
+    solver.set_par( ScenarioReductionSolver::intAlgorithm , 4 );
+   }
+   catch( const std::exception & e ) {
+    return { false , "Part 1: set_par(intAlgorithm, 4) should not throw: " +
+             std::string( e.what() ) };
+   }
+
+   if( solver.get_int_par( ScenarioReductionSolver::intAlgorithm ) != 4 )
+    return { false , "Part 1: get_int_par should return 4 after set_par(4)" };
+
+   // Value 5 must still throw
+   try {
+    solver.set_par( ScenarioReductionSolver::intAlgorithm , 5 );
+    return { false , "Part 1: set_par(intAlgorithm, 5) should throw" };
+   }
+   catch( const std::invalid_argument & ) { /* expected */ }
+  }
+
+  /*------------------------------------------------------------------------*/
+  /* Part 2: compute() with intAlgorithm=4 and NO solver config must throw  */
+  /*------------------------------------------------------------------------*/
+  {
+   auto * block = create_test_block( 2 );
+   ScenarioReductionSolver solver;
+   solver.set_Block( block );
+   solver.set_par( ScenarioReductionSolver::intAlgorithm , 4 );
+   // No call to set_cssc_solver_config() → must throw
+   try {
+    solver.compute();
+    delete block;
+    return { false , "Part 2: compute() should throw when no solver config" };
+   }
+   catch( const std::logic_error & e ) {
+    // Expected it to check message mentions config
+    if( std::string( e.what() ).find( "solver" ) == std::string::npos &&
+        std::string( e.what() ).find( "config" ) == std::string::npos ) {
+     delete block;
+     return { false , "Part 2: wrong error message: " +
+              std::string( e.what() ) };
+    }
+    // Pass: correct behaviour
+   }
+   delete block;
+  }
+
+  /*------------------------------------------------------------------------*/
+  /* Part 3: Load BSPar1.txt, if unavailable, skip remaining parts         */
+  /*------------------------------------------------------------------------*/
+  Configuration * raw_cfg = nullptr;
+  try {
+   raw_cfg = Configuration::deserialize( "BSPar1.txt" );
+  }
+  catch( const std::exception & e ) {
+   return { true , "Parts 4-7 skipped: BSPar1.txt not available ("
+            + std::string( e.what() ) + ")" };
+  }
+  if( ! raw_cfg )
+   return { true , "Parts 4-7 skipped: BSPar1.txt returned null" };
+  auto * bsc = dynamic_cast< BlockSolverConfig * >( raw_cfg );
+  if( ! bsc ) {
+   delete raw_cfg;
+   return { false , "Part 3: BSPar1.txt did not produce a BlockSolverConfig" };
+  }
+
+  // Helper: build a CSSCComputeConfig from bsc + dss and apply to solver
+  auto give_config = [&bsc]( CSSCScenarioReductionSolver & s ,
+                              const DiscreteScenarioSet * dss ) {
+   CSSCComputeConfig cfg;
+   cfg.f_extra_Configuration = static_cast< BlockSolverConfig * >( bsc->clone() );
+   cfg.f_scenario_set = dss;
+   s.set_ComputeConfig( &cfg );
+  };
+
+  /*------------------------------------------------------------------------*/
+  /* Part 4: Full pipeline with K=2 from N=4                                   */
+  /* Uses StochasticBlock + DiscreteScenarioSet for Step 1 (V matrix)       */
+  /*------------------------------------------------------------------------*/
+  {
+   std::unique_ptr< StochasticTestSetup > setup(
+     create_stochastic_test_setup( 2 ) );
+
+   CSSCScenarioReductionSolver solver;
+   solver.set_Block( setup->cfl_block );
+   give_config( solver , setup->dss );
+
+   int status = solver.compute();
+   if( status != Solver::kOK ) {
+    delete bsc;
+    return { false , "Part 4: compute() failed with status "
+             + std::to_string( status ) };
+   }
+   if( ! solver.has_var_solution() ) {
+    delete bsc;
+    return { false , "Part 4: has_var_solution() should be true" };
+   }
+   const auto & reduced = solver.get_reduced_atoms();
+   int cnt = std::count( reduced.begin() , reduced.end() , true );
+   if( cnt != 2 ) {
+    delete bsc;
+    return { false , "Part 4: expected 2 representatives, got "
+             + std::to_string( cnt ) };
+   }
+   double obj = solver.get_var_value();
+   if( obj < 0.0 || ! std::isfinite( obj ) ) {
+    delete bsc;
+    return { false , "Part 4: objective value invalid: "
+             + std::to_string( obj ) };
+   }
+   std::cout << "  Part 4: K=2 CSSC obj=" << obj << "\n";
+  }
+
+  /*------------------------------------------------------------------------*/
+  /* Part 5: K=1 and K=3 edge cases                                         */
+  /*------------------------------------------------------------------------*/
+  {
+   std::unique_ptr< StochasticTestSetup > s1(
+     create_stochastic_test_setup( 1 ) );
+   CSSCScenarioReductionSolver sol1;
+   sol1.set_Block( s1->cfl_block );
+   give_config( sol1 , s1->dss );
+   if( sol1.compute() != Solver::kOK ) {
+    delete bsc;
+    return { false , "Part 5: CSSC failed with K=1" };
+   }
+
+   std::unique_ptr< StochasticTestSetup > s3(
+     create_stochastic_test_setup( 3 ) );
+   CSSCScenarioReductionSolver sol3;
+   sol3.set_Block( s3->cfl_block );
+   give_config( sol3 , s3->dss );
+   if( sol3.compute() != Solver::kOK ) {
+    delete bsc;
+    return { false , "Part 5: CSSC failed with K=3" };
+   }
+  }
+
+  /*------------------------------------------------------------------------*/
+  /* Part 6: Two runs give identical results (CSSC is deterministic)        */
+  /*------------------------------------------------------------------------*/
+  {
+   std::unique_ptr< StochasticTestSetup > setup(
+     create_stochastic_test_setup( 2 ) );
+
+   CSSCScenarioReductionSolver sol1, sol2;
+
+   sol1.set_Block( setup->cfl_block );
+   give_config( sol1 , setup->dss );
+   sol1.compute();
+   const auto res1 = sol1.get_reduced_atoms();
+   double obj1 = sol1.get_var_value();
+
+   sol2.set_Block( setup->cfl_block );
+   give_config( sol2 , setup->dss );
+   sol2.compute();
+   const auto & res2 = sol2.get_reduced_atoms();
+   double obj2 = sol2.get_var_value();
+
+   for( std::size_t i = 0 ; i < res1.size() ; ++i ) {
+    if( res1[ i ] != res2[ i ] ) {
+     delete bsc;
+     return { false , "Part 6: two runs gave different results" };
+    }
+   }
+   if( ! approx_equal( obj1 , obj2 , 1e-6 ) ) {
+    delete bsc;
+    return { false , "Part 6: two runs gave different objectives" };
+   }
+   std::cout << "  Part 6: deterministic, obj=" << obj1 << "\n";
+  }
+
+  delete bsc;
+  return { true , "All CSSC algorithm tests passed (Parts 1-6)" };
+ }
+ catch( const std::exception & e ) {
+  return { false , std::string( "Exception: " ) + e.what() };
+ }
+}
+
+REGISTER_TEST( "Test 7 - CSSC Algorithm" , test_cssc_algorithm );
 
 /*--------------------------------------------------------------------------*/
 /*--------------------------------- MAIN -----------------------------------*/

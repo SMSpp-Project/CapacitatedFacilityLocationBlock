@@ -148,6 +148,10 @@ int ScenarioReductionSolver::compute( bool changedvars ) {
  case Algorithm::FirstFit:
   result = compute_local_search( );
   break;
+ case Algorithm::CSSC:
+  throw std::logic_error(
+    "ScenarioReductionSolver::compute: no solver config, use CSSCScenarioReductionSolver "
+    "for the CSSC algorithm." );
  default:
   result = kError;
   break;
@@ -791,7 +795,7 @@ ScenarioReductionSolver::OFValue ScenarioReductionSolver::get_var_value( ) {
 void ScenarioReductionSolver::set_par( idx_type par , int value ) {
  switch( par ) {
  case intAlgorithm:
-  if( value < 0 || value > 3 ) {
+  if( value < 0 || value > 4 ) {
    throw(std::invalid_argument( "Invalid algorithm value" ));
   }
   algorithm = static_cast< Algorithm >(value);
@@ -1079,3 +1083,4 @@ void ScenarioReductionSolver::validate_warmstart_indices(
 /*--------------------------------------------------------------------------*/
 /*------------------ End File ScenarioReductionSolver.cpp ------------------*/
 /*--------------------------------------------------------------------------*/
+
