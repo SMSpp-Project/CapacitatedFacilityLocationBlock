@@ -127,11 +127,11 @@ int CSSCScenarioReductionSolver::compute( bool changedvars ) {
 /*--------------------------------------------------------------------------*/
 // V[i][j] = F( x*_i , xi_j )                                    eq.(21)
 //
-// x*_i = argmin_{x ∈ X} F(x, xi_i)                              eq.(22)
+// x*_i = argmin_{x in X} F(x, xi_i)                              eq.(22)
 //
 // procedure for each scenario i:
-//   (a) inject xi_i via StochasticBlock::set_data() → solve CFL → x*_i
-//   (b) for each j≠i: fix y=x*_i, inject xi_j, solve → V[i][j]
+//   (a) inject xi_i via StochasticBlock::set_data() -> solve CFL -> x*_i
+//   (b) for each j!=i: fix y=x*_i, inject xi_j, solve -> V[i][j]
 //   (c) restore y to kBinary before next iteration
 /*--------------------------------------------------------------------------*/
 
@@ -266,10 +266,10 @@ CSSCScenarioReductionSolver::compute_V_matrix() {
 //   min   (1/N) sum_j t_j
 //   s.t.  t_j >= sum_j_i x_ij*(V[j][i] - V[j][j])   for all j   (25)
 //         t_j >= sum_j_i x_ij*(V[j][j] - V[j][i])   for all j   (26)
-//         x_ij <= u_j                              for all i,j (27a)
-//         x_jj  = u_j                              for all j   (27b)
-//         sum_j_j x_ij = 1                             for alli   (28a)
-//         sum_j_j u_j  = K                                  (28b)
+//         x_ij <= u_j                               for all i,j (27a)
+//         x_jj  = u_j                               for all j   (27b)
+//         sum_j_j x_ij = 1                          for all i   (28a)
+//         sum_j_j u_j  = K                                      (28b)
 /*--------------------------------------------------------------------------*/
 
 void CSSCScenarioReductionSolver::solve_cssc_milp(
@@ -455,7 +455,7 @@ void CSSCScenarioReductionSolver::solve_cssc_milp(
 
  update_reduced_atoms();
 
- // Wasserstein objective (same formula as Dupacova/BestFit)
+ // Wasserstein distance (same formula as Dupacova/BestFit)
  double wasserstein = 0.0;
  for( int i = 0 ; i < n ; ++i ) {
   double min_c = std::numeric_limits<double>::infinity();
@@ -465,7 +465,7 @@ void CSSCScenarioReductionSolver::solve_cssc_milp(
  }
  f_solution_value = wasserstein;
 
- BLOG( 0 , "  CSSC: Wasserstein objective = "
+ BLOG( 0 , "  CSSC: Wasserstein distance = "
            << std::fixed << std::setprecision(6)
            << f_solution_value << std::endl );
 }
