@@ -21,6 +21,7 @@
 #include <iomanip>
 #include <limits>
 #include <numeric>
+#include <sstream>
 #include <unordered_set>
 
 /*--------------------------------------------------------------------------*/
@@ -37,6 +38,118 @@ using namespace SMSpp_di_unipi_it;
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
+/*--------------------------------------------------------------------------*/
+
+/*--------------------------------------------------------------------------*/
+/*---------------- CSSCComputeConfig METHODS --------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void CSSCComputeConfig::serialize( netCDF::NcGroup & group ) const
+{
+ // 1. Let base class handle f_extra_Configuration (BlockSolverConfig)
+ //    and all int/dbl/str/vint parameters
+ ComputeConfig::serialize( group );
+
+ // 2. Serialize DiscreteScenarioSet into sub-group "ScenarioSet"
+ //    Only if we have one to serialize
+ if( f_scenario_set ) {
+  auto sg = group.addGroup( "ScenarioSet" );
+  f_scenario_set->serialize( sg );
+  }
+}
+
+/*--------------------------------------------------------------------------*/
+
+void CSSCComputeConfig::deserialize( const netCDF::NcGroup & group )
+{
+ // 1. Let base class read f_extra_Configuration + all parameters
+ ComputeConfig::deserialize( group );
+
+ // 2. Clear any previously owned DSS
+ delete f_owned_dss;
+ f_owned_dss    = nullptr;
+ f_scenario_set = nullptr;
+
+ // 3. Try to read DiscreteScenarioSet from sub-group "ScenarioSet"
+ auto sg = group.getGroup( "ScenarioSet" );
+ if( ! sg.isNull() ) {
+  f_owned_dss = new DiscreteScenarioSet();
+  f_owned_dss->deserialize( sg );
+  f_scenario_set = f_owned_dss;
+  }
+}
+
+/*--------------------------------------------------------------------------*/
+
+void CSSCComputeConfig::load( std::istream & input )
+{
+ // 1. Let base class read f_extra_Configuration + all parameters from txt
+ ComputeConfig::load( input );
+
+ // 2. Clear any previously owned DSS
+ delete f_owned_dss;
+ f_owned_dss    = nullptr;
+ f_scenario_set = nullptr;
+
+ // 3. Try to read DiscreteScenarioSet from stream
+ //    Format: peek at next token, if it is an integer, assume DSS follows
+ //    The DSS load() format starts with "N D" (two positive integers)
+ std::streampos pos = input.tellg();
+ unsigned int N = 0;
+ if( ( input >> N ) && N > 0 ) {
+  // Put back and let DSS load() read from here
+  input.seekg( pos );
+  f_owned_dss = new DiscreteScenarioSet();
+  f_owned_dss->load( input );
+  f_scenario_set = f_owned_dss;
+  }
+ else {
+  // No DSS data in stream, clear error flags and leave f_scenario_set null
+  input.clear();
+  input.seekg( pos );
+  }
+}
+
+/*--------------------------------------------------------------------------*/
+
+CSSCComputeConfig * CSSCComputeConfig::clone( void ) const
+{
+ auto * c = new CSSCComputeConfig();
+ // Copy base class fields
+ c->f_diff  = f_diff;
+ c->f_relax = f_relax;
+ c->int_pars  = int_pars;
+ c->dbl_pars  = dbl_pars;
+ c->str_pars  = str_pars;
+ c->vint_pars = vint_pars;
+ c->vdbl_pars = vdbl_pars;
+ c->vstr_pars = vstr_pars;
+ c->f_extra_Configuration =
+   f_extra_Configuration ? f_extra_Configuration->clone() : nullptr;
+ // Copy DSS: if we own it, reconstruct via load_from_memory()
+ // (DSS has unique_ptr field so copy constructor is deleted)
+ // if caller-provided (not owned), just copy the pointer
+ if( f_owned_dss ) {
+  const auto N = f_owned_dss->get_nbScenarios();
+  const auto D = f_owned_dss->get_scenario_size();
+  std::vector< std::vector< double > > scenarios( N ,
+                                                   std::vector< double >( D ) );
+  for( unsigned int i = 0 ; i < N ; ++i )
+   for( unsigned int d = 0 ; d < D ; ++d )
+    scenarios[ i ][ d ] = f_owned_dss->get_scenario_value( i , d );
+  std::vector< double > weights( f_owned_dss->get_set_weights().begin() ,
+                                 f_owned_dss->get_set_weights().end() );
+  c->f_owned_dss = new DiscreteScenarioSet();
+  c->f_owned_dss->load_from_memory( scenarios , weights );
+  c->f_scenario_set = c->f_owned_dss;
+  }
+ else {
+  c->f_owned_dss    = nullptr;
+  c->f_scenario_set = f_scenario_set;  // non-owning copy
+  }
+ return c;
+}
+
 /*--------------------------------------------------------------------------*/
 
 SMSpp_insert_in_factory_cpp_1( CSSCScenarioReductionSolver );

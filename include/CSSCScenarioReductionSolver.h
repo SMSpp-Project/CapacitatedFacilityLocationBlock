@@ -63,6 +63,7 @@
 #include "ScenarioReductionSolver.h"
 #include "BlockSolverConfig.h"
 #include "ThinComputeInterface.h"   // ComputeConfig
+#include "DiscreteScenarioSet.h"    // full type for delete in destructor
 
 // Forward declarations
 namespace SMSpp_di_unipi_it {
@@ -102,19 +103,30 @@ namespace SMSpp_di_unipi_it {
  */
 class CSSCComputeConfig : public ComputeConfig {
 public:
- /// Pointer to the scenario set, not owned by this config.
+
+ /// Pointer to the scenario set. May be owned (if loaded via deserialize/load)
+ /// or non-owned (if set directly by caller). Ownership tracked by f_owned_dss.
  const DiscreteScenarioSet * f_scenario_set = nullptr;
+
+ /// Owned DiscreteScenarioSet (created during deserialize/load, nullptr otherwise)
+ DiscreteScenarioSet * f_owned_dss = nullptr;
 
  CSSCComputeConfig() = default;
 
- /// clone: copies f_scenario_set pointer (not owned, shallow copy is correct)
- [[nodiscard]] CSSCComputeConfig * clone() const override {
-  auto * c = new CSSCComputeConfig();
-  c->f_extra_Configuration =
-    f_extra_Configuration ? f_extra_Configuration->clone() : nullptr;
-  c->f_scenario_set = f_scenario_set;  
-  return c;
- }
+ /// Destructor: deletes f_owned_dss if owned
+ ~CSSCComputeConfig() override { delete f_owned_dss; }
+
+ /// Clone this config
+ [[nodiscard]] CSSCComputeConfig * clone( void ) const override;
+
+ /// Serialize to netCDF: calls base class + serializes DiscreteScenarioSet
+ void serialize( netCDF::NcGroup & group ) const override;
+
+ /// Deserialize from netCDF: calls base class + reconstructs DiscreteScenarioSet
+ void deserialize( const netCDF::NcGroup & group ) override;
+
+ /// Load from txt stream: calls base class + loads DiscreteScenarioSet
+ void load( std::istream & input ) override;
 };
 
 /*--------------------------------------------------------------------------*/
