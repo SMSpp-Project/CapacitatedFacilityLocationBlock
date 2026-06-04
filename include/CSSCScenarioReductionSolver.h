@@ -2,55 +2,33 @@
 /*-------------- File CSSCScenarioReductionSolver.h ------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
- * Header for CSSCScenarioReductionSolver: a separate Solver class that
- * implements the Cost-Space Scenario Clustering (CSSC) algorithm for
- * scenario reduction.
+ * Header of CSSCScenarioReductionSolver.
  *
- * ### Why a separate class?
+ * ### Design
  *
- * CSSC is fundamentally different from the heuristics in
- * ScenarioReductionSolver (Dupacova, BestFit, FirstFit):
+ * This solver uses TWO blocks with distinct roles:
  *
- *  - It requires a MILP solver (attached via BlockSolverConfig), whereas the
- *    heuristics need no external solver at all.
+ *   f_Block     (inherited from Solver, set via set_Block())
+ *               Must be an N×N CapacitatedFacilityLocationBlock where:
+ *                 NCustomers     = N  -> nb_atoms
+ *                 NMaxFacilities = K  -> nb_reduced
+ *                 demands[i]     = scenario weights
+ *                 tcosts[i][j]   = pairwise distances (for Wasserstein)
+ *               Used only by the base class ScenarioReductionSolver to
+ *               initialise nb_atoms, nb_reduced, weights,
+ *               f_transportation_costs.
  *
- *  - It requires a DiscreteScenarioSet to iterate over individual scenario
- *    vectors for the N×N opportunity-cost matrix (Step 1).
- *
- *  - It requires the CapacitatedFacilityLocationBlock to be the inner block
- *    of a StochasticBlock, so that individual scenarios can be injected via
- *    StochasticBlock::set_data().
- *
- * These requirements would pollute the interface of ScenarioReductionSolver
- * if CSSC were kept there. Per the SMS++ design principle, all Solvers should
- * share the same interface; solver-specific configuration is passed through
- * the standard set_ComputeConfig() / set_*_par() methods.
- *
- * ### Configuration
- *
- * The MILP solver config and the scenario set pointer are passed via
- * set_ComputeConfig() using the "extra Configuration" field of ComputeConfig:
- *
- *   ComputeConfig cc;
- *   cc.f_extra = new SimpleConfiguration< std::pair<
- *       BlockSolverConfig * , const DiscreteScenarioSet * > >( { bsc , dss } );
- *   solver.set_ComputeConfig( &cc );
- *
- * ### Shared infrastructure
- *
- * CSSCScenarioReductionSolver inherits all output/query methods from
- * ScenarioReductionSolver (get_reduced_atoms, get_var_value, get_var_solution,
- * has_var_solution, etc.) and reuses the shared fields (nb_atoms, nb_reduced,
- * weights, ind_red, reduced_atoms, f_solution_value, f_transportation_costs).
- * Only compute() and configuration are overridden.
+ *   f_sub_block (set via set_sub_problem_block())
+ *               The real two-stage CFL block (nf facilities × nc customers).
+ *               Must have a StochasticBlock as its parent (get_f_Block())
+ *               so that scenarios can be injected via set_data().
+ *               compute_V_matrix() attaches the MILP solver here, solves
+ *               N^2 sub-problems, and reads/fixes/restores the y variables.
  *
  * \author Minh Duc Pham \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
- *
  */
-/*--------------------------------------------------------------------------*/
-/*----------------------------- DEFINITIONS --------------------------------*/
 /*--------------------------------------------------------------------------*/
 
 #ifndef __CSSCScenarioReductionSolver
@@ -62,14 +40,8 @@
 
 #include "ScenarioReductionSolver.h"
 #include "BlockSolverConfig.h"
-#include "ThinComputeInterface.h"   // ComputeConfig
-#include "DiscreteScenarioSet.h"    // full type for delete in destructor
-
-// Forward declarations
-namespace SMSpp_di_unipi_it {
- class DiscreteScenarioSet;
- class StochasticBlock;
-}
+#include "DiscreteScenarioSet.h"
+#include "ThinComputeInterface.h"    // ComputeConfig
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- NAMESPACE ----------------------------------*/
@@ -78,183 +50,144 @@ namespace SMSpp_di_unipi_it {
 namespace SMSpp_di_unipi_it {
 
 /*--------------------------------------------------------------------------*/
-/*--------------------- CLASS CSSCComputeConfig ----------------------------*/
+/*-------------------- CLASS CSSCComputeConfig -----------------------------*/
 /*--------------------------------------------------------------------------*/
-/** Derived ComputeConfig for CSSCScenarioReductionSolver.
+/** ComputeConfig for CSSCScenarioReductionSolver.
  *
- * Extends the standard ComputeConfig with two CSSC-specific fields:
+ * Carries:
+ *   f_extra_Configuration: BlockSolverConfig for Step 1 sub-problems
+ *                          (LP relaxation recommended for speed).
+ *                          Also used for Step 2 if f_milp_config is null.
  *
- *  - f_extra_Configuration: (inherited) holds a BlockSolverConfig* describing
- *    which MILP solver to use for sub-problems (Step 1) and the partitioning
- *    MILP (Step 2). CSSCScenarioReductionSolver::set_ComputeConfig() reads
- *    this field and clones it.
+ *   f_milp_config: Optional BlockSolverConfig for Step 2 MILP. If null, f_extra_Configuration is used instead.
  *
- *  - f_scenario_set: pointer to the DiscreteScenarioSet providing the N
- *    scenario vectors for compute_V_matrix(). NOT owned, caller retains
- *    ownership.
- *
- * Usage:
- * @code
- *   CSSCComputeConfig cfg;
- *   cfg.f_extra_Configuration = bsc;       // BlockSolverConfig*
- *   cfg.f_scenario_set        = dss;       // const DiscreteScenarioSet*
- *   solver.set_ComputeConfig( &cfg );
- * @endcode
+ *   f_scenario_set: pointer to the DiscreteScenarioSet. Not owned.
  */
+
 class CSSCComputeConfig : public ComputeConfig {
+
 public:
-
- /// Pointer to the scenario set. May be owned (if loaded via deserialize/load)
- /// or non-owned (if set directly by caller). Ownership tracked by f_owned_dss.
- const DiscreteScenarioSet * f_scenario_set = nullptr;
-
- /// Owned DiscreteScenarioSet (created during deserialize/load, nullptr otherwise)
- DiscreteScenarioSet * f_owned_dss = nullptr;
 
  CSSCComputeConfig() = default;
 
- /// Destructor: deletes f_owned_dss if owned
- ~CSSCComputeConfig() override { delete f_owned_dss; }
+ ~CSSCComputeConfig() override {
+  delete f_owned_dss;
+  delete f_milp_config;
+ }
 
- /// Clone this config
- [[nodiscard]] CSSCComputeConfig * clone( void ) const override;
-
- /// Serialize to netCDF: calls base class + serializes DiscreteScenarioSet
  void serialize( netCDF::NcGroup & group ) const override;
-
- /// Deserialize from netCDF: calls base class + reconstructs DiscreteScenarioSet
  void deserialize( const netCDF::NcGroup & group ) override;
-
- /// Load from txt stream: calls base class + loads DiscreteScenarioSet
  void load( std::istream & input ) override;
-};
+
+ CSSCComputeConfig * clone() const override;
+
+ /// BlockSolverConfig for Step 1 sub-problems (LP relaxation recommended).
+ /// Stored in f_extra_Configuration (inherited from ComputeConfig).
+
+ /// Optional separate BlockSolverConfig for Step 2 partitioning MILP.
+ /// If null, f_extra_Configuration is used for Step 2 as well.
+ BlockSolverConfig * f_milp_config = nullptr;
+
+ /// Pointer to the DiscreteScenarioSet (not owned unless f_owned_dss != null)
+ const DiscreteScenarioSet * f_scenario_set = nullptr;
+
+ /// If the DSS was constructed internally (load/deserialize), we own it
+ DiscreteScenarioSet * f_owned_dss = nullptr;
+
+};  // end class CSSCComputeConfig
 
 /*--------------------------------------------------------------------------*/
 /*---------------- CLASS CSSCScenarioReductionSolver -----------------------*/
 /*--------------------------------------------------------------------------*/
-/** Solver implementing the CSSC scenario reduction algorithm.
+/** Scenario reduction using the Cost-Space Scenario Clustering (CSSC)
+ *  algorithm of Keutchayan, Ortmann & Rei (2023).
  *
- * Inherits all output/query methods from ScenarioReductionSolver and
- * overrides compute() with the two-step CSSC procedure:
- *
- *   Step 1 for compute_V_matrix(): solve N deterministic CFL sub-problems
- *             to build the N×N opportunity-cost matrix V.
- *
- *   Step 2 for solve_cssc_milp(V): solve a MILP partitioning problem
- *             (equations 24-29 of Keutchayan et al. 2023) to select the
- *             K best representative scenarios.
- *
- * Reference: Keutchayan, Ortmann & Rei, Computational Management Science,
- * 2023, Section 4.3.
+ * Usage:
+ *   1. cssc.set_Block( sr_cfl ): N×N block for base class
+ *   2. cssc.set_sub_problem_block( b ): real CFL block for Step 1
+ *   3. cssc.set_ComputeConfig( cfg ): CSSCComputeConfig with MILP solver
+ *                                         + DiscreteScenarioSet
+ *   4. cssc.compute()
+ *   5. cssc.get_ind_red() / get_reduced_atoms()
  */
+
 class CSSCScenarioReductionSolver : public ScenarioReductionSolver {
 
-/*--------------------------------------------------------------------------*/
-/*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
-/*--------------------------------------------------------------------------*/
 public:
 
-/*--------------------------------------------------------------------------*/
-/*--------------------- CONSTRUCTOR AND DESTRUCTOR -------------------------*/
-/*--------------------------------------------------------------------------*/
-
- /// Default constructor
  CSSCScenarioReductionSolver() = default;
 
- /// Destructor, cleans up owned BlockSolverConfig
- ~CSSCScenarioReductionSolver() override { delete f_milp_config; }
+ ~CSSCScenarioReductionSolver() override {
+  delete f_milp_config;
+  delete f_milp_config_step2;
+ }
 
-/*--------------------------------------------------------------------------*/
-/*------------------------ MAIN COMPUTATION METHOD -------------------------*/
-/*--------------------------------------------------------------------------*/
-
- /** @brief Runs the full CSSC pipeline (Step 1 + Step 2).
+ /*-----------------------------------------------------------------------*/
+ /** Set the real two-stage CFL block used for sub-problem solves in
+  *  Step 1 (compute_V_matrix).
   *
-  * Requires that set_ComputeConfig() has been called with a ComputeConfig
-  * whose f_extra field carries a BlockSolverConfig* (MILP solver) and a
-  * const DiscreteScenarioSet* (scenario data). Throws std::logic_error if
-  * either is missing.
+  *  Requirements:
+  *    - block must be a CapacitatedFacilityLocationBlock
+  *    - block->get_f_Block() must return a StochasticBlock that wraps it,
+  *      with a DataMapping for scenario injection via set_data()
   *
-  * @return Solver::kOK on success.
+  *  This is separate from set_Block() which receives the N×N synthetic
+  *  block used only to communicate N and K to the base class.
   */
+ void set_sub_problem_block( Block * block ) {
+  auto * cfl = dynamic_cast< CapacitatedFacilityLocationBlock * >( block );
+  if( ! cfl )
+   throw std::invalid_argument(
+     "CSSCScenarioReductionSolver::set_sub_problem_block: "
+     "block must be a CapacitatedFacilityLocationBlock." );
+  f_sub_block = cfl;
+ }
+
+ /*-----------------------------------------------------------------------*/
+
  int compute( bool changedvars = false ) override;
 
-/*--------------------------------------------------------------------------*/
-/*----------------------- CONFIGURATION METHOD -----------------------------*/
-/*--------------------------------------------------------------------------*/
-
- /** @brief Accepts configuration via the standard SMS++ interface.
-  *
-  * Reads the "extra Configuration" field of the ComputeConfig to extract:
-  *  - a BlockSolverConfig* for the MILP solver used in both Step 1 and Step 2
-  *  - a const DiscreteScenarioSet* providing the N scenario vectors
-  *
-  * Expected extra type:
-  *   SimpleConfiguration< std::pair< BlockSolverConfig *,
-  *                                   const DiscreteScenarioSet * > >
-  *
-  * The BlockSolverConfig is cloned internally; the DiscreteScenarioSet is
-  * not owned (caller retains ownership).
-  *
-  * @param cfg pointer to a ComputeConfig (may be nullptr to clear).
-  */
  void set_ComputeConfig( const ComputeConfig * cfg ) override;
 
 /*--------------------------------------------------------------------------*/
-/*----------------------- PRIVATE PART OF THE CLASS ------------------------*/
-/*--------------------------------------------------------------------------*/
-private:
 
-/*--------------------------------------------------------------------------*/
-/*---------------------------- PRIVATE FIELDS ------------------------------*/
-/*--------------------------------------------------------------------------*/
+protected:
 
- /// MILP solver configuration (owned, cloned from what user provides).
- /** Used to attach a MILPSolver to:
-  *  (a) f_Block for the N*(N-1) sub-problem solves in compute_V_matrix(), and
-  *  (b) the AbstractBlock holding the CSSC MILP in solve_cssc_milp(). */
- BlockSolverConfig * f_milp_config = nullptr;
+ /// The real CFL block used for sub-problem solves in Step 1.
+ /// Not owned. Set via set_sub_problem_block().
+ CapacitatedFacilityLocationBlock * f_sub_block = nullptr;
 
- /// Pointer to the DiscreteScenarioSet (NOT owned).
- /** Provides the N scenario vectors needed by compute_V_matrix() to inject
-  *  each scenario into the CFL block via StochasticBlock::set_data(). */
+ /// Non-owning pointer to the scenario set. Set via CSSCComputeConfig.
  const DiscreteScenarioSet * f_scenario_set = nullptr;
 
-/*--------------------------------------------------------------------------*/
-/*---------------------------- PRIVATE METHODS -----------------------------*/
-/*--------------------------------------------------------------------------*/
+private:
 
- /** @brief Builds the N×N opportunity-cost matrix V (CSSC Step 1).
-  *
-  * For each scenario i:
-  *   (a) Load ξ_i via StochasticBlock::set_data() and solve the CFL → x*_i
-  *   (b) For each j≠i: fix y=x*_i, load ξ_j, solve → V[i][j] = F(x*_i, ξ_j)
-  *
-  * @return V[i][j] = cost of first-stage solution x*_i under scenario j.
-  * @throws std::logic_error  if f_Block has no StochasticBlock parent.
-  * @throws std::runtime_error if any sub-problem solve fails.
-  */
+ /// BlockSolverConfig for Step 1 sub-problems. Owned.
+ BlockSolverConfig * f_milp_config = nullptr;
+
+ /// BlockSolverConfig for Step 2 MILP. Owned.
+ /// If null, f_milp_config is used for Step 2 as well.
+ BlockSolverConfig * f_milp_config_step2 = nullptr;
+
+ /*-----------------------------------------------------------------------*/
+
+ /// Step 1: build the N×N opportunity-cost matrix V.
  std::vector< std::vector< double > > compute_V_matrix();
 
- /** @brief Builds and solves the CSSC MILP partitioning problem (Step 2).
-  *
-  * Constructs an AbstractBlock with variables x_ij, u_j, t_j and the
-  * constraints from equations (24)-(28b) of the paper, then solves it
-  * using f_milp_config. Populates ind_red, indices_to_choose, reduced_atoms,
-  * and f_solution_value.
-  *
-  * @param V  the N×N opportunity-cost matrix from compute_V_matrix().
-  * @throws std::runtime_error if the MILP solve fails.
-  */
+ /// Step 2: solve the CSSC MILP partitioning problem.
  void solve_cssc_milp( const std::vector< std::vector< double > > & V );
 
-/*--------------------------------------------------------------------------*/
-/*-------------------------- FACTORY REGISTRATION --------------------------*/
-/*--------------------------------------------------------------------------*/
+public:
+
+ /// Cluster assignment from Step 2 MILP: f_scenario_assignment[i] = index of
+ /// the representative that scenario i is assigned to.
+ /// Populated by solve_cssc_milp() from the x_ij variables before the
+ /// internal AbstractBlock is destroyed.
+ std::vector< Index > f_scenario_assignment;
+
+ /*-----------------------------------------------------------------------*/
 
  SMSpp_insert_in_factory_h;
-
-/*--------------------------------------------------------------------------*/
 
 };  // end class CSSCScenarioReductionSolver
 
@@ -262,10 +195,8 @@ private:
 
 }  // namespace SMSpp_di_unipi_it
 
-/*--------------------------------------------------------------------------*/
-
-#endif  // __CSSCScenarioReductionSolver
+#endif  //CSSCScenarioReductionSolver
 
 /*--------------------------------------------------------------------------*/
-/*------------ End File CSSCScenarioReductionSolver.h ----------------------*/
+/*----------- End File CSSCScenarioReductionSolver.h -----------------------*/
 /*--------------------------------------------------------------------------*/
