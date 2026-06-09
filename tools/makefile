@@ -2,7 +2,7 @@
 ################################ makefile ####################################
 ##############################################################################
 #                                                                            #
-#   makefile of txt2nc4                                                      #
+#   makefile of cfl2nc4                                                      #
 #                                                                            #
 #                              Antonio Frangioni                             #
 #                          Dipartimento di Informatica                       #
@@ -11,7 +11,7 @@
 ##############################################################################
 
 # module name
-NAME = txt2nc4
+NAME = cfl2nc4
 
 # basic directory
 DIR = .

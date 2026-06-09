@@ -24,13 +24,13 @@ else ()
     endif ()
 endif ()
 
-# ----- txt2nc4 ------------------------------------------------------------- #
-add_executable(txt2nc4 txt2nc4.cpp)
-target_link_libraries(txt2nc4 PRIVATE SMS++::CapacitatedFacilityLocationBlock)
+# ----- cfl2nc4 ------------------------------------------------------------- #
+add_executable(cfl2nc4 cfl2nc4.cpp)
+target_link_libraries(cfl2nc4 PRIVATE SMS++::CapacitatedFacilityLocationBlock)
 
 # ----- Install instructions ------------------------------------------------ #
 include(GNUInstallDirs)
-install(TARGETS txt2nc4
+install(TARGETS cfl2nc4
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # --------------------------------------------------------------------------- #

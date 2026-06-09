@@ -276,7 +276,7 @@ with the library (see above). Run the tool without arguments for info on
 its usage:
 
 ```sh
-txt2nc4
+cfl2nc4
 ```
 
 A batch file is provided to build netCDF files for a test bed composed

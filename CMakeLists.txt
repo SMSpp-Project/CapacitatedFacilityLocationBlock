@@ -120,7 +120,7 @@ endif ()
 # Download txt.tgz from GitLab Package Registry if it doesn't exist
 set(TXT_URL "https://gitlab.com/api/v4/projects/24780184/packages/generic/txt/latest/txt.tgz")
 set(TXT_ARCHIVE ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz)
-set(TXT_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/download_txt.cmake)
+set(TXT_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/download_cfl_txt.cmake)
 
 file(WRITE ${TXT_SCRIPT} "
 file(DOWNLOAD \"${TXT_URL}\" \"${TXT_ARCHIVE}\" SHOW_PROGRESS)
@@ -134,7 +134,7 @@ add_custom_command(
         VERBATIM
 )
 
-add_custom_target(download_txt
+add_custom_target(download_cfl_txt
         DEPENDS ${TXT_ARCHIVE})
 
 # Custom command to extract the txt.tgz archive if the .extracted file does not exist
@@ -151,44 +151,44 @@ add_custom_command(
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
         COMMENT "Extracting txt.tgz"
         VERBATIM
-        DEPENDS download_txt)
+        DEPENDS download_cfl_txt)
 
 # Create custom targets to run the txt extraction
-add_custom_target(extract_txt
+add_custom_target(extract_cfl_txt
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
 
-# Ensure that extract_txt is executed after the download
-add_dependencies(extract_txt download_txt)
+# Ensure that extract_cfl_txt is executed after the download
+add_dependencies(extract_cfl_txt download_cfl_txt)
 
-# Custom command to run tools/batch with the txt2nc4 exe if the .generated file does not exist
+# Custom command to run tools/batch with the cfl2nc4 exe if the .generated file does not exist
 if (UNIX)
     add_custom_command(
             OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
-            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/batch ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4
+            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/batch ${CMAKE_CURRENT_BINARY_DIR}/tools/cfl2nc4
             COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
-            COMMENT "Running txt2nc4"
+            COMMENT "Running cfl2nc4"
             VERBATIM
-            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4 ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/cfl2nc4 ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
 elseif (WIN32)
     add_custom_command(
             OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
             # using Git for Windows that includes Git Bash
             COMMAND "C:/Program Files/Git/bin/bash.exe"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/batch" "$<TARGET_FILE:txt2nc4>"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/batch" "$<TARGET_FILE:cfl2nc4>"
             COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
-            COMMENT "Running txt2nc4"
+            COMMENT "Running cfl2nc4"
             VERBATIM
-            DEPENDS $<TARGET_FILE:txt2nc4> ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
+            DEPENDS $<TARGET_FILE:cfl2nc4> ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
 endif ()
 
 # Create custom targets to run the nc4 generation
-add_custom_target(run_txt2nc4
+add_custom_target(run_cfl2nc4
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated)
 
-# Ensure that run_txt2nc4 is executed after the build
-add_dependencies(run_txt2nc4 txt2nc4)
+# Ensure that run_cfl2nc4 is executed after the build
+add_dependencies(run_cfl2nc4 cfl2nc4)
 
 # ----- Install instructions ------------------------------------------------ #
 # The following commands are used when installing the library
