@@ -5,7 +5,7 @@
 # CapacitatedFacilityLocationBlock containing a scenario reduction problem
 # for being used in the ScenarioReductionSolver tester.
 #
-#   Benoit Tran, Antonio Frangioni
+#   Benoit Tran, Antonio Frangioni, Donato Meoli
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -16,20 +16,21 @@ BlockSolverConfig     # exact type of the Configuration object
 
 1  # number of (the names of) Solver in this BlockSolverConfig
 # now all the names of the Solver - - - - - - - - - - - - - - - - - - - - - -
-
-ScenarioReductionSolver  # name of Solver
+ScenarioReductionSolver    # name of 1st Solver
 
 1  # number of ComputeConfig in this BlockSolverConfig
 
 # now all the ComputeConfig
 # 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# ComputeConfig of the ScenarioReductionSolver
 
 ComputeConfig # exact type of the ComputeConfig object
 
 1  # f_diff == 0 ==> all non-provided parameters are set to the default value
    # f_diff == 1 ==> all non-provided parameters are not changed
 
-4  # number of integer parameters
+4 # number of integer parameters
+
 # now all the integer parameters
 # Algorithm selection (0=Baseline, 1=Dupacova, 2=BestFit, 3=FirstFit)
 intAlgorithm    1 # Dupacova: forward selection (default)
@@ -37,14 +38,33 @@ intUseWarmstart 0 # Use warm start for local search (0=false, 1=true)
 intShuffle      0 # Enable shuffling for FirstFit (0=false, 1=true)
 intRandomSeed   0 # Random seed for shuffling (0=default seed)
 
-0  # number of double parameters
+0 # number of double parameters
 
-0  # number of string parameters
-0  # number of vector-of-int parameters
-0  # number of vector-of-double parameters  
-0  # number of vector-of-string parameters
+# now all the double parameters
+# [none]
 
-* # no extra configuration
+0 # number of string parameters
+
+# now all the string parameters
+# [none]
+
+0 # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0 # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0 # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# pointer to the "extra" Configuration
+* # [none]
 
 # end of 1st ComputeConfig- - - - - - - - - - - - - - - - - - - - - - - - - -
 
