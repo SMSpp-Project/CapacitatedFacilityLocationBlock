@@ -203,6 +203,13 @@ target_link_libraries(<my_target> SMS++::CapacitatedFacilityLocationBlock)
 ```
 
 
+### Running the tests with CMake
+
+A unit test will be built with the library; set `BUILD_TESTING` to `OFF` to
+disable it. It exercises the `ScenarioReductionSolver` on
+`CapacitatedFacilityLocationBlock` instances.
+
+
 ### Build and install with makefiles
 
 Carefully hand-crafted makefiles have also been developed for those unwilling
@@ -251,17 +258,17 @@ This builds the following folders:
   with an addition and minor tweaks) in the ORLib format, see
   [data/txt/ORLib/doc](data/txt/ORLib/doc) for details
 
-- [data/txt/TBED](data/txt/TBED) that contains contains instances that have
+- [data/txt/TBED](data/txt/TBED) that contains instances that have
   been downloaded from
   [here](https://or-brescia.unibs.it/instances/instances_sscflp) and are in
   facility-oriented, demands-first format: see
-  [data/txt/ORLib/Reame.txt](data/txt/ORLib/Reame.txt) for details
+  [data/txt/TBED/Reame.txt](data/txt/TBED/Reame.txt) for details
 
-- [data/txt/Yang](data/txt/Yang) that contains contains instances that have
+- [data/txt/Yang](data/txt/Yang) that contains instances that have
   been downloaded from
   [here](https://or-brescia.unibs.it/instances/instances_sscflp) and are in
   facility-oriented, demands-last format: see
-  [data/txt/ORLib/format.pdf](data/txt/ORLib/format.pdf) for details
+  [data/txt/Yang/format.pdf](data/txt/Yang/format.pdf) for details
 
 
 ## Tools
@@ -283,6 +290,15 @@ A batch file is provided to build netCDF files for a test bed composed
 by three different sets of instances. First (obtain, see `Data` above and)
 decompress `data/txt.tgz`in place and then run `data/batch` to have the
 instances produced in `data/nc4'.
+
+
+## Tests
+
+The [test](test) folder contains a tester for the `ScenarioReductionSolver`,
+exercising its parameter management and solution handling on
+`CapacitatedFacilityLocationBlock` instances. The integration suites that
+compare the block against a `:MILPSolver` live in the
+[tests repo](https://gitlab.com/smspp/tests).
 
 
 ## Getting help
