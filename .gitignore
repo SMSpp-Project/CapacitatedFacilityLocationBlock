@@ -12,6 +12,7 @@ data/nc4/.generated
 
 # Tool / test binaries
 tools/cfl2nc4
+tools/txt2nc4
 test/SR_test
 
 # --- C/C++ build artifacts ----------------------------------
