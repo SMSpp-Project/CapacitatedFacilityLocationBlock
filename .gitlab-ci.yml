@@ -38,6 +38,7 @@ build:
 
 test:
   stage: test
+  timeout: 24h
   before_script:
     # write the Gurobi WLS license from the masked CI/CD variables, if set
     - |
