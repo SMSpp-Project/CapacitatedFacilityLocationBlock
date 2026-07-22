@@ -82,8 +82,7 @@ endif ()
 # INTERFACE can be used for sources that should not be added to this library
 # but should be added to anything that links to it.
 # Note: do not GLOB files here.
-target_sources(${modName} PRIVATE src/CapacitatedFacilityLocationBlock.cpp
-        src/ScenarioReductionSolver.cpp)
+target_sources(${modName} PRIVATE src/CapacitatedFacilityLocationBlock.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
@@ -117,10 +116,6 @@ add_library(${modNamespace}::${modName} ALIAS ${modName})
 
 # ----- Subdirectories ------------------------------------------------------ #
 add_subdirectory(tools)
-
-if (BUILD_TESTING)
-    add_subdirectory(test)
-endif ()
 
 # ----- Custom commands and targets ----------------------------------------- #
 

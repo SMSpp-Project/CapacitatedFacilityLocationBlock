@@ -84,10 +84,7 @@ optimization problem. Basically, a set of scenarios is replaced by a single
 one, assigning it the total probability of the original ones. For this
 application, all three formulations above can optionally include a
 constraint on the maximum number of facilities that can be opened (when
-wc & 4 in generate\_abstract\_constraints()). Furthermore, the
-`ScenarioReductionSolver` is provided that implements a bunch of fast
-heuristics for the specific version of CFL used in scenario reduction
-applications.
+wc & 4 in generate\_abstract\_constraints()).
 
 Still, `CapacitatedFacilityLocationBlock` currently lacks some capabilities:
 
@@ -111,52 +108,6 @@ Still, `CapacitatedFacilityLocationBlock` currently lacks some capabilities:
   for both types of R3Block, except "back Modification" that is not
   implemented for the MCF R3Block.
 
-
-### ScenarioReductionSolver
-
-`ScenarioReductionSolver` is a specialized solver for scenario reduction
-problems formulated as CFL instances, i.e., such that
-
-- all facility capacities must equal 1.0 (allowing full probability mass
-  assignment to any selected scenario)
-
-- customer demands represent scenario probabilities (automatically
-  normalized if they don't sum to 1.0)
-
-- number of facilities must equal number of customers (square distance
-  matrix)
-
-- transportation costs represent pairwise scenario distances
-
-It implements algorithms to select a representative subset of scenarios
-that aims to minimize a Wasserstein distance between the full scenario set
-and the chosen representative subset.
-
-**Available algorithms:**
-
-- **Baseline**: Simple greedy selection based on scenario probabilities
-
-- **Dupacova**: Forward selection algorithm that iteratively adds scenarios
-  to minimize Wasserstein distance (default).
-
-- **BestFit**: Local search with best improvement selection among all
-  possible pairs of choices.
-
-- **FirstFit**: Local search with first improvement selection.
-
-The solver can be configured through parameters:
-
-- `intAlgorithm`: Algorithm selection (0=Baseline, 1=Dupacova, 2=BestFit,
-  3=FirstFit)
-
-- `dblEll`: Power parameter for Wasserstein distance (default: 2.0)
-
-- `intShuffle`: Enable shuffling for FirstFit algorithm (currently only
-  implemented for FirstFit, but could be extended to BestFit)
-
-- `intUseWarmstart`: Enable warm start for local search algorithms
-
-
 ## Getting started
 
 These instructions will let you build `CapacitatedFacilityLocationBlock` on
@@ -170,7 +121,6 @@ your system.
 - [MCFBlock](https://gitlab.com/smspp/mcfblock) and its requirements.
 
 - [BinaryKnapsackBlock](https://gitlab.com/smspp/binaryknapsackblock)
-
 
 ### Build and install with CMake
 
@@ -192,7 +142,6 @@ Optionally, install the library in the system with:
 cmake --install .
 ```
 
-
 ### Usage with CMake
 
 After the library is built, you can use it in your CMake project with:
@@ -201,14 +150,6 @@ After the library is built, you can use it in your CMake project with:
 find_package(CapacitatedFacilityLocationBlock)
 target_link_libraries(<my_target> SMS++::CapacitatedFacilityLocationBlock)
 ```
-
-
-### Running the tests with CMake
-
-A unit test will be built with the library; set `BUILD_TESTING` to `OFF` to
-disable it. It exercises the `ScenarioReductionSolver` on
-`CapacitatedFacilityLocationBlock` instances.
-
 
 ### Build and install with makefiles
 
@@ -270,7 +211,6 @@ This builds the following folders:
   facility-oriented, demands-last format: see
   [data/txt/Yang/format.pdf](data/txt/Yang/format.pdf) for details
 
-
 ## Tools
 
 We provide a simple tool that reads CFL instances written in the three
@@ -291,15 +231,10 @@ by three different sets of instances. First obtain (see `Data` above) and
 decompress `data/txt.tgz` in place, then run `data/batch` to have the
 instances produced in `data/nc4`.
 
-
 ## Tests
 
-The [test](test) folder contains a tester for the `ScenarioReductionSolver`,
-exercising its parameter management and solution handling on
-`CapacitatedFacilityLocationBlock` instances. The integration suites that
-compare the block against a `:MILPSolver` live in the
-[tests repo](https://gitlab.com/smspp/tests).
-
+The integration suites that compare the block against a `:MILPSolver` live in
+the [tests repo](https://gitlab.com/smspp/tests).
 
 ## Getting help
 
@@ -307,12 +242,10 @@ If you need support, you want to submit bugs or propose a new feature,
 you can [open a new
 issue](https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/issues/new).
 
-
 ## Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our
 code of conduct, and the process for submitting merge requests to us.
-
 
 ## Authors
 
@@ -333,7 +266,6 @@ code of conduct, and the process for submitting merge requests to us.
 This code is provided free of charge under the [GNU Lesser General
 Public License version 3.0](https://opensource.org/licenses/lgpl-3.0.html) -
 see the [LICENSE](LICENSE) file for details.
-
 
 ## Disclaimer
 
