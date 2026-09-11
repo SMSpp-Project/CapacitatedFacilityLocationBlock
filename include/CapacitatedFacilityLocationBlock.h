@@ -11,7 +11,7 @@
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \author Beno�t Tran \n
+ * \author Benoit Tran \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
@@ -31,6 +31,10 @@
 
 #include "BinaryKnapsackBlock.h"
 
+#include "BendersBFunction.h"
+
+#include "BlockSolverConfig.h"
+
 #include "LinearFunction.h"
 
 #include "MCFBlock.h"
@@ -38,6 +42,8 @@
 #include "FRealObjective.h"
 
 #include "FRowConstraint.h"
+
+#include "OneVarConstraint.h"
 
 #include "Solution.h"
 
@@ -468,20 +474,44 @@ public:
  /** Method that generates the abstract Variable of the Capacitated Facility
   * Location problem, meanwhile deciding which of the different formulations
   * of the problem is produced as the "abstract representation" of the
-  * CapacitatedFacilityLocationBlock. The different possible formulations are
-  * represented by a single int value "wf" that is obtained as follows:
+  * CapacitatedFacilityLocationBlock. The choice is encoded in a single int
+  * value \c wf, obtained as follows:
   *
-  * - if either stvv is not nullptr and it is a SimpleConfiguration< int >,
-  *   or f_BlockConfig is not nullptr,
-  *   f_BlockConfig->f_static_variables_Configuration is not nullptr,
-  *   and it is a SimpleConfiguration< int >, then wf is the f_value of the
-  *   SimpleConfiguration< int >
+  * - if either \c stvv is not nullptr and it is a SimpleConfiguration< int >,
+  *   or \c f_BlockConfig is not nullptr,
+  *   \c f_BlockConfig->f_static_variables_Configuration is not nullptr,
+  *   and it is a SimpleConfiguration< int >, then \c wf is the \c f_value
+  *   of the SimpleConfiguration< int >;
   *
-  * - otherwise, wf is 0
+  * - otherwise, \c wf is 0.
   *
-  * The list of supported formulations is:
+  * Three bits of \c wf are used:
   *
-  * - wf & 3 == 0 is the "natural formulation" (NF) always comprising
+  * - bits 0..1 (\c wf & 3) select the formulation:
+  *
+  *     = 0 → "natural" formulation (NF / StdForm), described in detail
+  *           below;
+  *
+  *     = 1 → "knapsack" formulation (KF / KskForm), described in detail
+  *           below;
+  *
+  *     = 2 → "Benders friendly" formulation, slack-arcs variant
+  *           (BF / BenForm with HasBenSlack), described in detail below;
+  *
+  *     = 3 → "Benders friendly" formulation, feasibility-cuts variant
+  *           (BF / BenForm without HasBenSlack), described in detail
+  *           below.
+  *
+  * - bit 2 (\c wf & 4, the \c UnSpltF bit) selects whether the X variables
+  *   are integer (unsplittable problem) or fractional (splittable). It is
+  *   only valid for the natural and knapsack formulations: combining it
+  *   with one of the two Benders formulations (\c wf & 3 >= 2) throws an
+  *   exception, because the Benders subproblem requires the splittable
+  *   case.
+  *
+  * Detailed description of each formulation:
+  *
+  * - \c wf & 3 == 0 — "natural" formulation (NF / StdForm):
   *   \f[
   *    \min \sum_{ i \in I } \sum_{ j \in J } C[ i , j ] X[ i , j ] +
   *         \sum_{ i \in I } F[ i ] Y[ i ]
@@ -498,8 +528,8 @@ public:
   *   \f[
   *    0 \leq X[ i , j ] \leq 1                        j \in J , i \in I  (4)
   *   \f]
-  *   If wf & 4 (wf == 4) the "splittable constraints" (4) are replaced with
-  *   the "unsplittable constraints"
+  *   If \c wf & 4 (\c wf == 4) the "splittable constraints" (4) are
+  *   replaced with the "unsplittable constraints"
   *   \f[
   *    X[ i , j ] \in \{ 0 , 1 \}                      j \in J , i \in I  (4')
   *   \f]
@@ -508,27 +538,27 @@ public:
   *
   *   = "x", a boost::multi_array< ColVariable , 2 > with sizes
   *     f_n_facilities and f_n_customers, which are of type kPosUnitary
-  *     (is_positive() == is_unitary() == true) if wf == 0, and of type
-  *     kBinary (in addition, is_unitary() == true) if wf == 4
+  *     (is_positive() == is_unitary() == true) if \c wf == 0, and of type
+  *     kBinary (in addition, is_unitary() == true) if \c wf == 4;
   *
   *   = "y", a std::vector< ColVariable > of size f_n_facilities, which are
   *     all of type kBinary (is_integer() == is_positive() == is_unitary()
-  *     == true)
+  *     == true);
   *
-  *   and no dynamic variables
+  *   and no dynamic variables.
   *
-  * - wf & 3 == 1: the Lagrange-friendly "knapsack formulation" (KF). In
-  *   this case, CapacitatedFacilityLocationBlock "grows" f_n_facilities
+  * - \c wf & 3 == 1 — Lagrange-friendly "knapsack" formulation (KF /
+  *   KskForm). CapacitatedFacilityLocationBlock "grows" f_n_facilities
   *   sub-Block, each of type BinaryKnapsackBlock and with f_n_customers + 1
-  *   variables. sub-Block i corresponds to facility i: the first
+  *   variables. Sub-Block i corresponds to facility i: the first
   *   f_n_customers variables correspond to the transportation variables
   *   X[ j , i ] between i and all the customers (in the natural order),
-  *   while the last variable correspond to the design variable Y[ i ].
+  *   while the last variable corresponds to the design variable Y[ i ].
   *   That is, the i-th knapsack problem is
   *   \f[
   *    \min \sum_{ j \in J } C[ i , j ] X[ i , j ] + F[ i ] Y[ i ]
   *   \f]
-   *  \f[
+  *   \f[
   *    \sum_{ j \in J } D[ j ] X[ i , j ] - Q[ i ] Y[ i ] \leq 0
   *   \f]
   *   \f[
@@ -537,39 +567,61 @@ public:
   *   \f[
   *    0 \leq X[ i , j ] \leq 1                        j \in J
   *   \f]
-  *   Then, wf & 4 (wf == 5) the previous "splittable constraints" are
+  *   If \c wf & 4 (\c wf == 5) the previous "splittable constraints" are
   *   replaced by the "unsplittable constraints"
   *   \f[
   *    X[ i , j ] \in \{ 0 , 1 \}                      j \in J
   *   \f]
   *   That is, Y[ i ] is always kBinary (is_integer() == is_positive() ==
-  *   is_unitary() == true), whereas X[ j ] are kBinary for wf == 5 and
-  *   kPosUnitary (is_positive() == is_unitary() == true) if wf == 1.
+  *   is_unitary() == true), whereas X[ j ] are kBinary for \c wf == 5 and
+  *   kPosUnitary (is_positive() == is_unitary() == true) if \c wf == 1.
   *   The linking constraints (1) are the only static group of Constraint
   *   in the CapacitatedFacilityLocationBlock.
   *
-  * - wf & 3 >= 2: the Benders-friendly "flow formulation" (FF). In this case,
-  *   CapacitatedFacilityLocationBlock "grows" two sub-Block. The first one
-  *   only has f_n_facilities kBinary variables corresponding with the
-  *   design ones Y[ i ]. The second is instead a MCFBlock representing the
-  *   continuous relaxation of the problem as produced by get_R3_Block()
-  *   with wr3b == ( wf & 3 ) - 1, except the costs of the "facility arcs"
-  *   are set to 0. Then, the CapacitatedFacilityLocationBlock contains the
-  *   linking constraints
+  * - \c wf & 3 == 2 or 3 — "Benders friendly" formulation (BF / BenForm):
+  *   the X variables are *not* part of the master abstract representation
+  *   at all. Instead, the master has the design variables Y[ i ] (kBinary)
+  *   plus a single continuous epigraphic variable v representing the
+  *   transportation cost, with the master Objective
   *   \f[
-  *     arc_flow[ i ] \leq Q[ i ] Y[ i ]                       i \in I
+  *    \min \sum_{ i \in I } F[ i ] Y[ i ] + v
   *   \f]
-  *   where arc_flow[ i ] is the flow on the "facility arc" corresponding to
-  *   facility i in the MCFBlock. The difference between wf & 3 == 2 (i.e.,
-  *   wr3b == 1) and wf & 3 == 3 (i.e., wr3b == 2) is that in the former
-  *   case the reformulation is "exact" (the problem is completely equivalent
-  *   to that of all the other formulations), while in the second it is
-  *   "approximate" in that wr3b == 2 causes the addition of extra high-cost
-  *   "slack arcs" that ensure that the instance is always feasible even if
-  *   the aggregate demand is larger than the aggregate facility capacity
-  *   (see get_R3_Block() for details). In this case, setting wf & 4 true
-  *   is not supported in that the flows in the MCFBlock are scaled and there
-  *   is no (simple) way to include the required integrality constraints. */
+  *   subject to (3), \f$ v \geq LB(v) \f$ (a static box constraint), and a
+  *   dynamic group of Benders cuts. The cuts are generated on demand by
+  *   generate_dynamic_constraints() (called by the Solver's user-cut /
+  *   lazy callback), each separated by a single LP solve of a "hidden"
+  *   MCFBlock that represents the continuous transportation subproblem
+  *   \f$ \phi(y) \f$. The MCFBlock is built internally by
+  *   build_BendersBFunction() and wrapped in a BendersBFunction (see
+  *   get_BendersBFunction()); it is *not* a sub-Block of CFLB.
+  *
+  *   The two sub-variants are:
+  *
+  *     = \c wf & 3 == 2 — slack-arcs variant: the hidden MCFBlock is
+  *       built with extra "slack arcs" of big-M cost so that the
+  *       subproblem is feasible for every y (the slack arcs absorb any
+  *       excess demand). Only optimality cuts are emitted. Use this
+  *       variant when the master can produce y configurations that make
+  *       the underlying problem infeasible *and* the user prefers a
+  *       finite \f$ \phi(y) \f$ over an explicit infeasibility report.
+  *
+  *     = \c wf & 3 == 3 — feasibility-cuts variant: the hidden MCFBlock
+  *       has no slack arcs and can be infeasible at some y. When the
+  *       inner LP returns infeasible, a Benders *feasibility* cut is
+  *       emitted from the Farkas ray (via BendersBFunction's vertical
+  *       linearization mechanism); otherwise a standard optimality cut
+  *       is emitted. This is the "clean" variant: it preserves
+  *       infeasibility detection and is, on the test instances we have,
+  *       both faster and at least as robust as the slack-arcs variant
+  *       when modifications are applied to the Block.
+  *
+  *   The configuration of the BendersBFunction and of its inner MCFBlock
+  *   is passed via the \c f_extra_Configuration of CFLB's BlockConfig; see
+  *   set_BlockConfig().
+  *
+  *   Setting \c wf & 4 true together with \c wf & 3 == 2 or 3 throws,
+  *   because the Benders subproblem requires the splittable case (the
+  *   inner MCFBlock has no integrality constraints on X). */
 
  void generate_abstract_variables( Configuration *stvv = nullptr ) override;
 
@@ -700,6 +752,75 @@ public:
   * called), hence objc is ignored. */
 
  void generate_objective( Configuration * objc = nullptr ) override;
+
+/*--------------------------------------------------------------------------*/
+ /// set the BlockConfig of this CapacitatedFacilityLocationBlock
+ /** This is the standard Block::set_BlockConfig() method (whose comments
+  * fully apply, see there); this override is only here to document a
+  * specific use that CapacitatedFacilityLocationBlock makes of the
+  * \c f_extra_Configuration field of the BlockConfig when the formulation
+  * is the "Benders friendly" one (BenForm, selected by \c wf & 3 == 2 or 3
+  * in generate_abstract_variables()).
+  *
+  * In BenForm, the abstract representation has a "hidden" BendersBFunction
+  * (cf. get_BendersBFunction()) that contains an inner MCFBlock representing
+  * the continuous transportation sub-problem. Both the BendersBFunction and
+  * its inner Block need to be configured (and a Solver registered to the
+  * inner Block, used to evaluate phi(y) when separating Benders cuts).
+  * Since the BendersBFunction is *not* a sub-Block of this Block (it is
+  * "hidden", with parent = nullptr), the standard RBlockConfig machinery
+  * cannot reach it; the configuration of the BendersBFunction and of its
+  * inner Block is therefore passed through the \c f_extra_Configuration of
+  * this Block's own BlockConfig.
+  *
+  * The \c f_extra_Configuration is expected to be a
+  *
+  *   SimpleConfiguration< std::pair< Configuration * , Configuration * > >
+  *
+  * where:
+  *
+  * - \c f_value.first is the "R3-Block Configuration": either
+  *   \c SimpleConfiguration< int > or
+  *   \c SimpleConfiguration< std::pair< int , double > >, as accepted by
+  *   get_R3_Block(). The \c int part (\c wR3B) is ignored (the hidden
+  *   inner MCFBlock is always built as a "flow relaxation"); the
+  *   \c double part (\c slackBigMScale) is used to scale the cost of the
+  *   "slack arcs" in the inner MCFBlock, when the BenForm sub-variant
+  *   in use employs them (i.e., when \c wf & 3 == 2 in
+  *   generate_abstract_variables()). Ignored by the feasibility-cuts
+  *   sub-variant (\c wf & 3 == 3). If
+  *   \c f_value.first is \c nullptr, defaults are used.
+  *
+  * - \c f_value.second is the ComputeConfig of the BendersBFunction.
+  *   It is applied via BendersBFunction::set_ComputeConfig() and it is
+  *   the standard way to configure both the BendersBFunction parameters
+  *   and its inner Block (see the comments to
+  *   BendersBFunction::set_ComputeConfig() for the precise form expected
+  *   by it; the relevant keys are \c "BlockConfig" and \c "BlockSolverConfig"
+  *   to apply to the inner Block, the latter being mandatory because BenForm
+  *   requires a Solver attached to the inner Block).
+  *
+  * For backward compatibility, two simpler forms of \c f_extra_Configuration
+  * are also accepted:
+  *
+  * - A bare BlockSolverConfig: it is applied to the inner Block (same as
+  *   passing it via the \c "BlockSolverConfig" key in the pair form).
+  *
+  * - A \c SimpleConfiguration< std::pair< Configuration * ,
+  *   Configuration * > > where the second element is a BlockSolverConfig
+  *   (rather than a ComputeConfig): the BlockSolverConfig is applied to the
+  *   inner Block.
+  *
+  * Anything else (including a missing \c f_extra_Configuration) for a
+  * BenForm Block triggers a \c logic_error.
+  *
+  * For all other formulations (StdForm, KskForm), the
+  * \c f_extra_Configuration is currently ignored. */
+
+ void set_BlockConfig( BlockConfig * newBC = nullptr ,
+                       bool deleteold = true ) override {
+  Block::set_BlockConfig( newBC , deleteold );
+  }
 
 /** @} ---------------------------------------------------------------------*/
 /*-- Methods for reading the data of the CapacitatedFacilityLocationBlock --*/
@@ -889,6 +1010,7 @@ public:
 
  bool is_feasible( bool useabstract = false ,
 		   Configuration * fsbc = nullptr ) override;
+
 
  /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns true if the current solution is (approximately) customer feasible
@@ -1119,6 +1241,37 @@ public:
 
  [[nodiscard]]  Solution * get_Solution( Configuration * solc = nullptr ,
 					 bool emptys = true ) override;
+
+/*--------------------------------------------------------------------------*/
+ /// gets (a pointer to) the epigraphic variable v of the BenForm
+ /** Gets a pointer to the (single, continuous) epigraphic ColVariable
+  * representing the transportation cost in the "Benders friendly"
+  * formulation; returns nullptr if the abstract representation has not been
+  * constructed (yet) or the formulation in use is not BenForm. */
+
+ [[nodiscard]] ColVariable * get_v( void ) {
+  if( ! ( AR & 8 ) )   // 8 == HasVar
+   return( nullptr );
+  if( ( AR & 3 ) != 3 )  // 3 == FormMsk, 3 == BenForm
+   return( nullptr );
+  return( & v_epi );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// gets the "hidden" BendersBFunction of the BenForm
+ /** Gets a pointer to the BendersBFunction internally used by the "Benders
+  * friendly" formulation to separate Benders optimality cuts. Returns
+  * nullptr if the abstract representation has not been constructed (yet) or
+  * the formulation in use is not BenForm.
+  *
+  * The returned object is owned by this CapacitatedFacilityLocationBlock and
+  * must not be deleted by the caller. Its (only) inner Block is an MCFBlock
+  * to which a CDASolver must be attached (typically via a BlockSolverConfig)
+  * for generate_dynamic_constraints() to be able to separate cuts. */
+
+ [[nodiscard]] BendersBFunction * get_BendersBFunction( void ) const {
+  return( f_BF );
+  }
 
 /*--------------------------------------------------------------------------*/
  /// gets (a pointer to) the y[] variable corresponding to facility i
@@ -1792,22 +1945,29 @@ public:
  // abstract representation stuff - - - - - - - - - - - - - - - - - - - - - -
 
  unsigned short AR;       ///< bit-wise coded: what abstract is there
-                         /**< The short field AR keeps track of which part of
-			  * the abstract representation has been constructed
-  * already, as well as *which formulation* is used.
-  * The second part is coded in the first three bits of AR, as follows.
-  * The first part is coded in the first three bits of AR, as follows:
-  * The first two bits encode the "large-scale shape" of the formulation:
+                         /**< The short field AR keeps track of which
+  * formulation is in use and which parts of the abstract representation
+  * have been constructed.
   *
-  * - ( AR & FormMsk ) == StdForm: the "standard" formulation is used
+  * The first two bits encode the formulation:
+  *
+  * - ( AR & FormMsk ) == StdForm: the "natural" formulation is used
   * - ( AR & FormMsk ) == KskForm: the "knapsack" formulation is used
-  * - ( AR & FormMsk ) == FlwForm: the "flow" formulation is used
+  * - ( AR & FormMsk ) == FlwForm: legacy "flow" formulation (currently
+  *                     not reachable via the \c wf interface of
+  *                     generate_abstract_variables(); the constant and
+  *                     the value are kept for possible internal use)
+  * - ( AR & FormMsk ) == BenForm: the "Benders friendly" formulation.
+  *                     The slack-arcs vs feasibility-cuts sub-variant is
+  *                     encoded in the \c HasBenSlack bit, see below.
   *
-  * Then, the third bit ( AR & UnSpltF ) is 1 if the formulation is
-  * unsplittable (the X[] are integer).
+  * The third bit ( AR & UnSpltF ) == 1 if the formulation is unsplittable
+  * (the X[] are integer). The same bit value is used in the \c wf input
+  * of generate_abstract_variables(): there it can only be set together
+  * with \c wf & 3 == 0 or 1 (the BenForm formulations throw otherwise).
   *
-  * The following bits encode which parts of the abstract formulation have
-  * been constructed:
+  * The following bits encode which parts of the abstract representation
+  * have been constructed:
   *
   * - AR & HasVar:      if the Variable have been constructed
   * - AR & HasObj:      if the Objective has been constructed
@@ -1815,9 +1975,14 @@ public:
   *                     constructed
   * - AR & HasCapCns:   if the capacity Constraints have been constructed
   * - AR & HasStrngCns: if the strong Linking Constraints have been
-  *                     prepared for being separated 
-  * - AR & HasMaxCns:   if the Max Facility Constraint has been
-  *                     constructed. */
+  *                     prepared for being separated
+  * - AR & HasMaxCns:   if the Max Facility Constraint has been constructed
+  * - AR & HasBenCuts:  if the Benders cuts dynamic group has been declared
+  *                     (only meaningful for BenForm)
+  * - AR & HasBenSlack: if the BenForm hidden inner MCFBlock is built with
+  *                     "slack arcs" of big-M cost (only meaningful for
+  *                     BenForm; selected by \c wf & 3 == 2 in
+  *                     generate_abstract_variables()). */
 
  bool f_unsplittable;    ///< if customers can only be served once
 
@@ -1845,6 +2010,31 @@ public:
  /**< v_sfc is an array of FRowConstraint for the dynamic separation of
   * "strong forcing" constraints x_{ij} \leq y_i; v_sfc[ i ] are all the
   * strong forcing" constraints corresponding to y_i. */
+
+ // "Benders friendly" formulation - - - - - - - - - - - - - - - - - - - - - -
+
+ ColVariable v_epi;                   ///< the epigraphic variable v
+ /**< single continuous ColVariable representing the epigraph of the
+  * transportation cost in the "Benders friendly" formulation; only used when
+  * ( AR & FormMsk ) == BenForm. */
+
+ BoxConstraint f_v_box;               ///< the box constraint on v_epi
+ /**< BoxConstraint on v_epi enforcing v >= LB(v) = sum_j min_i v_t_cost[i][j],
+  * which makes the BenForm master bounded with an empty cut pool; only used
+  * when ( AR & FormMsk ) == BenForm. */
+
+ std::list< FRowConstraint > v_benders_cuts;
+ ///< the dynamic group of Benders optimality cuts
+ /**< list of FRowConstraint of the form v + sum_i alpha_i y_i >= beta,
+  * generated on-demand by generate_dynamic_constraints() in BenForm. */
+
+ BendersBFunction * f_BF = nullptr;   ///< hidden Benders sub-problem
+ /**< pointer to a "hidden" BendersBFunction (not a sub-Block of this) whose
+  * inner Block is an MCFBlock representation of the continuous transportation
+  * sub-problem, used by generate_dynamic_constraints() to separate Benders
+  * optimality cuts on v_epi. Owned by this CapacitatedFacilityLocationBlock
+  * (deleted in guts_of_destructor). Only used when
+  * ( AR & FormMsk ) == BenForm. */
 
  FRealObjective f_obj;                ///< the (linear) objective function
 
@@ -1974,7 +2164,37 @@ public:
  
  void guts_of_destructor( void );
 
- void guts_of_get_R3B_MCF( MCFBlock * mcfb , int wR3B );
+ /// build the MCF representation of the (continuous relaxation of the) CFL
+ /** Build the MCF representation of the (continuous relaxation of the) CFL
+  * problem in the given (empty) MCFBlock \p mcfb. The two flags control
+  * variations on the basic graph:
+  *
+  * - \p forceWR3B2: if \c true, the n artificial source -> customer
+  *   "slack arcs" are always added (irrespective of \p wR3B); used by the
+  *   "Benders friendly" formulation to ensure that the sub-MCF is never
+  *   infeasible.
+  *
+  * - \p zeroFacilityArcCost: if \c true, the cost of all source -> facility
+  *   arcs is forced to 0 (irrespective of v_fxd and the f_i costs); used by
+  *   the "Benders friendly" formulation, where the facility opening costs
+  *   live in the master Objective and the inner MCF only carries the
+  *   transportation cost.
+  *
+  * - \p slackBigMScale: multiplicative factor for the "big-M" cost on the
+  *   artificial slack arcs (the ones from the super-source directly to each
+  *   customer when wR3B > 1 or forceWR3B2). The baseline big-M is
+  *   "max over j of (worst transportation unit cost to j) + 1" (which is
+  *   tight enough to never be picked at optimality if the problem is
+  *   feasible without slack); the actual slack cost is that baseline times
+  *   \p slackBigMScale. The default 100 is the historical value and is
+  *   safe for small instances; on larger instances the resulting big-M can
+  *   cause numerical troubles for the LP solver of the inner Block, in
+  *   which case a smaller value (e.g., 10 or even 2) may be needed. */
+
+ void guts_of_get_R3B_MCF( MCFBlock * mcfb , int wR3B ,
+			   bool forceWR3B2 = false ,
+			   bool zeroFacilityArcCost = false ,
+			   double slackBigMScale = 100.0 );
 
  void guts_of_chg_tcost_MCF( MCFBlock * mcfb , Range rng ,
 			     ModParam issueMod , ModParam issueAMod );
@@ -2003,6 +2223,8 @@ public:
 
  void guts_of_add_ModificationFFP( const MCFBlockMod * mod , ChnlName chnl );
 
+ void guts_of_add_ModificationBFA( c_p_Mod mod , ChnlName chnl );
+
  bool guts_of_map_f_Mod_copy(
 			CapacitatedFacilityLocationBlock * R3B , c_p_Mod mod ,
 			ModParam issuePMod , ModParam issueAMod );
@@ -2018,6 +2240,58 @@ public:
 				    ModParam issuePMod , ModParam issueAMod );
 
  void compute_conditional_bounds( void );
+
+ /// returns LB(v) = sum_j min_i v_t_cost[i][j], the lower bound on v_epi
+ /** Computes the valid lower bound on the epigraphic variable v_epi used in
+  * the "Benders friendly" formulation: sum over customers j of the minimum
+  * over facilities i of v_t_cost[i][j]. This is a valid lower bound on the
+  * total transportation cost for any choice of (possibly fractionally)
+  * served customers and any open facilities, hence makes the master bounded
+  * even with an empty Benders cut pool. */
+
+ double compute_v_lower_bound( void ) const;
+
+ /// (re)build the internal BendersBFunction f_BF for the BenForm
+ /** Creates and fully initializes the hidden BendersBFunction f_BF used by
+  * the "Benders friendly" formulation: builds the inner MCFBlock (with
+  * forceWR3B2 = true and zeroFacilityArcCost = true), sets the active
+  * variables to v_y[], and configures the linear mapping A_{i,i} =
+  * v_capacity[i] (off-diagonal zero), b_i = 0, constraint_i = UB of arc i
+  * (source -> facility i), side_i = eRHS. If f_BF already exists it is
+  * destroyed first. */
+
+ void build_BendersBFunction( void );
+
+ /// drop all current Benders cuts from v_benders_cuts
+ /** Removes all the Benders cuts from the v_benders_cuts dynamic group
+  * (issuing the corresponding BlockModRmv< FRowConstraint > so any listening
+  * Solver knows). Used by Modification handlers in BenForm whenever a change
+  * invalidates the cut pool. */
+
+ void reset_benders_cuts( void );
+
+ /// separate one Benders optimality cut at the current y and add it
+ /** Calls f_BF->compute() at the current value of the design variables y,
+  * extracts the linearization (coefficients g and constant alpha), and
+  * appends to v_benders_cuts the FRowConstraint
+  *   v + sum_i (-g_i) y_i >= alpha
+  * (with alpha already in the "absolute" form returned by
+  * get_linearization_constant()).
+  *
+  * The cut is only added if it is violated by the current (v_epi, y)
+  * values by strictly more than the *relative* threshold
+  *
+  *   eps_rel * max( |v_epi^*| , 1 )
+  *
+  * where v_epi^* is the current value of v_epi. The default
+  * eps_rel = 1e-6 is appropriate for typical LP precision. Set
+  * \p eps_rel to a negative value to force unconditional addition
+  * (e.g., for the initial seed cut at construction time).
+  *
+  * Returns true if a cut was actually added, false otherwise (compute()
+  * failed, no linearization available, or cut not violated enough). */
+
+ bool separate_one_benders_cut( double eps_rel = 1e-6 );
 
  template< class T >
  void get_y( typename std::vector< T >::iterator Sol , Range rng ) const;

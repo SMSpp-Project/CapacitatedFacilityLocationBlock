@@ -9,9 +9,7 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 # may wrongly appear unused, and by default the linker does not include them,
 # so we have to force the linking.
 if (BUILD_SHARED_LIBS)
-    if (MSVC)
-        add_link_options("/OPT:NOREF")
-    elseif (UNIX AND (NOT APPLE))
+    if (UNIX AND (NOT APPLE))
         add_link_options("-Wl,--no-as-needed")
     endif ()
 else ()
@@ -26,13 +24,13 @@ else ()
     endif ()
 endif ()
 
-# ----- txt2nc4 ------------------------------------------------------------- #
-add_executable(txt2nc4 txt2nc4.cpp)
-target_link_libraries(txt2nc4 PRIVATE SMS++::CapacitatedFacilityLocationBlock)
+# ----- cfl2nc4 ------------------------------------------------------------- #
+add_executable(cfl2nc4 cfl2nc4.cpp)
+target_link_libraries(cfl2nc4 PRIVATE SMS++::CapacitatedFacilityLocationBlock)
 
 # ----- Install instructions ------------------------------------------------ #
 include(GNUInstallDirs)
-install(TARGETS txt2nc4
+install(TARGETS cfl2nc4
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # --------------------------------------------------------------------------- #

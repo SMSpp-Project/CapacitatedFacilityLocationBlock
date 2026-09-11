@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------*/
-/*---------------------------- File txt2nc4.cpp ----------------------------*/
+/*---------------------------- File cfl2nc4.cpp ----------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
  * Small main() for constructing instance files, be them netCDF ones of text
@@ -37,12 +37,31 @@ using namespace SMSpp_di_unipi_it;
 /*------------------------------ FUNCTIONS ---------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+/// Custom terminate function to print the exception message
+
+void smspp_terminate( void ) {
+ std::cerr << "Uncaught exception in executing SMS++:\n";
+ try {
+  std::rethrow_exception( std::current_exception() );
+ }
+ catch( const std::exception & e ) {
+  std::cerr << "\tException type: " << typeid( e ).name() << "\n";
+  std::cerr << "\tException message: " << e.what() << "\n";
+ } catch( ... ) {
+  std::cerr << "\tUnknown exception" << std::endl;
+ }
+ std::abort(); // or exit(1)
+}
+
 /*--------------------------------------------------------------------------*/
 /*--------------------------------- Main -----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
 int main( int argc , char **argv )
 {
+ // override the default terminate handler to print the exception message
+ std::set_terminate( smspp_terminate );
+
  if( argc < 4 ) {
   std::cerr << "Usage: " << argv[ 0 ]
 	    << " file_in frmt_in file_out [frmt_out]" << std::endl
@@ -92,5 +111,5 @@ int main( int argc , char **argv )
  }
 
 /*--------------------------------------------------------------------------*/
-/*------------------------ End File txt2nc4.cpp ----------------------------*/
+/*------------------------ End File cfl2nc4.cpp ----------------------------*/
 /*--------------------------------------------------------------------------*/

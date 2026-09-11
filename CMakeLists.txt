@@ -15,16 +15,22 @@
 #                         Dipartimento di Informatica                         #
 #                             Universita' di Pisa                             #
 # --------------------------------------------------------------------------- #
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.21)
 cmake_policy(VERSION 3.15)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/DeriveVersion.cmake)
+smspp_derive_version(SMSPP_MODULE_VERSION)
+
 project(CapacitatedFacilityLocationBlock
-        VERSION 0.2.0
+        VERSION ${SMSPP_MODULE_VERSION}
         DESCRIPTION "SMS++ CapacitatedFacilityLocationBlock module"
         HOMEPAGE_URL https://gitlab.com/smspp/capacitatedfacilitylocationblock
         LANGUAGES C CXX)
 
 # These variables make the code harder to read but easier to change.
 set(modName ${PROJECT_NAME})
+
+# C-safe form of modName for the preprocessor macros in <modName>Config.h
+string(MAKE_C_IDENTIFIER "${modName}" modMacro)
 set(modNamespace "SMS++")
 
 # Find out if it's being called by the umbrella.
@@ -60,11 +66,44 @@ endif ()
 # This will generate a *Config.h header in the build directory.
 configure_file(cmake/${modName}Config.h.in ${modName}Config.h)
 
+# ----- RPATH --------------------------------------------------------------- #
+# The installed libraries and executables look for the libraries of the same
+# installation relative to their own location, so that the installed tree can
+# be moved as a whole; the directories of the external libraries are kept.
+include(GNUInstallDirs)
+if (NOT CMAKE_INSTALL_RPATH)
+    if (APPLE)
+        set(rpathOrigin "@loader_path")
+    else ()
+        set(rpathOrigin "$ORIGIN")
+    endif ()
+    file(RELATIVE_PATH binToLib ${CMAKE_INSTALL_FULL_BINDIR}
+            ${CMAKE_INSTALL_FULL_LIBDIR})
+    set(CMAKE_INSTALL_RPATH "${rpathOrigin}" "${rpathOrigin}/${binToLib}")
+endif ()
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
 # ----- Library ------------------------------------------------------------- #
 # With the BUILD_SHARED_LIBS variable we can specify if the library will
 # be STATIC or SHARED, so no reason to do it now.
 add_library(${modName})
 target_compile_features(${modName} PUBLIC cxx_std_17)
+
+# The name of the shared library carries the version of its binary interface,
+# which any minor release may change while the major version is 0, and then
+# any major release.
+if (PROJECT_VERSION_MAJOR EQUAL 0)
+    set(soVersion ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})
+else ()
+    set(soVersion ${PROJECT_VERSION_MAJOR})
+endif ()
+set_target_properties(${modName} PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${soVersion})
+
+if (MSVC AND BUILD_SHARED_LIBS)
+    target_link_options(${modName} INTERFACE "/INCLUDE:SMSpp_force_load_${modName}")
+endif ()
 
 # When adding source files with target_sources(), PRIVATE means that the files
 # should only be added to this library, whereas PUBLIC means they should be
@@ -72,8 +111,7 @@ target_compile_features(${modName} PUBLIC cxx_std_17)
 # INTERFACE can be used for sources that should not be added to this library
 # but should be added to anything that links to it.
 # Note: do not GLOB files here.
-target_sources(${modName} PRIVATE src/CapacitatedFacilityLocationBlock.cpp
-                                  src/ScenarioReductionSolver.cpp)
+target_sources(${modName} PRIVATE src/CapacitatedFacilityLocationBlock.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
@@ -88,6 +126,7 @@ target_sources(${modName} PRIVATE src/CapacitatedFacilityLocationBlock.cpp
 target_include_directories(
         ${modName} PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
         $<INSTALL_INTERFACE:include/${modNamespace}>)
 
 # When linking other targets to the library with target_link_libraries(),
@@ -96,9 +135,9 @@ target_include_directories(
 # library, INTERFACE means they will be linked only to the targets that depend
 # on this library.
 target_link_libraries(${modName} PUBLIC
-                      ${modNamespace}::MCFBlock
-                      ${modNamespace}::BinaryKnapsackBlock
-                      ${CMAKE_THREAD_LIBS_INIT})
+        ${modNamespace}::MCFBlock
+        ${modNamespace}::BinaryKnapsackBlock
+        ${CMAKE_THREAD_LIBS_INIT})
 
 # This alias is defined so that executables in this same project can use
 # the library with this notation.
@@ -107,16 +146,12 @@ add_library(${modNamespace}::${modName} ALIAS ${modName})
 # ----- Subdirectories ------------------------------------------------------ #
 add_subdirectory(tools)
 
-if (BUILD_TESTING)
-    add_subdirectory(test)
-endif ()
-
 # ----- Custom commands and targets ----------------------------------------- #
 
 # Download txt.tgz from GitLab Package Registry if it doesn't exist
 set(TXT_URL "https://gitlab.com/api/v4/projects/24780184/packages/generic/txt/latest/txt.tgz")
 set(TXT_ARCHIVE ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz)
-set(TXT_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/download_txt.cmake)
+set(TXT_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/download_cfl_txt.cmake)
 
 file(WRITE ${TXT_SCRIPT} "
 file(DOWNLOAD \"${TXT_URL}\" \"${TXT_ARCHIVE}\" SHOW_PROGRESS)
@@ -130,7 +165,7 @@ add_custom_command(
         VERBATIM
 )
 
-add_custom_target(download_txt
+add_custom_target(download_cfl_txt
         DEPENDS ${TXT_ARCHIVE})
 
 # Custom command to extract the txt.tgz archive if the .extracted file does not exist
@@ -147,44 +182,44 @@ add_custom_command(
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
         COMMENT "Extracting txt.tgz"
         VERBATIM
-        DEPENDS download_txt)
+        DEPENDS download_cfl_txt)
 
 # Create custom targets to run the txt extraction
-add_custom_target(extract_txt
+add_custom_target(extract_cfl_txt
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
 
-# Ensure that extract_txt is executed after the download
-add_dependencies(extract_txt download_txt)
+# Ensure that extract_cfl_txt is executed after the download
+add_dependencies(extract_cfl_txt download_cfl_txt)
 
-# Custom command to run tools/batch with the txt2nc4 exe if the .generated file does not exist
+# Custom command to run tools/batch with the cfl2nc4 exe if the .generated file does not exist
 if (UNIX)
     add_custom_command(
             OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
-            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/batch ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4
+            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/batch ${CMAKE_CURRENT_BINARY_DIR}/tools/cfl2nc4
             COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
-            COMMENT "Running txt2nc4"
+            COMMENT "Running cfl2nc4"
             VERBATIM
-            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/txt2nc4 ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/cfl2nc4 ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
 elseif (WIN32)
     add_custom_command(
             OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
             # using Git for Windows that includes Git Bash
             COMMAND "C:/Program Files/Git/bin/bash.exe"
-                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/batch" "$<TARGET_FILE:txt2nc4>"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/batch" "$<TARGET_FILE:cfl2nc4>"
             COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
-            COMMENT "Running txt2nc4"
+            COMMENT "Running cfl2nc4"
             VERBATIM
-            DEPENDS $<TARGET_FILE:txt2nc4> ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
+            DEPENDS $<TARGET_FILE:cfl2nc4> ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
 endif ()
 
 # Create custom targets to run the nc4 generation
-add_custom_target(run_txt2nc4
+add_custom_target(run_cfl2nc4
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated)
 
-# Ensure that run_txt2nc4 is executed after the build
-add_dependencies(run_txt2nc4 txt2nc4)
+# Ensure that run_cfl2nc4 is executed after the build
+add_dependencies(run_cfl2nc4 cfl2nc4)
 
 # ----- Install instructions ------------------------------------------------ #
 # The following commands are used when installing the library
@@ -246,8 +281,8 @@ install(FILES
 # dynamic loading will look into it.
 if (hasParent)
     set(SMSPP_BUILD_RPATH
-        "${SMSPP_BUILD_RPATH};${CMAKE_CURRENT_BINARY_DIR}"
-        PARENT_SCOPE)
+            "${SMSPP_BUILD_RPATH};${CMAKE_CURRENT_BINARY_DIR}"
+            PARENT_SCOPE)
 endif ()
 
 # ----- Packaging support --------------------------------------------------- #
@@ -262,9 +297,9 @@ if (NOT hasParent)
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_LIST_DIR}/LICENSE")
     set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_LIST_DIR}/README.md")
     set(CPACK_SOURCE_IGNORE_FILES
-        \\\\.git/
-        \\\\.gitignore$
-        \\\\.gitattributes$)
+            \\\\.git/
+            \\\\.gitignore$
+            \\\\.gitattributes$)
     include(CPack)
 endif ()
 

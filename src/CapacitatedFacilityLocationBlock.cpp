@@ -8,7 +8,7 @@
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \author Beno�t Tran \n
+ * \author Benoit Tran \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
@@ -55,21 +55,55 @@ using v_coeff_pair = LinearFunction::v_coeff_pair;
 /*-------------------------------- CONSTANTS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+// Encoding of the "abstract representation" state of CFLB.
+//
+// generate_abstract_variables() reads a single int value wf (from the
+// SimpleConfiguration< int > of its argument or of the BlockConfig's
+// f_static_variables_Configuration; 0 if missing) and uses it to decide
+// which formulation to build:
+//
+//   wf & 3 == 0 → "natural" formulation (StdForm)
+//   wf & 3 == 1 → "knapsack" formulation (KskForm)
+//   wf & 3 == 2 → "Benders friendly" formulation with slack arcs in the
+//                 inner MCFBlock (BenForm + HasBenSlack)
+//   wf & 3 == 3 → "Benders friendly" formulation with feasibility cuts
+//                 (BenForm, no HasBenSlack)
+//   wf & 4 (UnSpltF) → unsplittable problem (X integer); only valid with
+//                      wf & 3 == 0 or 1, otherwise an exception is thrown.
+//
+// The resulting state is stored in the AR field of CFLB, with the bits
+// below. AR's first two bits replicate the wf formulation choice, except
+// that BenForm uses AR FormMsk value 3 and the slack/feasibility-cuts
+// sub-variant is encoded in the separate HasBenSlack bit. AR FormMsk value
+// 2 (FlwForm, the "flow" formulation with explicit MCFBlock sub-Block) is
+// kept as a legacy constant but is not reachable via the wf interface.
+// The remaining bits track which parts of the abstract representation
+// have been constructed.
+
 static constexpr unsigned short FormMsk = 3;
-// mask for removing all but the first two bits and only leaving the
-// formulation (irrespective of if it is splittable or not)
+// mask for the first two bits, encoding the formulation in AR
 
 static constexpr unsigned short StdForm = 0;
-// the "standard" formulation is used
+// AR FormMsk value for the "natural" formulation
 
 static constexpr unsigned short KskForm = 1;
-// the "knapsack" formulation is used
+// AR FormMsk value for the "knapsack" formulation
 
 static constexpr unsigned short FlwForm = 2;
-// the "flow" formulation is used
+// AR FormMsk value for the legacy "flow" formulation; not reachable
+// via the wf interface of generate_abstract_variables() in the current
+// version, but the constant is preserved for possible internal use
+// (and to keep the historical AR encoding stable)
+
+static constexpr unsigned short BenForm = 3;
+// AR FormMsk value for the "Benders friendly" formulation. The two
+// sub-variants (slack arcs vs feasibility cuts) are distinguished by the
+// HasBenSlack bit below.
 
 static constexpr unsigned short UnSpltF = 4;
-// 3rd bit of AR == 1 if the problem is unsplittable (the X[] are integer)
+// 3rd bit, == 1 if the X are integer (unsplittable). The bit value is
+// the same in wf and in AR (bit 2 in both). Only valid for StdForm and
+// KskForm: BenForm with UnSpltF set throws.
 
 static constexpr unsigned short HasVar = 8;
 // 4th bit of AR == 1 if the Variable have been constructed
@@ -88,6 +122,20 @@ static constexpr unsigned short HasStrngCns = 128;
 
 static constexpr unsigned short HasMaxCns = 256;
 // 9th bit of AR == 1 if the maximum number facility Constraint is constructed
+
+static constexpr unsigned short HasBenCuts = 512;
+// 10th bit of AR == 1 if the Benders cuts dynamic group has been declared
+// (only meaningful when ( AR & FormMsk ) == BenForm)
+
+static constexpr unsigned short HasBenSlack = 1024;
+// 11th bit of AR == 1 if the BenForm variant in use builds its hidden
+// inner MCFBlock with "slack arcs" of big-M cost (so the inner LP is
+// always feasible at every y), == 0 if it does not (in which case the
+// inner LP can be infeasible at some y, and infeasibility is handled by
+// emitting Benders *feasibility* cuts in separate_one_benders_cut()).
+// Set from wf when wf & 3 == 2 (BenForm with slack arcs); unset when
+// wf & 3 == 3 (BenForm with feasibility cuts). Only meaningful when
+// ( AR & FormMsk ) == BenForm.
 
 static constexpr unsigned char yFree = 0;  // facility is free
 
@@ -528,6 +576,17 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
 
  AR |= HasVar;      // variables will be constructed now once and for all
 
+ // The formulation is selected from the int value wf as follows:
+ //   wf & 3 == 0 → "natural" formulation        (StdForm)
+ //   wf & 3 == 1 → "knapsack" formulation       (KskForm)
+ //   wf & 3 == 2 → "Benders friendly" formulation, slack-arcs variant
+ //                 (BenForm + HasBenSlack)
+ //   wf & 3 == 3 → "Benders friendly" formulation, feasibility-cut
+ //                 variant (BenForm, no HasBenSlack)
+ //   wf & 4 (UnSpltF) → X are integer (unsplittable). Only valid with
+ //                      wf & 3 ∈ { 0, 1 }: throws otherwise.
+ // See the doc of this method in the .h for the mathematical description
+ // of each formulation.
  Index wf = 0;
  if( ( ! stvv ) && f_BlockConfig )
   stvv = f_BlockConfig->f_static_variables_Configuration;
@@ -535,122 +594,121 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
   wf = sci->f_value;
 
  f_unsplittable = wf & UnSpltF;
+ const Index form = wf & FormMsk;
 
- if( ! ( wf & FormMsk ) ) {  // "natural formulation" (NF)- - - - - - - - - -
-                             // - - - - - - - - - - - - - - - - - - - - - - -
-  // AR |= StdForm;  does nothing
-  v_y.resize( f_n_facilities );
-  auto fxdit = v_fxd.begin();
-  for( auto & yi : v_y ) {
-   yi.set_type( ColVariable::kBinary );
-   if( auto fi = *(fxdit++) ) {
-    yi.set_value( fi == yFxd0 ? 0 : 1 );
-    yi.is_fixed( true , eNoMod );
+ if( f_unsplittable && form >= 2 )
+  throw( std::invalid_argument(
+   "CapacitatedFacilityLocationBlock::generate_abstract_variables: "
+   "unsplittable problem not supported with the Benders Formulation" ) );
+
+ switch( form ) {
+
+  case( 0 ): {  // "natural" formulation (StdForm) - - - - - - - - - - - - - -
+                // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   // AR |= StdForm;  does nothing
+   v_y.resize( f_n_facilities );
+   auto fxdit = v_fxd.begin();
+   for( auto & yi : v_y ) {
+    yi.set_type( ColVariable::kBinary );
+    if( auto fi = *(fxdit++) ) {
+     yi.set_value( fi == yFxd0 ? 0 : 1 );
+     yi.is_fixed( true , eNoMod );
+     }
     }
+   add_static_variable( v_y , "y" );
+
+   v_x.resize( boost::extents[ f_n_facilities ][ f_n_customers ] );
+   auto xt = ColVariable::kPosUnitary;
+   if( f_unsplittable ) {
+    AR |= UnSpltF;
+    xt = ColVariable::kBinary;
+    }
+
+   Index cnt = f_n_facilities * f_n_customers;
+   for( auto xij = v_x.data() ; xij != v_x.data() + cnt ; )
+    (xij++)->set_type( xt );
+   add_static_variable( v_x , "x" );
+
+   return;
    }
-  add_static_variable( v_y , "y" );
 
-  v_x.resize( boost::extents[ f_n_facilities ][ f_n_customers ] );
-  auto xt = ColVariable::kPosUnitary;
-  if( f_unsplittable ) {
-   AR |= UnSpltF;
-   xt = ColVariable::kBinary;
+  case( 1 ): {  // "knapsack" formulation (KskForm) - - - - - - - - - - - - -
+                // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   AR |= KskForm;
+   // construct one knapsack problem for each facility
+   v_Block.resize( f_n_facilities );
+
+   // first construct the vector and sort it, so that the pointers are
+   // increasing with the facility index i, which speeds up some operations
+   for( auto & bi : v_Block )
+    bi = new BinaryKnapsackBlock( this );
+
+   std::sort( v_Block.begin() , v_Block.end() );
+
+   // now load the appropriate data into each BinaryKnapsackBlock
+   BinaryKnapsackBlock::doubleVec W( f_n_customers + 1 );
+   BinaryKnapsackBlock::doubleVec P( f_n_customers + 1 );
+   BinaryKnapsackBlock::boolVec I;
+
+   if( f_unsplittable ) {
+    AR |= UnSpltF;
+    I.resize( f_n_customers + 1 , true );
+    }
+   else {
+    I.resize( f_n_customers + 1 , false );
+    I[ f_n_customers ] = true;
+    }
+
+   for( Index i = 0 ; i < f_n_facilities ; ++i ) {
+    for( Index j = 0 ; j < f_n_customers ; ++j ) {
+     W[ j ] = v_demand[ j ];
+     P[ j ] = v_t_cost[ i ][ j ];
+     }
+    W[ f_n_customers ] = - v_capacity[ i ];
+    P[ f_n_customers ] = v_f_cost[ i ];
+
+    auto bi = BKB( v_Block[ i ] );
+    bi->load( f_n_customers + 1 , 0 , W , P , I );
+    if( v_fxd[ i ] != yFree )
+     bi->fix_x(  v_fxd[ i ] == yFxd1 , i , eNoMod , eNoMod );
+    bi->set_objective_sense( false , eNoMod , eNoMod );
+    bi->generate_abstract_variables();
+    }
+
+   return;
    }
 
-  Index cnt = f_n_facilities * f_n_customers;
-  for( auto xij = v_x.data() ; xij != v_x.data() + cnt ; )
-   (xij++)->set_type( xt );
-  add_static_variable( v_x , "x" );
+  case( 2 ):    // "Benders friendly" formulation, slack-arcs variant - - - -
+  case( 3 ): {  // "Benders friendly" formulation, feasibility-cuts variant -
+                // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   AR |= BenForm;
+   if( form == 2 )
+    AR |= HasBenSlack;       // slack-arcs sub-variant
+   // else: feasibility-cuts sub-variant (HasBenSlack stays 0)
 
-  return;
+   // design variables
+   v_y.resize( f_n_facilities );
+   auto fxdit = v_fxd.begin();
+   for( auto & yi : v_y ) {
+    yi.set_type( ColVariable::kBinary );
+    if( auto fi = *(fxdit++) ) {
+     yi.set_value( fi == yFxd0 ? 0 : 1 );
+     yi.is_fixed( true , eNoMod );
+     }
+    }
+   add_static_variable( v_y , "y" );
+
+   // single epigraphic variable v: continuous, lower bound enforced via
+   // f_v_box in generate_abstract_constraints()
+   v_epi.set_type( ColVariable::kContinuous );
+   add_static_variable( v_epi , "v" );
+
+   return;
+   }
   }
 
- if( ( wf & FormMsk ) == KskForm ) {  // "knapsack formulation" (KF)- - - - -
-                                      //- - - - - - - - - - - - - - - - - - -
-  AR |= KskForm;
-  // construct one knapsack problem for each facility
-  v_Block.resize( f_n_facilities );
-
-  // first construct the vector and sort it, so that the pointers are
-  // increasing with the facility index i, which speeds up some operations
-  for( auto & bi : v_Block )
-   bi = new BinaryKnapsackBlock( this );
-
-  std::sort( v_Block.begin() , v_Block.end() );
-
-  // now load the appropriate data into each BinaryKnapsackBlock
-  BinaryKnapsackBlock::doubleVec W( f_n_customers + 1 );
-  BinaryKnapsackBlock::doubleVec P( f_n_customers + 1 );
-  BinaryKnapsackBlock::boolVec I;
-
-  if( f_unsplittable ) {
-   AR |= UnSpltF;
-   I.resize( f_n_customers + 1 , true );
-   }
-  else {
-   I.resize( f_n_customers + 1 , false );
-   I[ f_n_customers ] = true;
-   }
-
-  for( Index i = 0 ; i < f_n_facilities ; ++i ) {
-   for( Index j = 0 ; j < f_n_customers ; ++j ) {
-    W[ j ] = v_demand[ j ];
-    P[ j ] = v_t_cost[ i ][ j ];
-    }
-   W[ f_n_customers ] = - v_capacity[ i ];
-   P[ f_n_customers ] = v_f_cost[ i ];
-
-   auto bi = BKB( v_Block[ i ] );
-   bi->load( f_n_customers + 1 , 0 , W , P , I );
-   if( v_fxd[ i ] != yFree )
-    bi->fix_x(  v_fxd[ i ] == yFxd1 , i , eNoMod , eNoMod );    
-   bi->set_objective_sense( false , eNoMod , eNoMod );
-   bi->generate_abstract_variables();
-   }
-
-  return;
-  }
-
- if( ( wf & FormMsk ) >= FlwForm ) {  // "flow formulation" (FF)- - - - - - -
-                                      //- - - - - - - - - - - - - - - - - - -
-  if( f_unsplittable )
-   throw( std::invalid_argument(
-	   "unsplittable problem not supported with the Flow Formulation" ) );
-  
-  AR |= FlwForm;
-
-  v_Block.resize( 2 );  // exactly two sub-Block
-
-  // the first sub-Block is an AbstractBlock with the y[] variables
-  auto ab = new AbstractBlock( this );
-  v_Block[ 0 ] = ab;
-
-  v_y.resize( f_n_facilities );
-  auto fxdit = v_fxd.begin();
-  for( auto & yi : v_y ) {
-   yi.set_type( ColVariable::kBinary );
-   if( auto fi = *(fxdit++) ) {
-    yi.set_value( fi == yFxd0 ? 0 : 1 );
-    yi.is_fixed( true , eNoMod );
-    }
-   }
-  ab->add_static_variable( v_y , "y" );
-
-  // the second Block is a MCFBlock as constructed by get_R3_Block
-  SimpleConfiguration< int > r3bc( ( wf & FormMsk ) - 1 );
-  auto mcfb = static_cast< MCFBlock * >( get_R3_Block( & r3bc ) );
-  v_Block[ 1 ] = mcfb;
-
-  // ... except the cost of the facility arcs are zeros
-  MCFBlock::Vec_CNumber zero( f_n_facilities , 0 );
-  mcfb->chg_costs( zero.begin() , Range( 0 , f_n_facilities ),
-		   eNoMod , eNoMod );
-  mcfb->generate_abstract_variables();
-  mcfb->set_f_Block( this );
-
-  return;
-  }
-
+ // FormMsk only has 2 bits, so `form` is in { 0, 1, 2, 3 } and all cases
+ // are covered above; this is unreachable but kept as a safety net.
  throw( std::invalid_argument(
 	   "CapacitatedFacilityLocationBlock::generate_abstract_variables: "
 	   "invalid formulation" ) );
@@ -760,6 +818,60 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
   goto Strong_Linking;
   }
 
+ if( ( AR & FormMsk ) == BenForm ) {  // "Benders friendly" formulation - - -
+                                      //- - - - - - - - - - - - - - - - - - -
+  if( ( wc & 1 ) && ( ! ( AR & HasSatCns ) ) ) {
+   // build the hidden BendersBFunction (no-op if already built); the inner
+   // MCFBlock plays the role of the customer satisfaction sub-problem
+   build_BendersBFunction();
+   AR |= HasSatCns;
+   }
+
+  if( ( wc & 2 ) && ( ! ( AR & HasCapCns ) ) ) {
+   // capacity constraints in BenForm are entirely captured by the inner
+   // MCFBlock arc capacities (whose RHS = Q_i * y_i is dynamically updated
+   // by the BendersBFunction mapping); add f_v_box, which keeps the master
+   // bounded, and declare the dynamic Benders cuts group
+   f_v_box.set_variable( & v_epi );
+   f_v_box.set_lhs( compute_v_lower_bound() , eNoMod );
+   f_v_box.set_rhs( Inf< RowConstraint::RHSValue >() , eNoMod );
+   add_static_constraint( f_v_box , "v_box" );
+
+   add_dynamic_constraint( v_benders_cuts , "benders" );
+   AR |= HasCapCns | HasBenCuts;
+
+   // Seed the cut pool with one cut at y = (1,...,1) so the master starts
+   // with a non-trivial LP. Without this seed, the master master LP would
+   // have the integer-feasible optimum (y=0, v=LB(v)) and the *MILPSolver
+   // would not even enter the user-cut callback. build_BendersBFunction()
+   // has already attached the inner Block Solver (via the extra
+   // Configuration of f_BlockConfig), so f_BF->compute() is callable here.
+   // Pass eps_abs = -1 to force unconditional addition (the violation
+   // check would otherwise fail since v_epi.get_value() is 0 by default
+   // and the cut may not look "violated" in the trivial sense yet).
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    if( ! v_y[ i ].is_fixed() )
+     v_y[ i ].set_value( 1 );
+   separate_one_benders_cut( -1.0 );
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    if( ! v_y[ i ].is_fixed() )
+     v_y[ i ].set_value( 0 );
+   }
+
+  if( ( wc & 4 ) && ( ! ( AR & HasMaxCns ) ) ) {
+   v_coeff_pair coeffs( f_n_facilities );
+   for( Index i = 0 ; i < f_n_facilities ; ++i )
+    coeffs[ i ] = std::make_pair( & v_y[ i ] , double( 1 ) );
+   maxF.set_lhs( -Inf< double >() );
+   maxF.set_rhs( f_max_facilities );
+   maxF.set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
+   add_static_constraint( maxF , "maxF" );
+   AR |= HasMaxCns;
+   }
+
+  return;  // BenForm: no strong-linking dynamic group (no x_ij in master)
+  }
+
  // else it is the "flow formulation" (FF)- - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -820,6 +932,30 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
 void CapacitatedFacilityLocationBlock::generate_dynamic_constraints(
 						       Configuration * dycc )
 {
+ // "Benders friendly" formulation: separate one optimality cut at the
+ // current y values (using the hidden BendersBFunction).
+ //
+ // If \p dycc is a SimpleConfiguration< pair< int , double > >, its
+ // \c second is taken as the *relative* violation tolerance for the
+ // cut (default 1e-6): the cut is added only if its violation at the
+ // current point is > eps_rel * max( |v_epi^*| , 1 ). The \c first
+ // (max cuts per call) is ignored: at most one cut per call.
+ //
+ // The seed cut at y = (1,...,1) is generated eagerly in
+ // generate_abstract_constraints() so the master starts non-trivial.
+ if( ( AR & FormMsk ) == BenForm ) {
+  double eps_rel = 1e-6;
+  if( ( ! dycc ) && f_BlockConfig )
+   dycc = f_BlockConfig->f_dynamic_constraints_Configuration;
+  if( auto sc = dynamic_cast<
+       SimpleConfiguration< std::pair< int , double > > * >( dycc ) )
+   eps_rel = sc->f_value.second;
+
+  if( AR & HasBenCuts )
+   separate_one_benders_cut( eps_rel );
+  return;
+  }
+
  if( ! ( AR & HasStrngCns ) )
   return;
 
@@ -960,6 +1096,19 @@ void CapacitatedFacilityLocationBlock::generate_objective(
   for( auto ki : v_Block )    // the Objective is all in the sub-Block
    ki->generate_objective();
 
+  return;
+  }
+
+ if( ( AR & FormMsk ) == BenForm ) {  // "Benders friendly" formulation - - -
+                                      //- - - - - - - - - - - - - - - - - - -
+  // sum_i f_i y_i + v
+  v_coeff_pair p( f_n_facilities + 1 );
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   p[ i ] = std::make_pair( & v_y[ i ] , v_f_cost[ i ] );
+  p[ f_n_facilities ] = std::make_pair( & v_epi , double( 1 ) );
+
+  f_obj.set_function( new LinearFunction( std::move( p ) , 0 ) , eNoMod );
+  set_objective( & f_obj , eNoMod );
   return;
   }
 
@@ -1129,9 +1278,22 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
 {
  const static std::string _prfx =
                            "CapacitatedFacilityLocationBlock::get_R3_Block: ";
+ // r3bc may be one of:
+ //  - SimpleConfiguration< int >: f_value = wR3B (mode), slackBigMScale
+ //    defaults to 100
+ //  - SimpleConfiguration< pair< int , double > >: f_value.first = wR3B,
+ //    f_value.second = slackBigMScale (only meaningful for MCF R3-Block,
+ //    i.e., wR3B > 0)
+ //  - nullptr: defaults (wR3B = 0, "copy" R3-Block)
  int wR3B = 0;
+ double slackBigMScale = 100.0;
  if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( r3bc ) )
   wR3B = tcfg->f_value;
+ else if( auto tcfg = dynamic_cast<
+	  SimpleConfiguration< std::pair< int , double > > * >( r3bc ) ) {
+  wR3B = tcfg->f_value.first;
+  slackBigMScale = tcfg->f_value.second;
+  }
 
  if( ( wR3B < 0 ) || ( wR3B > 2 ) )
   throw( std::invalid_argument(  _prfx + "invalid R3B type" ) );
@@ -1191,7 +1353,7 @@ Block * CapacitatedFacilityLocationBlock::get_R3_Block( Configuration * r3bc ,
  else
   MCFB = new MCFBlock( father );
 
- guts_of_get_R3B_MCF( MCFB , wR3B );
+ guts_of_get_R3B_MCF( MCFB , wR3B , false , false , slackBigMScale );
 
  return( MCFB );
 
@@ -1215,9 +1377,14 @@ void CapacitatedFacilityLocationBlock::map_back_solution( Block * R3B ,
  if( ! ( ws & FormMsk ) )  // actually nothing to map back
   return;                  // silently (and cowardly) return
 
+ // see comments in get_R3_Block() for the accepted Configuration forms
+ // (slackBigMScale is ignored here, only wR3B is used)
  int wR3B = 0;
  if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( r3bc ) )
   wR3B = tcfg->f_value;
+ else if( auto tcfg = dynamic_cast<
+	  SimpleConfiguration< std::pair< int , double > > * >( r3bc ) )
+  wR3B = tcfg->f_value.first;
 
  if( ( wR3B < 0 ) || ( wR3B > 2 ) )
   throw( std::invalid_argument(  _prfx + "invalid R3B type" ) );
@@ -1302,9 +1469,14 @@ void CapacitatedFacilityLocationBlock::map_forward_solution( Block * R3B ,
  if( ! ( ws & FormMsk ) )  // actually nothing to map forward
   return;                  // silently (and cowardly) return
 
+ // see comments in get_R3_Block() for the accepted Configuration forms
+ // (slackBigMScale is ignored here, only wR3B is used)
  int wR3B = 0;
  if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( r3bc ) )
   wR3B = tcfg->f_value;
+ else if( auto tcfg = dynamic_cast<
+	  SimpleConfiguration< std::pair< int , double > > * >( r3bc ) )
+  wR3B = tcfg->f_value.first;
 
  if( ( wR3B < 0 ) || ( wR3B > 2 ) )
   throw( std::invalid_argument(  _prfx + "invalid R3B type" ) );
@@ -1371,9 +1543,16 @@ bool CapacitatedFacilityLocationBlock::map_forward_Modification(
 
  const static std::string _prfx =
               "CapacitatedFacilityLocationBlock::map_forward_Modification: ";
+ // see comments in get_R3_Block() for the accepted Configuration forms
  int wR3B = 0;
+ double slackBigMScale = 100.0;
  if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( r3bc ) )
   wR3B = tcfg->f_value;
+ else if( auto tcfg = dynamic_cast<
+	  SimpleConfiguration< std::pair< int , double > > * >( r3bc ) ) {
+  wR3B = tcfg->f_value.first;
+  slackBigMScale = tcfg->f_value.second;
+  }
 
  if( ( wR3B < 0 ) || ( wR3B > 2 ) )
   throw( std::invalid_argument(  _prfx + "invalid R3B type" ) );
@@ -1411,7 +1590,7 @@ bool CapacitatedFacilityLocationBlock::map_forward_Modification(
  // it is the only case where wR3B is needed
 
  if( auto tmod = dynamic_cast< const NBModification * >( mod ) ) {
-  guts_of_get_R3B_MCF( MCFB , wR3B );
+  guts_of_get_R3B_MCF( MCFB , wR3B , false , false , slackBigMScale );
   return( true );
   }
 
@@ -1427,9 +1606,14 @@ bool CapacitatedFacilityLocationBlock::map_back_Modification( Block * R3B ,
 {
  const static std::string _prfx =
                  "CapacitatedFacilityLocationBlock::map_back_Modification: ";
+ // see comments in get_R3_Block() for the accepted Configuration forms
+ // (slackBigMScale is ignored here, only wR3B is used)
  int wR3B = 0;
  if( auto tcfg = dynamic_cast< SimpleConfiguration< int > * >( r3bc ) )
   wR3B = tcfg->f_value;
+ else if( auto tcfg = dynamic_cast<
+	  SimpleConfiguration< std::pair< int , double > > * >( r3bc ) )
+  wR3B = tcfg->f_value.first;
 
  if( ( wR3B < 0 ) || ( wR3B > 2 ) )
   throw( std::invalid_argument(  _prfx + "invalid R3B type" ) );
@@ -1697,6 +1881,19 @@ void CapacitatedFacilityLocationBlock::add_Modification( sp_Mod mod ,
     if( auto gmod = dynamic_cast< GroupModification * >( mod.get() ) )
      guts_of_add_ModificationKFG( gmod , chnl );
 
+   break;
+
+  case( BenForm ):  // Benders friendly Formulation
+   if( mod->concerns_Block() ) {  // the usual drill
+    mod->concerns_Block( false );
+    guts_of_add_ModificationBFA( mod.get() , chnl );
+    }
+   // BenForm has no sub-Block, hence no "physical" Modification reaching
+   // CFLB::add_Modification from sub-Block: the hidden BendersBFunction
+   // (f_BF) is *not* a sub-Block, so its inner MCFBlock's Modification
+   // bubble up to f_BF but stop there (f_BF has no Observer); the only
+   // "physical" Modification reaching here come from CFLB's own chg_*
+   // methods which use the standard Block::add_Modification path below.
    break;
 
   default:          // Flow Formulation
@@ -2010,9 +2207,16 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
     close_if_needed( iAM , 2 );  // close the new channel
     break;
     }
-   default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( FlwForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
     guts_of_chg_tcost_MCF( MCFB( v_Block[ 1 ] ) , rng ,
 			   issueMod , issueAMod );
+    break;
+   case( BenForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    guts_of_chg_tcost_MCF( MCFB( f_BF->get_inner_block() ) , rng ,
+			   issueMod , issueAMod );
+    if( AR & HasCapCns )
+     f_v_box.set_lhs( compute_v_lower_bound() , un_ModBlock( issueAMod ) );
+    reset_benders_cuts();
    }
 
   f_mod_skip = false;
@@ -2025,7 +2229,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
- 
+
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
@@ -2133,9 +2337,16 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
     close_if_needed( iAM , 2 );  // close the new channel
     break;
     }
-   default:    // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( FlwForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
     guts_of_chg_tcost_MCF( MCFB( v_Block[ 1 ] ) , nms , ordered ,
 			   issueMod , issueAMod );
+    break;
+   case( BenForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    guts_of_chg_tcost_MCF( MCFB( f_BF->get_inner_block() ) , nms , ordered ,
+			   issueMod , issueAMod );
+    if( AR & HasCapCns )
+     f_v_box.set_lhs( compute_v_lower_bound() , un_ModBlock( issueAMod ) );
+    reset_benders_cuts();
    }
 
   f_mod_skip = false;
@@ -2148,7 +2359,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
- 
+
  if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
   if( ! ordered )
    std::sort( nms.begin() , nms.end() );
@@ -2192,9 +2403,16 @@ void CapacitatedFacilityLocationBlock::chg_transportation_cost( Cost NCost ,
     BKB( v_Block[ i ] )->chg_profit( NCost , j , issueMod , issueAMod );
     break;
     }
-   default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( FlwForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
     guts_of_chg_tcost_MCF( MCFB( v_Block[ 1 ] ) , Range( p , p + 1 ) ,
 			   issueMod , issueAMod );
+    break;
+   case( BenForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    guts_of_chg_tcost_MCF( MCFB( f_BF->get_inner_block() ) ,
+			   Range( p , p + 1 ) , issueMod , issueAMod );
+    if( AR & HasCapCns )
+     f_v_box.set_lhs( compute_v_lower_bound() , un_ModBlock( issueAMod ) );
+    reset_benders_cuts();
    }
 
   f_mod_skip = false;
@@ -2260,11 +2478,28 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
 	  )->chg_weight( - *(NCap++) , f_n_customers , issueMod , iAM );
     break;
     }
-   default: {  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( FlwForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     MCFB( v_Block[ 1 ] )->chg_ucaps( NCap , rng , issueMod , iAM );
     for( Index i = rng.first ; i < rng.second ; ++i )
      LF( v_cap[ i ].get_function()
 	 )->modify_coefficient( 1 , - *(NCap++) , iAM );
+    break;
+    }
+   case( BenForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
+    auto mcfb = MCFB( f_BF->get_inner_block() );
+    // mcfb is the hidden inner Block of f_BF and lives in its own channel
+    // namespace (no parent): the channel of iAM was opened on *this*, so we
+    // strip it via par2mod() before forwarding to mcfb. MCFBlock::chg_ucaps
+    // will open its own internal channel if num > 1.
+    mcfb->chg_ucaps( NCap , rng , issueMod , Observer::par2mod( iAM ) );
+    // update A_{i,i} = v_capacity[ i ] in the BendersBFunction mapping;
+    // the v_capacity vector was just updated above so re-read from it
+    for( Index i = rng.first ; i < rng.second ; ++i ) {
+     BendersBFunction::RealVector Ai( f_n_facilities , 0 );
+     Ai[ i ] = v_capacity[ i ];
+     f_BF->modify_row( i , std::move( Ai ) , 0 , eNoBlck );
+     }
+    reset_benders_cuts();
     }
    }
 
@@ -2280,7 +2515,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
- 
+
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
@@ -2333,12 +2568,27 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
 	  )->chg_weight( - *(NCap++) , f_n_customers , issueMod , iAM );
     break;
     }
-   default: {  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( FlwForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     MCFB( v_Block[ 1 ] )->chg_ucaps( NCap , Subset( nms ) , ordered ,
 				     issueMod , iAM );
     for( auto i : nms )
      LF( v_cap[ i ].get_function()
-	 )->modify_coefficient( 1 , - *(NCap++) , iAM ); 
+	 )->modify_coefficient( 1 , - *(NCap++) , iAM );
+    break;
+    }
+   case( BenForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
+    auto mcfb = MCFB( f_BF->get_inner_block() );
+    // mcfb is the hidden inner Block of f_BF and lives in its own channel
+    // namespace (no parent): the channel of iAM was opened on *this*, so we
+    // strip it via par2mod() before forwarding to mcfb.
+    mcfb->chg_ucaps( NCap , Subset( nms ) , ordered , issueMod ,
+                     Observer::par2mod( iAM ) );
+    for( auto i : nms ) {
+     BendersBFunction::RealVector Ai( f_n_facilities , 0 );
+     Ai[ i ] = v_capacity[ i ];
+     f_BF->modify_row( i , std::move( Ai ) , 0 , eNoBlck );
+     }
+    reset_benders_cuts();
     }
    }
 
@@ -2353,7 +2603,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
- 
+
  if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
   if( ! ordered )
    std::sort( nms.begin() , nms.end() );
@@ -2397,11 +2647,20 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacity( Demand NCap ,
 	 )->chg_weight( - NCap , f_n_customers , issueMod , issueAMod );
     break;
     }
-   default: {  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( FlwForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     auto iAM = open_if_needed( issueAMod , 2 );
     MCFB( v_Block[ 1 ] )->chg_ucap( NCap , i , issueMod , iAM );
     LF( v_cap[ i ].get_function() )->modify_coefficient( 1 , - NCap , iAM );
     close_if_needed( iAM , 2 );
+    break;
+    }
+   case( BenForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
+    auto mcfb = MCFB( f_BF->get_inner_block() );
+    mcfb->chg_ucap( NCap , i , issueMod , issueAMod );
+    BendersBFunction::RealVector Ai( f_n_facilities , 0 );
+    Ai[ i ] = NCap;
+    f_BF->modify_row( i , std::move( Ai ) , 0 , eNoBlck );
+    reset_benders_cuts();
     }
    }
 
@@ -2462,8 +2721,15 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
 
     break;
 
-   default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( FlwForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
     guts_of_chg_dem_MCF( MCFB( v_Block[ 1 ] ) , rng , issueMod , issueAMod );
+    break;
+   case( BenForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    guts_of_chg_dem_MCF( MCFB( f_BF->get_inner_block() ) , rng ,
+			 issueMod , issueAMod );
+    reset_benders_cuts();
+    // LB(v) does not depend on customer demands (v_t_cost is total cost,
+    // already independent of demand), so no f_v_box update needed
    }
 
   f_mod_skip = false;
@@ -2477,7 +2743,7 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
- 
+
  if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
@@ -2529,9 +2795,14 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
 
     break;
 
-   default:    // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( FlwForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
     guts_of_chg_dem_MCF( MCFB( v_Block[ 1 ] ) , nms , ordered ,
 			 issueMod , issueAMod );
+    break;
+   case( BenForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    guts_of_chg_dem_MCF( MCFB( f_BF->get_inner_block() ) , nms , ordered ,
+			 issueMod , issueAMod );
+    reset_benders_cuts();
    }
 
   f_mod_skip = false;
@@ -2545,7 +2816,7 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
- 
+
  if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
   if( ! ordered )
    std::sort( nms.begin() , nms.end() );
@@ -2595,9 +2866,14 @@ void CapacitatedFacilityLocationBlock::chg_customer_demand( Demand NDem ,
 
     break;
 
-   default:    // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( FlwForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
     guts_of_chg_dem_MCF( MCFB( v_Block[ 1 ] ) , Range( j , j + 1 ) ,
 			 issueMod , issueAMod );
+    break;
+   case( BenForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    guts_of_chg_dem_MCF( MCFB( f_BF->get_inner_block() ) ,
+			 Range( j , j + 1 ) , issueMod , issueAMod );
+    reset_benders_cuts();
    }
 
   f_mod_skip = false;
@@ -3240,9 +3516,12 @@ void CapacitatedFacilityLocationBlock::chg_UnSplittable( bool unsplt ,
     f_mod_skip = false;
     break;
     }
-   default:  // FlwForm - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   case( FlwForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
     throw( std::invalid_argument(
 	   "unsplittable problem not supported with the Flow Formulation" ) );
+   case( BenForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    throw( std::invalid_argument(
+	   "unsplittable problem not supported with the Benders Formulation" ) );
    }
   }
  else
@@ -3281,12 +3560,21 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
  for( auto & lst : v_sfc )  // clear the strong forcing constraints
   for( auto & cnst : lst )
    cnst.clear();
+ for( auto & cnst : v_benders_cuts )  // clear the Benders cuts
+  cnst.clear();
+ f_v_box.clear();            // clear the v_epi box constraint
  for( auto & cnst : v_cap )  // clear the capacity constraints
-  cnst.clear(); 
+  cnst.clear();
  for( auto & cnst : v_sat )  // clear the satisfaction constraints
   cnst.clear();
  maxF.clear();               // clear max. opened facilities constraint
  f_obj.clear();              // clear the objective function
+
+ // destroy the hidden BendersBFunction (which owns its inner Block)
+ if( f_BF ) {
+  delete f_BF;
+  f_BF = nullptr;
+  }
 
  if( ( AR & FormMsk ) == FlwForm ) {
   // AbstractBlock assumes it is the sole owner of its Constraint and
@@ -3311,6 +3599,7 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
 
  // then delete them all
  v_sfc.clear();
+ v_benders_cuts.clear();
  v_cap.clear();
  v_sat.clear();
 
@@ -3335,7 +3624,9 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::guts_of_get_R3B_MCF( MCFBlock * mcfb ,
-							    int wR3B )
+				int wR3B , bool forceWR3B2 ,
+				bool zeroFacilityArcCost ,
+				double slackBigMScale )
 {
  // structure of the graph (remember that node names start from 1):
  //
@@ -3344,7 +3635,7 @@ void CapacitatedFacilityLocationBlock::guts_of_get_R3B_MCF( MCFBlock * mcfb ,
  //   customer nodes
  // - node f_n_facilities + f_n_customers + 1: super-source
  //
- // - arcs 0 ... f_n_facilities: from super-source to facility 
+ // - arcs 0 ... f_n_facilities: from super-source to facility
  // - arcs f_n_facilities ... f_n_facilities * ( f_n_customers + 1 ) - 1:
  //   from source to facility, arranged facility-wise (first f_n_customers
  //   arcs from 1st facility, then f_n_customers arcs from 2nd facility ...)
@@ -3354,9 +3645,11 @@ void CapacitatedFacilityLocationBlock::guts_of_get_R3B_MCF( MCFBlock * mcfb ,
  // from super-source directly to customers (huge cost, +INF capacity) to
  // ensure the MCF is never empty
 
+ const bool hasSlack = ( wR3B > 1 ) || forceWR3B2;
+
  Index NN = f_n_facilities + f_n_customers + 1;
  Index NA = f_n_facilities * ( f_n_customers + 1 );
- if( wR3B > 1 )
+ if( hasSlack )
   NA += f_n_customers;
 
  Subset EN( NA );
@@ -3387,8 +3680,10 @@ void CapacitatedFacilityLocationBlock::guts_of_get_R3B_MCF( MCFBlock * mcfb ,
   SN[ a ] = ss;
   EN[ a ] = i + 1;
   U[ a ] = v_capacity[ i ];
-  // arcs corresponding to fixed-open facilities have 0 cost
-  C[ a++ ] = v_fxd[ i ] != yFxd1 ? v_f_cost[ i ] / v_capacity[ i ] : 0;
+  // arcs corresponding to fixed-open facilities have 0 cost; in the "Benders
+  // friendly" variant (zeroFacilityArcCost) the cost is always 0
+  C[ a++ ] = ( zeroFacilityArcCost || v_fxd[ i ] == yFxd1 )
+             ? 0 : v_f_cost[ i ] / v_capacity[ i ];
   }
 
  // now the facility -> customers arcs
@@ -3400,7 +3695,7 @@ void CapacitatedFacilityLocationBlock::guts_of_get_R3B_MCF( MCFBlock * mcfb ,
    C[ a++ ] = v_t_cost[ i ][ j ] / v_demand[ j ];
    }
 
- if( wR3B > 1 ) {
+ if( hasSlack ) {
   // now the artificial arcs to ensure feasibility
 
   for( Index j = 0 ; j < f_n_customers ; ++j ) {
@@ -3414,8 +3709,8 @@ void CapacitatedFacilityLocationBlock::guts_of_get_R3B_MCF( MCFBlock * mcfb ,
     if( auto tci = C[ i ] + v_t_cost[ i ][ j ] / v_demand[ j ] ;
 	maxc < tci )
      maxc = tci;
-   maxc += 1;    // ! +1
-   maxc *= 100;  // ! *100 
+   maxc += 1;                  // baseline: just above the worst real cost
+   maxc *= slackBigMScale;     // multiplicative "big-M" cushion
    C[ a++ ] = maxc;
    }
   }
@@ -3497,15 +3792,21 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
  // transportation costs, i.e., the (unitary flow) cost of the transportation
  // arc ( i , j ) is v_t_cost[ i ][ h ] / v_demand[ j ]
 
- // there will be three Modification, one for changing costs
+ // there will be three Modification, one for changing costs.
+ // Note: the channel is opened on *mcfb*, not on *this*, because all the
+ // operations below target mcfb. This works uniformly for FlwForm (mcfb is
+ // a sub-Block of this), MCF R3-Block (mcfb is detached), and BenForm
+ // (mcfb is the hidden inner Block of f_BF, no parent). Opening on *this*
+ // would break BenForm: mcfb has no parent, so it could not escalate
+ // open_channel() upward to find the channel.
  not_ModBlock( issueAMod );
- auto iAM = open_if_needed( issueAMod , 3 );
+ auto iAM = mcfb->open_if_needed( issueAMod , 3 );
  f_mod_skip = true;
 
  // change the demands: these are the deficits of the corresponding demand
  // nodes plus the deficit of the super-source, to ensure that the sum of
- // all deficits always remains == 0 
- if( rng.second == rng.first + 1 ) 
+ // all deficits always remains == 0
+ if( rng.second == rng.first + 1 )
   mcfb->chg_dfct( v_demand[ rng.first ] , f_n_facilities + rng.first ,
 		  issueMod , iAM );
  else
@@ -3529,7 +3830,7 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
  guts_of_chg_tcost_MCF( mcfb , nms , true , issueMod , iAM );
 
  f_mod_skip = false;
- close_if_needed( iAM , 3 );  // close the new channel
+ mcfb->close_if_needed( iAM , 3 );  // close the new channel
  }
 
 /*--------------------------------------------------------------------------*/
@@ -3542,9 +3843,11 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
  // transportation costs, i.e., the (unitary flow) cost of the transportation
  // arc ( i , j ) is v_t_cost[ i ][ h ] / v_demand[ j ]
 
- // there will be two Modification, one being for changing costs
+ // there will be two Modification, one being for changing costs.
+ // See the comment in the range overload of guts_of_chg_dem_MCF() for why
+ // the channel is opened on *mcfb* and not on *this*.
  not_ModBlock( issueAMod );
- auto iAM = open_if_needed( issueAMod , 2 );
+ auto iAM = mcfb->open_if_needed( issueAMod , 2 );
  f_mod_skip = true;
 
  // change the demands: these are the deficits of the corresponding demand
@@ -3577,7 +3880,7 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
  guts_of_chg_tcost_MCF( mcfb , nnms , ordered , issueMod , iAM );
 
  f_mod_skip = false;
- close_if_needed( iAM , 2 );  // close the new channel
+ mcfb->close_if_needed( iAM , 2 );  // close the new channel
  }
 
 /*--------------------------------------------------------------------------*/
@@ -4424,6 +4727,124 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 
 /*--------------------------------------------------------------------------*/
 
+void CapacitatedFacilityLocationBlock::guts_of_add_ModificationBFA(
+							c_p_Mod mod , ChnlName chnl )
+{
+ // process abstract Modification for the "Benders friendly" Formulation - - -
+ /* BenForm is a "leaf" Block (no sub-Block: the hidden BendersBFunction
+  * f_BF is not a sub-Block of this). All abstract Modification reaching
+  * here therefore originate from the master abstract representation:
+  *
+  * - Modifications of the LinearFunction inside f_obj concerning the y_i
+  *   coefficients (the v_epi coefficient must stay 1, that is rejected);
+  *
+  * - VariableMod fixing/unfixing v_y[ i ];
+  *
+  * Anything else is rejected. */
+
+ // C05FunctionModLinRngd - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( auto tmod = dynamic_cast< const C05FunctionModLinRngd * >( mod ) ) {
+  c_Index f = tmod->range().first;
+  c_Index s = tmod->range().second;
+  auto lfo = LF( tmod->function() );
+
+  if( LF( f_obj.get_function() ) != lfo )
+   throw( std::invalid_argument(
+		      "unsupported LinearFunction Modification in BenForm" ) );
+
+  // the LinearFunction of f_obj is [ y_0 , ... , y_{m-1} , v_epi ]
+  if( s > f_n_facilities )
+   throw( std::invalid_argument(
+	     "the v_epi coefficient must remain 1 in the BenForm Objective" ) );
+
+  c_Index sz = s - f;
+  if( sz == 1 )
+   chg_facility_cost( (lfo->get_v_var())[ f ].second , f ,
+		      make_par( eNoBlck , chnl ) , eDryRun );
+  else {
+   CVector NC( sz );
+   auto NCit = NC.begin();
+   for( Index i = f ; i < s ; )
+    *(NCit++) = (lfo->get_v_var())[ i++ ].second;
+   chg_facility_costs( NC.begin() , Range( f , s ) ,
+		       make_par( eNoBlck , chnl ) , eDryRun );
+   }
+
+  return;
+  }
+
+ // C05FunctionModLinSbst - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( auto tmod = dynamic_cast< const C05FunctionModLinSbst * >( mod ) ) {
+  auto & nms = tmod->subset();
+  auto lfo = LF( tmod->function() );
+
+  if( LF( f_obj.get_function() ) != lfo )
+   throw( std::invalid_argument(
+		      "unsupported LinearFunction Modification in BenForm" ) );
+
+  if( ( ! nms.empty() ) && ( nms.back() >= f_n_facilities ) )
+   throw( std::invalid_argument(
+	     "the v_epi coefficient must remain 1 in the BenForm Objective" ) );
+
+  if( nms.size() == 1 )
+   chg_facility_cost( (lfo->get_v_var())[ nms.front() ].second , nms.front() ,
+		      make_par( eNoBlck , chnl ) , eDryRun );
+  else {
+   CVector NC( nms.size() );
+   auto NCit = NC.begin();
+   for( auto h : nms )
+    *(NCit++) = (lfo->get_v_var())[ h ].second;
+   chg_facility_costs( NC.begin() , Subset( nms ) , true ,
+		       make_par( eNoBlck , chnl ) , eDryRun );
+   }
+
+  return;
+  }
+
+ // RowConstraintMod - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // changes to f_v_box are produced internally with un_ModBlock(), so they
+ // should not arrive here with concerns_Block() == true; user-initiated
+ // changes to v_benders_cuts or maxF are not supported in BenForm
+ if( dynamic_cast< const RowConstraintMod * >( mod ) )
+  throw( std::invalid_argument( "RowConstraintMod not allowed in BenForm" ) );
+
+ // VariableMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( auto tmod = dynamic_cast< const VariableMod * >( mod ) ) {
+  auto var = static_cast< ColVariable * >( tmod->variable() );
+
+  // not allowed on v_epi
+  if( var == & v_epi )
+   throw( std::invalid_argument( "VariableMod on v_epi not allowed" ) );
+
+  // must be a v_y[ i ]
+  if( ( var < & v_y.front() ) || ( var > & v_y.back() ) )
+   throw( std::invalid_argument( "VariableMod to unknown variable" ) );
+
+  c_Index i = std::distance( & v_y.front() , var );
+
+  auto new_state = tmod->new_state();
+  if( ( ! ColVariable::is_unitary( new_state ) ) ||
+      ( ! ColVariable::is_positive( new_state ) ) )
+   throw( std::invalid_argument( "invalid ColVariable Modification" ) );
+
+  if( Variable::is_fixed( new_state ) )
+   if( var->get_value() == 1 )
+    fix_open_facility( i , make_par( eNoBlck , chnl ) , eDryRun );
+   else
+    close_facility( i , make_par( eNoBlck , chnl ) , eDryRun );
+  else
+   open_facility( i , make_par( eNoBlck , chnl ) , eDryRun );
+
+  return;
+  }
+
+ throw( std::invalid_argument(
+	   "unsupported Modification to CapacitatedFacilityLocationBlock" ) );
+
+ }  // end( CapacitatedFacilityLocationBlock::guts_of_add_ModificationBFA )
+
+/*--------------------------------------------------------------------------*/
+
 bool CapacitatedFacilityLocationBlock::guts_of_map_f_Mod_copy(
 		       CapacitatedFacilityLocationBlock * R3B , c_p_Mod mod ,
 		       ModParam issuePMod , ModParam issueAMod )
@@ -4943,6 +5364,327 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
  return( false );  // any other Modification is not mapped
 
  }  // end( CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF )
+
+/*--------------------------------------------------------------------------*/
+
+double CapacitatedFacilityLocationBlock::compute_v_lower_bound( void ) const
+{
+ // LB(v) = sum_j min_i v_t_cost[i][j]
+ double lb = 0;
+ for( Index j = 0 ; j < f_n_customers ; ++j ) {
+  auto minj = Inf< Cost >();
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   if( v_t_cost[ i ][ j ] < minj )
+    minj = v_t_cost[ i ][ j ];
+  lb += minj;
+  }
+ return( lb );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::build_BendersBFunction( void )
+{
+ // destroy any previous instance (also deletes the previous inner Block)
+ if( f_BF ) {
+  delete f_BF;
+  f_BF = nullptr;
+  }
+
+ // configure the inner MCFBlock and the BendersBFunction itself via
+ // f_BlockConfig->f_extra_Configuration. BenForm requires a Solver attached
+ // to the inner Block (used during generate_dynamic_constraints() to
+ // evaluate phi(y)), so the extra Configuration MUST be there.
+ //
+ // The expected form (preferred, cleanest) is
+ //
+ //  SimpleConfiguration< std::pair< Configuration * , Configuration * > >
+ //
+ // where:
+ //
+ //  - f_value.first is the "R3-Block Configuration": SimpleConfiguration<int>
+ //    or SimpleConfiguration< pair<int,double> >, as accepted by
+ //    get_R3_Block(). The int (wR3B) is *ignored* here (the hidden inner
+ //    MCFBlock is always built as a "flow relaxation"); the double
+ //    (slackBigMScale, when present) is used to scale the slack-arc cost
+ //    passed to guts_of_get_R3B_MCF() when the BenForm sub-variant in use
+ //    employs slack arcs (HasBenSlack, i.e., wf & 3 == 2 in
+ //    generate_abstract_variables()). It can be nullptr to mean "default".
+ //
+ //  - f_value.second is the ComputeConfig of the BendersBFunction
+ //    (cf. BendersBFunction::set_ComputeConfig()): it carries parameters of
+ //    the BendersBFunction (eps_abs, eps_rel, ...) and, via its own
+ //    f_extra_Configuration (a SimpleConfiguration< map< string,
+ //    Configuration * > > with the keys recognised by BendersBFunction),
+ //    the BlockConfig and BlockSolverConfig to be applied to the hidden
+ //    inner Block (the "BlockSolverConfig" key being required because BenForm
+ //    needs a Solver registered to the inner Block).
+ //
+ // For backward compatibility the following older forms are also accepted:
+ //
+ //  - a BlockSolverConfig: applied to the inner Block to register a Solver
+ //    (slackBigMScale defaults to 100);
+ //
+ //  - a SimpleConfiguration< std::pair< Configuration * , Configuration * > >
+ //    where f_value.second is a BlockSolverConfig (not a ComputeConfig).
+ //    In that case f_value.first may be a BlockConfig (applied to mcfb) or
+ //    an R3-Block Cfg (parsed for slackBigMScale) or nullptr.
+ //
+ // Anything else (including a missing extra Configuration) is an error.
+
+ const static std::string _bfprfx =
+       "CapacitatedFacilityLocationBlock::build_BendersBFunction: ";
+
+ if( ( ! f_BlockConfig ) || ( ! f_BlockConfig->f_extra_Configuration ) )
+  throw( std::logic_error(
+   _bfprfx + "BenForm requires an extra Configuration in the BlockConfig "
+   "(see CFLB::set_BlockConfig() comments)" ) );
+
+ auto * extra = f_BlockConfig->f_extra_Configuration;
+
+ // pre-parse the extra Configuration to extract:
+ //  - bfcc: the ComputeConfig of the BendersBFunction (preferred form, the
+ //          BendersBFunction handles inner Block + BendersBFunction params)
+ //  - bsc:  a BlockSolverConfig for the inner MCF, in the legacy forms
+ //  - bc:   an optional BlockConfig to apply to the inner MCF (legacy)
+ //  - slackBigMScale: optional, from an R3-Block Cfg in the first slot of
+ //                    the pair form (default 100)
+ ComputeConfig * bfcc = nullptr;
+ BlockSolverConfig * bsc = nullptr;
+ BlockConfig * bc = nullptr;
+ double slackBigMScale = 100.0;
+
+ auto parse_first_slot =
+  [ & ]( Configuration * first ) {
+   if( ! first )
+    return;
+   if( auto * tbc = dynamic_cast< BlockConfig * >( first ) ) {
+    bc = tbc;
+    return;
+    }
+   if( auto * tcfg = dynamic_cast<
+        SimpleConfiguration< std::pair< int , double > > * >( first ) ) {
+    slackBigMScale = tcfg->f_value.second;
+    return;
+    }
+   if( dynamic_cast< SimpleConfiguration< int > * >( first ) )
+    return;                                  // wR3B is ignored
+   throw( std::logic_error(
+    _bfprfx + "first element of the extra Configuration pair must be a "
+    "BlockConfig, a SimpleConfiguration< int >, a "
+    "SimpleConfiguration< pair< int , double > >, or nullptr" ) );
+   };
+
+ if( auto * tbsc = dynamic_cast< BlockSolverConfig * >( extra ) ) {
+  bsc = tbsc;                                // legacy bare-BlockSolverConfig
+  }
+ else
+  if( auto * pcfg = dynamic_cast<
+       SimpleConfiguration< std::pair< Configuration * ,
+                                       Configuration * > > * >( extra ) ) {
+   parse_first_slot( pcfg->f_value.first );
+   // dispatch the second slot: ComputeConfig (preferred) or
+   // BlockSolverConfig (legacy)
+   auto * second = pcfg->f_value.second;
+   if( auto * tcc = dynamic_cast< ComputeConfig * >( second ) )
+    bfcc = tcc;
+   else
+    if( auto * tbsc = dynamic_cast< BlockSolverConfig * >( second ) )
+     bsc = tbsc;
+    else
+     throw( std::logic_error(
+      _bfprfx + "second element of the extra Configuration pair must be a "
+      "ComputeConfig (for the BendersBFunction) or a BlockSolverConfig "
+      "(legacy)" ) );
+   }
+  else
+   throw( std::logic_error(
+    _bfprfx + "the extra Configuration must be a BlockSolverConfig or a "
+    "SimpleConfiguration< pair< Configuration * , Configuration * > >" ) );
+
+ // build the inner MCFBlock: BenForm variant of the MCF relaxation.
+ //   - forceWR3B2 = (AR & HasBenSlack) != 0: when set, the inner MCF has
+ //     "slack arcs" of big-M cost, so it is always feasible (at the cost
+ //     of losing infeasibility detection at a given y); when not set, the
+ //     inner MCF has no slack arcs and infeasibility at a given y is real
+ //     (handled by separate_one_benders_cut() emitting Benders feasibility
+ //     cuts from the dual ray).
+ //   - zeroFacilityArcCost = true: the f_i live in the master Objective.
+ //   - slackBigMScale: taken from the R3-Block Cfg in the extra
+ //     Configuration pair (default 100); only matters in the slack-arcs
+ //     variant.
+ const bool useSlack = ( AR & HasBenSlack );
+ auto * mcfb = new MCFBlock();
+ guts_of_get_R3B_MCF( mcfb , 0 , useSlack , true , slackBigMScale );
+ mcfb->generate_abstract_variables();
+ mcfb->generate_abstract_constraints();
+ mcfb->generate_objective();
+
+ // build the BendersBFunction. The active variables are the design ones
+ // v_y[ i ]; the mapping is A_{i,i} = v_capacity[ i ] (off-diagonal 0),
+ // b_i = 0, constraints[ i ] = UB constraint of arc i (source -> facility),
+ // sides[ i ] = eRHS. Thus the RHS of the i-th UB constraint, which is the
+ // arc capacity, is set to v_capacity[ i ] * y_i at compute() time
+ c_Index m = f_n_facilities;
+
+ BendersBFunction::VarVector xvars( m );
+ for( Index i = 0 ; i < m ; ++i )
+  xvars[ i ] = & v_y[ i ];
+
+ BendersBFunction::MultiVector A( m , BendersBFunction::RealVector( m , 0 ) );
+ for( Index i = 0 ; i < m ; ++i )
+  A[ i ][ i ] = v_capacity[ i ];
+
+ BendersBFunction::RealVector b( m , 0 );
+
+ BendersBFunction::ConstraintVector cns( m );
+ BendersBFunction::ConstraintSideVector sides( m ,
+                                            BendersBFunction::eRHS );
+ for( Index i = 0 ; i < m ; ++i )
+  cns[ i ] = mcfb->i2p_ub( i );
+
+ // parent of f_BF: nullptr - the BendersBFunction is "hidden" inside CFLB
+ // and must not propagate Modification upstream to CFLB
+ f_BF = new BendersBFunction( mcfb , std::move( xvars ) ,
+				    std::move( A ) , std::move( b ) ,
+				    std::move( cns ) ,
+				    std::move( sides ) , nullptr );
+
+ // configure the BendersBFunction (preferred path) and/or the inner Block
+ // (legacy path). In the preferred path BendersBFunction::set_ComputeConfig()
+ // takes care of applying the BlockConfig / BlockSolverConfig to the inner
+ // Block via the named map in its extra Configuration.
+ if( bfcc )
+  f_BF->set_ComputeConfig( bfcc );
+ else {
+  if( bc )
+   bc->apply( mcfb );
+  if( bsc )
+   bsc->apply( mcfb );
+  }
+
+ if( mcfb->get_registered_solvers().empty() )
+  throw( std::logic_error(
+   _bfprfx + "no Solver registered to the BendersBFunction inner Block" ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::reset_benders_cuts( void )
+{
+ if( v_benders_cuts.empty() )
+  return;
+
+ // drop all cuts: the corresponding BlockModRmv< FRowConstraint > is issued
+ // to listening Solver(s) so that they remove them from their LP. Use
+ // eNoBlck because this is an "abstract representation only" operation and
+ // there is no point in re-entering this Block's add_Modification.
+ // An empty subset means "remove all"
+ remove_dynamic_constraints( v_benders_cuts , Subset() , true , eNoBlck );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+bool CapacitatedFacilityLocationBlock::separate_one_benders_cut(
+							    double eps_rel )
+{
+ if( ! f_BF )
+  return( false );
+
+ // compute phi(y) at the current y values - - - - - - - - - - - - - - - - -
+ auto ret = f_BF->compute();
+
+ c_Index m = f_n_facilities;
+
+ // Two cases depending on the Solver status of the inner LP:
+ //
+ //  - kOK: the LP has an optimal primal-dual pair; we extract a *diagonal*
+ //    (optimality) linearization, giving an optimality cut
+ //
+ //          v + sum_i ( - g_i ) y_i >= alpha
+ //
+ //  - kInfeasible: the LP is infeasible (only possible in the no-slack
+ //    BenForm variant, ! ( AR & HasBenSlack )); we extract a *vertical*
+ //    (feasibility) linearization from the dual ray (Farkas direction),
+ //    giving a feasibility cut
+ //
+ //          sum_i ( - g_i ) y_i >= alpha
+ //
+ //    (no v_epi term: feasibility cuts cut off entire y regions where the
+ //    inner LP is infeasible, irrespective of the epigraph value).
+ //
+ // Any other status (kError, kUnbounded, kStopTime, ...) is treated as a
+ // "cannot separate now" condition and the function returns false without
+ // adding a cut.
+
+ bool diagonal;     // true → optimality cut, false → feasibility cut
+ if( ret == Solver::kOK )
+  diagonal = true;
+ else
+  if( ret == Solver::kInfeasible ) {
+   if( AR & HasBenSlack )
+    // the slack-arcs variant should never return kInfeasible; if it does,
+    // something went wrong inside the inner Solver and we cannot recover
+    return( false );
+   diagonal = false;
+   }
+  else
+   return( false );
+
+ // ensure a linearization of the appropriate kind is available; if the
+ // primal/dual or dual-ray data is not yet stored in the Solver,
+ // compute_new_linearization() asks for it explicitly
+ if( ! f_BF->has_linearization( diagonal ) )
+  if( ! f_BF->compute_new_linearization( diagonal ) )
+   return( false );
+
+ // get its coefficients g (one per active variable) and constant alpha
+ BendersBFunction::RealVector g( m );
+ f_BF->get_linearization_coefficients( g.data() ,
+				       BendersBFunction::Range( 0 , m ) );
+ double alpha = f_BF->get_linearization_constant();
+
+ // violation check:
+ //  - optimality cut:  LHS = v_epi^* + sum_i (- g_i) y_i^*,
+ //                     violation = alpha - LHS
+ //  - feasibility cut: LHS =          sum_i (- g_i) y_i^*,
+ //                     violation = alpha - LHS
+ // The cut is added only if violated by more than the *relative*
+ // threshold eps_rel * max( |v_epi^*| , 1 ). For feasibility cuts a
+ // strictly-positive violation is enough (a current infeasible y must be
+ // cut off), but we keep the same relative threshold for uniformity.
+ // Setting eps_rel < 0 forces unconditional addition (used for the seed
+ // cut at y = (1,...,1) in generate_abstract_constraints()).
+ if( eps_rel >= 0 ) {
+  double v_star = v_epi.get_value();
+  double lhs_cut = diagonal ? v_star : 0.0;
+  for( Index i = 0 ; i < m ; ++i )
+   lhs_cut += - g[ i ] * v_y[ i ].get_value();
+  double thresh = eps_rel * std::max( std::abs( v_star ) , 1.0 );
+  if( alpha - lhs_cut <= thresh )
+   return( false );    // cut not (sufficiently) violated; skip
+  }
+
+ // build the FRowConstraint:
+ //  - optimality cut:  v + sum_i (- g_i) y_i >= alpha
+ //  - feasibility cut:     sum_i (- g_i) y_i >= alpha
+ v_coeff_pair coeffs;
+ coeffs.reserve( m + 1 );
+ if( diagonal )
+  coeffs.emplace_back( & v_epi , double( 1 ) );
+ for( Index i = 0 ; i < m ; ++i )
+  if( g[ i ] != 0.0 )
+   coeffs.emplace_back( & v_y[ i ] , - g[ i ] );
+
+ std::list< FRowConstraint > lst( 1 );
+ lst.back().set_lhs( alpha );
+ lst.back().set_rhs( Inf< RowConstraint::RHSValue >() );
+ lst.back().set_function( new LinearFunction( std::move( coeffs ) , 0 ) );
+
+ // append to the dynamic group; eNoBlck for the same reason as v_sfc
+ add_dynamic_constraints( v_benders_cuts , lst , eNoBlck );
+ return( true );
+ }
 
 /*--------------------------------------------------------------------------*/
 
