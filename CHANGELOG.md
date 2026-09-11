@@ -7,17 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added 
+### Added
 
-### Changed 
+### Changed
+
+### Fixed
+
+## [0.3.0] - 2026-09-12
+
+### Added
+
+- the two "Benders friendly" formulations of the problem, one with slack arcs
+  and one with feasibility cuts
+
+### Changed
+
+- the converter of the text instances to netCDF is `cfl2nc4`, rather than
+  `txt2nc4`
+
+- the Solution versions of `is_feasible()` and `is_optimal()` are
+  `is_sol_feasible()` and `is_sol_optimal()`, as in the core
+
+- the version of the module is the git tag of its repository, or the
+  VERSION.txt of a release tarball, and the shared library carries it: its
+  SONAME is major.minor while the major is 0, and it is installed with an
+  RPATH relative to itself, so that an installed tree keeps working wherever
+  it is moved
 
 ### Removed
 
 - ScenarioReductionSolver and its tester, superseded by the standalone
   ScenarioReductionSolver module
-
-### Fixed 
-
 
 ## [0.2.0] - 2025-12-12
 
@@ -56,7 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - First test release.
 
 
-[Unreleased]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.2.0...develop
+[Unreleased]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.3.0...develop
+[0.3.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.2.0...0.3.0
 [0.2.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.1.1...0.2.0
 [0.1.1]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.1.0...0.1.1
 [0.1.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/tags/0.1.0
