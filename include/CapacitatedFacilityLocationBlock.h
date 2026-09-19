@@ -2087,6 +2087,8 @@ public:
  *
  * - open_facilities() (both range and subset version)
  *
+ * - fix_open_facilities() (both range and subset version)
+ *
  * into the corresponding method factories.
  */
 
@@ -2107,6 +2109,11 @@ public:
 
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
    bool >(
+   "CapacitatedFacilityLocationBlock::chg_transportation_costs" ,
+   & CapacitatedFacilityLocationBlock::chg_transportation_costs );
+
+  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
+   bool >(
    "CapacitatedFacilityLocationBlock::chg_facility_capacities",
    & CapacitatedFacilityLocationBlock::chg_facility_capacities );
 
@@ -2123,13 +2130,13 @@ public:
    "CapacitatedFacilityLocationBlock::chg_customer_demands",
    & CapacitatedFacilityLocationBlock::chg_customer_demands );
 
-   register_method< CapacitatedFacilityLocationBlock , Range >(
+  register_method< CapacitatedFacilityLocationBlock , Range >(
    "CapacitatedFacilityLocationBlock::close_facilities",
    & CapacitatedFacilityLocationBlock::close_facilities );
 
   register_method< CapacitatedFacilityLocationBlock , Subset && , bool >(
    "CapacitatedFacilityLocationBlock::close_facilities" ,
-   & CapacitatedFacilityLocationBlock::open_facilities );
+   & CapacitatedFacilityLocationBlock::close_facilities );
 
   register_method< CapacitatedFacilityLocationBlock , Range >(
    "CapacitatedFacilityLocationBlock::open_facilities",

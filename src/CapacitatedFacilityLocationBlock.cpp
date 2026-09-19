@@ -2954,7 +2954,7 @@ void CapacitatedFacilityLocationBlock::close_facilities( Range rng ,
  // TODO: if some changes are "fake", restrict the range
  Index cnt = 0;
  for( Index i = rng.first ; i < rng.second ; ++i )
-  if( v_fxd[ i ] != yFree )
+  if( v_fxd[ i ] == yFree )  // what closing changes are the free ones
    ++cnt;
 
  if( ! cnt )  // all facilities are fixed already
@@ -3026,7 +3026,7 @@ void CapacitatedFacilityLocationBlock::close_facilities( Subset && nms ,
  // TODO: if some changes are "fake", restrict the subset
  Index cnt = 0;
  for( auto i : nms )
-  if( v_fxd[ i ] != yFree )
+  if( v_fxd[ i ] == yFree )  // what closing changes are the free ones
    ++cnt;
 
  if( ! cnt )  // all facilities are fixed already

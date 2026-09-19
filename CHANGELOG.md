@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `close_facilities()`, in both its forms, counted the facilities that were
+  already fixed where it acts on the free ones, so that it returned without
+  doing anything whenever all of them were free, the state every instance
+  starts in
+
+- the Subset form of `"CapacitatedFacilityLocationBlock::close_facilities"`
+  was registered in the methods factory on `open_facilities()`, so that
+  closing facilities by name opened them
+
+- the Subset form of `chg_transportation_costs()` was not registered in the
+  methods factory, while the documentation said it was
+
 ## [0.3.0] - 2026-09-12
 
 ### Added
