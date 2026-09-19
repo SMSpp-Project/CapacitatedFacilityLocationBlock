@@ -22,9 +22,9 @@ COMMON_SW = -std=c++17 -ferror-limit=1
 # debug switches
 SW_DEBUG = -g -glldb -fno-inline $(COMMON_SW)
 # debug switches with address sanitizer and extra pedantic warning
-SW_DEBUG_ASAN = -g3 -glldb -fno-inline $(COMMON_SW) -fsanitize=undefined -fsanitize=address -fno-omit-frame-pointer -Wpedantic -Wextra -Wno-unused-parameter -Wno-enum-compare -DCLANG_1200_0_32_27_PATCH
+SW_DEBUG_ASAN = -g3 -glldb -fno-inline $(COMMON_SW) -fsanitize=undefined -fsanitize=address -fno-omit-frame-pointer -Wpedantic -Wextra -Wno-unused-parameter -Wno-enum-compare
 # production switches
-SW_RELEASE = -O3 $(COMMON_SW) -DNDEBUG -DCLANG_1200_0_32_27_PATCH
+SW_RELEASE = -O3 $(COMMON_SW) -DNDEBUG
 
 # compiler
 CC = clang++
