@@ -80,9 +80,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - adapted to new standard organization of makefiles
 
-### Fixed 
-
-
 ## [0.1.1] - 2024-02-27
 
 ### Changed
@@ -94,7 +91,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2022-06-28
 
 - First test release.
-
 
 [Unreleased]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.3.0...develop
 [0.3.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.2.0...0.3.0
