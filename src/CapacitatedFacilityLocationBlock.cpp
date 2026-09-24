@@ -260,9 +260,14 @@ void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
 
 
  // erase existing abstract representation, if any - - - - - - - - - - - - - -
+ // the knapsack structure, if chosen, is kept, its sub-Block being
+ // constructed anew for the new instance once its data are there
 
+ const bool knap = ( AR & FormMsk ) == KskForm;
  if( AR & ~7 )
   guts_of_destructor();
+ else
+  guts_of_set_structure( false );
 		   
  // move over problem data - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -287,6 +292,9 @@ void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
  f_max_facilities = k;
 
 
+ if( knap )  // the knapsack structure, for the new instance
+  guts_of_set_structure( true );
+
  // throw Modification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // note: this is a NBModification, the "nuclear option"
 
@@ -303,9 +311,14 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input ,
  static const std::string _prfx = "CapacitatedFacilityLocationBlock::load: ";
 
  // erase existing abstract representation, if any - - - - - - - - - - - - - -
+ // the knapsack structure, if chosen, is kept, its sub-Block being
+ // constructed anew for the new instance once its data are there
 
+ const bool knap = ( AR & FormMsk ) == KskForm;
  if( AR & ~7 )
   guts_of_destructor();
+ else
+  guts_of_set_structure( false );
 
  // read first non-comment line - - - - - - - - - - - - - - - - - - - - - - -
  // the first part of the three formats at least is common
@@ -438,6 +451,9 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input ,
  f_unsplittable = false;
  f_max_facilities = iInf;
 
+ if( knap )  // the knapsack structure, for the new instance
+  guts_of_set_structure( true );
+
  // issue Modification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // note: this is a NBModification, the "nuclear option"
 
@@ -461,9 +477,14 @@ void CapacitatedFacilityLocationBlock::deserialize(
                             "CapacitatedFacilityLocationBlock::deserialize: ";
 
  // erase existing abstract representation, if any - - - - - - - - - - - - - -
+ // the knapsack structure, if chosen, is kept, its sub-Block being
+ // constructed anew for the new instance once its data are there
 
+ const bool knap = ( AR & FormMsk ) == KskForm;
  if( AR & ~7 )
   guts_of_destructor();
+ else
+  guts_of_set_structure( false );
 		   
  // read problem data- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -557,6 +578,9 @@ void CapacitatedFacilityLocationBlock::deserialize(
  if ( f_max_facilities != iInf && f_max_facilities > f_n_facilities )
   throw( std::invalid_argument( _prfx + "number of maximum facilities too high" ) ); 
 
+ if( knap )  // the knapsack structure, for the new instance
+  guts_of_set_structure( true );
+
  // call the method of Block- - - - - - - - - - - - - - - - - - - - - - - - -
  // inside this the NBModification, the "nuclear option",  is issued
 
@@ -593,6 +617,11 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
 
  f_unsplittable = wf & UnSpltF;
  const Index form = wf & FormMsk;
+
+ // a knapsack structure set by set_structure() is not what is asked for:
+ // its sub-Block are dropped, the formulation constructing its own
+ if( form != KskForm )
+  guts_of_set_structure( false );
 
  if( f_unsplittable && form >= 2 )
   throw( std::invalid_argument(
@@ -632,46 +661,18 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
 
   case( 1 ): {  // "knapsack" formulation (KskForm) - - - - - - - - - - - - -
                 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   AR |= KskForm;
-   // construct one knapsack problem for each facility
-   v_Block.resize( f_n_facilities );
-
-   // first construct the vector and sort it, so that the pointers are
-   // increasing with the facility index i, which speeds up some operations
-   for( auto & bi : v_Block )
-    bi = new BinaryKnapsackBlock( this );
-
-   std::sort( v_Block.begin() , v_Block.end() );
-
-   // now load the appropriate data into each BinaryKnapsackBlock
-   BinaryKnapsackBlock::doubleVec W( f_n_customers + 1 );
-   BinaryKnapsackBlock::doubleVec P( f_n_customers + 1 );
-   BinaryKnapsackBlock::boolVec I;
-
-   if( f_unsplittable ) {
+   // one knapsack problem for each facility, which set_structure() may
+   // have constructed already; if a change of the data made after it has
+   // left them behind, they are loaded again (which issues Modification,
+   // hence it is not done when nothing has changed)
+   guts_of_set_structure( true );
+   if( f_unsplittable )
     AR |= UnSpltF;
-    I.resize( f_n_customers + 1 , true );
-    }
-   else {
-    I.resize( f_n_customers + 1 , false );
-    I[ f_n_customers ] = true;
-    }
+   if( ! knapsacks_match() )
+    load_knapsacks();
 
-   for( Index i = 0 ; i < f_n_facilities ; ++i ) {
-    for( Index j = 0 ; j < f_n_customers ; ++j ) {
-     W[ j ] = v_demand[ j ];
-     P[ j ] = v_t_cost[ i ][ j ];
-     }
-    W[ f_n_customers ] = - v_capacity[ i ];
-    P[ f_n_customers ] = v_f_cost[ i ];
-
-    auto bi = BKB( v_Block[ i ] );
-    bi->load( f_n_customers + 1 , 0 , W , P , I );
-    if( v_fxd[ i ] != yFree )
-     bi->fix_x(  v_fxd[ i ] == yFxd1 , i , eNoMod , eNoMod );
-    bi->set_objective_sense( false , eNoMod , eNoMod );
+   for( auto bi : v_Block )
     bi->generate_abstract_variables();
-    }
 
    return;
    }
@@ -1094,6 +1095,11 @@ void CapacitatedFacilityLocationBlock::generate_objective(
   for( auto ki : v_Block )    // the Objective is all in the sub-Block
    ki->generate_objective();
 
+  // the CFL has an Objective of its own nonetheless, with no Variable, so
+  // that it is an FRealObjective like that of any other Block, which is
+  // what, e.g., a LagBFunction whose Block is the CFL needs
+  f_obj.set_function( new LinearFunction() , eNoMod );
+  set_objective( & f_obj , eNoMod );
   return;
   }
 
@@ -3606,6 +3612,129 @@ void CapacitatedFacilityLocationBlock::chg_UnSplittable( bool unsplt ,
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::set_structure( Configuration * strc )
+{
+ static const std::string _prfx =
+  "CapacitatedFacilityLocationBlock::set_structure: ";
+
+ if( ( ! strc ) && f_BlockConfig )
+  strc = f_BlockConfig->f_structure_Configuration;
+
+ if( ! strc )  // no structure is asked for: nothing is decided here
+  return;
+
+ auto c = dynamic_cast< SimpleConfiguration< int > * >( strc );
+ if( ! c )
+  throw( std::invalid_argument( _prfx + "the structure of a "
+                                "CapacitatedFacilityLocationBlock is a "
+                                "SimpleConfiguration< int >" ) );
+
+ const bool knap = ( c->f_value & FormMsk ) == KskForm;
+
+ if( AR & HasVar ) {  // the abstract representation is there already
+  if( knap == ( ( AR & FormMsk ) == KskForm ) )
+   return;            // and it has the structure being asked for
+  throw( std::logic_error( _prfx + "the abstract representation has been "
+                           "generated already, hence the structure can no "
+                           "longer be changed" ) );
+  }
+
+ guts_of_set_structure( knap );
+
+ }  // end( CapacitatedFacilityLocationBlock::set_structure )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::guts_of_set_structure( bool knap )
+{
+ if( ! knap ) {  // no sub-Block of its own until the formulation says so
+  if( ( AR & FormMsk ) == KskForm ) {
+   for( auto bi : v_Block )
+    delete bi;
+   v_Block.clear();
+   AR &= ~FormMsk;
+   }
+  return;
+  }
+
+ AR = ( AR & ~FormMsk ) | KskForm;
+ if( v_Block.size() == f_n_facilities )  // they are there already
+  return;
+
+ for( auto bi : v_Block )
+  delete bi;
+
+ // one knapsack problem for each facility: first construct the vector and
+ // sort it, so that the pointers are increasing with the facility index i,
+ // which speeds up some operations
+ v_Block.resize( f_n_facilities );
+ for( auto & bi : v_Block )
+  bi = new BinaryKnapsackBlock( this );
+
+ std::sort( v_Block.begin() , v_Block.end() );
+
+ load_knapsacks();
+
+ }  // end( CapacitatedFacilityLocationBlock::guts_of_set_structure )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::load_knapsacks( void )
+{
+ // the knapsack of facility i has the customers as its first items, with
+ // the demands as weights and the transportation costs as profits, and the
+ // opening of the facility as its last item, whose weight is minus the
+ // capacity and whose profit is the fixed cost
+ BinaryKnapsackBlock::doubleVec W( f_n_customers + 1 );
+ BinaryKnapsackBlock::doubleVec P( f_n_customers + 1 );
+ BinaryKnapsackBlock::boolVec I( f_n_customers + 1 , f_unsplittable );
+ I[ f_n_customers ] = true;
+
+ for( Index i = 0 ; i < f_n_facilities ; ++i ) {
+  for( Index j = 0 ; j < f_n_customers ; ++j ) {
+   W[ j ] = v_demand[ j ];
+   P[ j ] = v_t_cost[ i ][ j ];
+   }
+  W[ f_n_customers ] = - v_capacity[ i ];
+  P[ f_n_customers ] = v_f_cost[ i ];
+
+  auto bi = BKB( v_Block[ i ] );
+  bi->load( f_n_customers + 1 , 0 , W , P , I );
+  if( v_fxd[ i ] != yFree )
+   bi->fix_x( v_fxd[ i ] == yFxd1 , f_n_customers , eNoMod , eNoMod );
+  bi->set_objective_sense( false , eNoMod , eNoMod );
+  }
+ }  // end( CapacitatedFacilityLocationBlock::load_knapsacks )
+
+/*--------------------------------------------------------------------------*/
+
+bool CapacitatedFacilityLocationBlock::knapsacks_match( void ) const
+{
+ for( Index i = 0 ; i < f_n_facilities ; ++i ) {
+  auto bi = static_cast< const BinaryKnapsackBlock * >( v_Block[ i ] );
+  if( bi->get_NItems() != f_n_customers + 1 )
+   return( false );
+
+  const auto & W = bi->get_Weights();
+  const auto & P = bi->get_Profits();
+  const auto & I = bi->get_Integrality();
+  for( Index j = 0 ; j < f_n_customers ; ++j )
+   if( ( W[ j ] != v_demand[ j ] ) || ( P[ j ] != v_t_cost[ i ][ j ] ) ||
+       ( I[ j ] != f_unsplittable ) )
+    return( false );
+
+  if( ( W[ f_n_customers ] != - v_capacity[ i ] ) ||
+      ( P[ f_n_customers ] != v_f_cost[ i ] ) ||
+      ( bi->is_fixed( f_n_customers ) != ( v_fxd[ i ] != yFree ) ) )
+   return( false );
+  }
+
+ return( true );
+
+ }  // end( CapacitatedFacilityLocationBlock::knapsacks_match )
+
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::guts_of_destructor( void )

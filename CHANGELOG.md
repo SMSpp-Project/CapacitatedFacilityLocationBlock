@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `set_structure()`: a structure Configuration that asks for the knapsack
+  formulation constructs the `BinaryKnapsackBlock` of the facilities when
+  the `BlockConfig` is applied, before any abstract representation, so that
+  whoever reads the tree of sub-Block sees them, e.g., a
+  `LagrangianDualSolver` that decomposes the Block recursively; the
+  knapsacks are loaded again when the abstract representation is generated
+  if the data have changed since, and `load()` keeps the structure
+
+- in the knapsack formulation the Block has an `FRealObjective` of its own,
+  with no Variable, besides those of the knapsacks, so that it can be the
+  Block of a `LagBFunction`, e.g., as the scenario of a
+  `TwoStageStochasticBlock` decomposed by a `LagrangianDualSolver`
+
 ### Changed
 
 - the makefile asks for `-O3 -DNDEBUG` and nothing else, the macro of the
@@ -30,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the MCFBlock inside is a span as well
 
 ### Fixed
+
+- a facility fixed open or closed in the data (`FacilityFix`) fixes, in
+  the knapsack formulation, the opening of the facility, i.e., the last item
+  of its knapsack, instead of the item with the index of the facility,
+  i.e., the assignment of a customer
 
 - `close_facilities()`, in both its forms, counted the facilities that were
   already fixed where it acts on the free ones, so that it returned without

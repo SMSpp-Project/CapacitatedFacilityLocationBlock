@@ -626,6 +626,29 @@ public:
  void generate_abstract_variables( Configuration *stvv = nullptr ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// sets the structure of the CFL, i.e., whether it has a sub-Block per
+ /// facility
+ /** Sets the structure of the CapacitatedFacilityLocationBlock [see
+  * Block::set_structure()]. The structure is a SimpleConfiguration< int >
+  * whose value is read as the \c wf of generate_abstract_variables(): if
+  * \c wf & 3 == 1, i.e., the knapsack formulation, the
+  * BinaryKnapsackBlock of the facilities are constructed now, before any
+  * abstract representation, so that whoever reads the tree of sub-Block
+  * sees them, e.g., a LagrangianDualSolver that decomposes the Block
+  * recursively; any other value leaves the CFL with no sub-Block of its own
+  * until generate_abstract_variables(), as it always was. A structure
+  * Configuration that is nullptr (after the usual resolution through the
+  * BlockConfig) does nothing.
+  *
+  * The BinaryKnapsackBlock constructed here are loaded again when
+  * generate_abstract_variables() is called if a change of the data made in
+  * between has left them behind, which is then seen by them; and they are
+  * constructed anew by load(), which keeps the structure. Changing the structure after the
+  * abstract representation has been generated throws. */
+
+ void set_structure( Configuration * strc = nullptr ) override;
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// generate the static constraint of the CFL
  /** Method that generates the abstract constraint of the CFL. The actual
   * form of these constraints depend on the formulation, which is decided
@@ -734,7 +757,9 @@ public:
   *
   * - If the "knapsack formulation" (KF) is used, then all the objective is
   *   expressed in terms of the objectives of the f_n_facilities
-  *   BinaryKnapsackBlock sub-Block.
+  *   BinaryKnapsackBlock sub-Block; the CFL has an FRealObjective of its
+  *   own as well, whose LinearFunction has no Variable, so that it has an
+  *   Objective of the same type as any other Block.
   *
   * - If the "flow formulation" (FF) is used, then there is a single "dense"
   *   "linear objective" (FRealObjective with a LinearFunction) having
@@ -2335,6 +2360,12 @@ public:
 
 /*--------------------------------------------------------------------------*/
  
+ void guts_of_set_structure( bool knap );
+
+ void load_knapsacks( void );
+
+ bool knapsacks_match( void ) const;
+
  void guts_of_destructor( void );
 
  /// build the MCF representation of the (continuous relaxation of the) CFL
