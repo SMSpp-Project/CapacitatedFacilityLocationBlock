@@ -14,11 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - the makefile asks for `-O3 -DNDEBUG` and nothing else, the macro of the
   patch for `boost::any` on macOS having no reason to be there since there is
   no `boost::any` left in the core
+
 - whoever links the module keeps it: the classes of a module register
   themselves in the factory from a static initialiser, and a linker that
   drops what looks unused takes the registration away with it, so the target
   now tells whoever links it to keep the symbol that forces the module in,
   and on ELF, where naming the symbol is not enough, the library as a whole
+
 - `chg_facility_costs()`, `chg_transportation_costs()`,
   `chg_facility_capacities()` and `chg_customer_demands()` take their data
   as a `std::span< const double >`, whose length they check against the
@@ -80,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - possibility of a constraint on maximum number of facilities
   (for scenario reduction applications)
 
-### Changed 
+### Changed
 
 - major data handling upgrade: instances are not included
   in the repo for space/time efficiency but a script to
@@ -97,6 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - documentation updated accordingly
 
 ## [0.1.0] - 2022-06-28
+
+### Added
 
 - First test release.
 
