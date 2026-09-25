@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- the data archive is downloaded by version: `DATA_VERSION` in CMakeLists.txt
+  names the version of the Package Registry to read, and the archive and the
+  marker of its extraction carry it in their name, so that a tree holding
+  an older extraction (the cache of the CI, or a clone extracted before)
+  downloads and extracts again instead of running on the old data;
+  data/upload-txt publishes the archive under that version
+
 - the makefile asks for `-O3 -DNDEBUG` and nothing else, the macro of the
   patch for `boost::any` on macOS having no reason to be there since there is
   no `boost::any` left in the core
