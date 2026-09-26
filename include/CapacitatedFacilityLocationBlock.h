@@ -2792,6 +2792,15 @@ class CapacitatedFacilityLocationSolution : public Solution {
  friend CapacitatedFacilityLocationBlock;
  ///< make CapacitatedFacilityLocationBlock friend
 
+/*--------------------------------------------------------------------------*/
+ /// a CapacitatedFacilityLocationSolution holds no dual values, hence none that is feasible
+ /** Returns false [see Solution::is_dual_feasible()]. */
+
+ bool is_dual_feasible( Block * block ,
+			Configuration * fsbc = nullptr ) override {
+  return( false );
+  }
+
 /*---------------- CONSTRUCTING AND DESTRUCTING MCFSolution ----------------*/
 
  explicit CapacitatedFacilityLocationSolution( void ) { }
