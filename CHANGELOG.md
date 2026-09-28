@@ -54,6 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the data archive is extracted by `cmake -E tar`, which also works with the
+  tar of macOS, where the option `--warning=no-unknown-keyword` of GNU tar
+  stopped the build.
 - on macOS a program linking the module lost the classes the module
   registers in the factories when the linker dropped the library, as it
   does under `-dead_strip_dylibs`, which conda sets: the target now asks the

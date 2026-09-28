@@ -211,15 +211,9 @@ add_custom_target(download_cfl_txt
 
 # Custom command to extract the txt.tgz archive if the marker of this version
 # does not exist
-if (UNIX)
-    set(TAR_FLAGS --warning=no-unknown-keyword -xzf)
-elseif (WIN32)
-    set(TAR_FLAGS xzf)
-endif ()
-
 add_custom_command(
         OUTPUT ${DATA_MARKER}
-        COMMAND tar ${TAR_FLAGS} ${TXT_ARCHIVE}
+        COMMAND ${CMAKE_COMMAND} -E tar xzf ${TXT_ARCHIVE}
         COMMAND echo > ${DATA_MARKER}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
         COMMENT "Extracting txt.tgz"
