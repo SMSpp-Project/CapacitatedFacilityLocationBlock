@@ -9,9 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `CapacitatedFacilityLocationSolution::is_dual_feasible()` returns false,
-  the Solution holding no dual values [see `Solution::is_dual_feasible()`]
-
 - `set_structure()`: a structure Configuration that asks for the knapsack
   formulation constructs the `BinaryKnapsackBlock` of the facilities when
   the `BlockConfig` is applied, before any abstract representation, so that
