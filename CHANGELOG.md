@@ -51,6 +51,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the `BinaryKnapsackBlock` of the knapsack formulation constructed while the
+  Block is locked (the formulation is chosen when the abstract
+  representation is generated, typically by a `MILPSolver` that holds the
+  lock) share the lock of the Block, whose `unlock()` threw "invalid owner"
+  on them
+
+- fixing or unfixing the item of a customer in a `BinaryKnapsackBlock` of the
+  knapsack formulation (as a Branch-and-Bound does) is accepted, the
+  assignment Variable being those of the knapsack; only the facility item
+  was, the others threw "unsupported variable fixing"
+
 - the data archive is extracted by `cmake -E tar`, which also works with the
   tar of macOS, where the option `--warning=no-unknown-keyword` of GNU tar
   stopped the build.

@@ -3649,10 +3649,26 @@ void CapacitatedFacilityLocationBlock::set_structure( Configuration * strc )
 
 void CapacitatedFacilityLocationBlock::guts_of_set_structure( bool knap )
 {
+ // this may run while the Block is locked (the formulation is chosen when
+ // the abstract representation is generated, typically by a Solver that
+ // holds the lock): the sub-Block share the lock of the Block, hence the
+ // ones deleted are released first and the ones constructed are locked
+ // with the same owner, so that the final unlock() finds them owned
+ const void * owner = f_owner;
+ const bool ro = ( owner == ReadOnlyLock() );
+ auto release = [ owner , ro ]( Block * bi ) {
+  if( ro )
+   bi->read_unlock();
+  else
+   if( owner )
+    bi->unlock( owner );
+  delete bi;
+  };
+
  if( ! knap ) {  // no sub-Block of its own until the formulation says so
   if( ( AR & FormMsk ) == KskForm ) {
    for( auto bi : v_Block )
-    delete bi;
+    release( bi );
    v_Block.clear();
    AR &= ~FormMsk;
    }
@@ -3664,14 +3680,22 @@ void CapacitatedFacilityLocationBlock::guts_of_set_structure( bool knap )
   return;
 
  for( auto bi : v_Block )
-  delete bi;
+  release( bi );
 
  // one knapsack problem for each facility: first construct the vector and
  // sort it, so that the pointers are increasing with the facility index i,
  // which speeds up some operations
  v_Block.resize( f_n_facilities );
- for( auto & bi : v_Block )
+ for( auto & bi : v_Block ) {
   bi = new BinaryKnapsackBlock( this );
+  if( ro )
+   bi->read_lock();
+  else
+   if( owner && ( ! bi->lock( owner ) ) )
+    throw( std::logic_error( "CapacitatedFacilityLocationBlock::"
+                             "guts_of_set_structure: cannot lock a new "
+                             "sub-Block" ) );
+  }
 
  std::sort( v_Block.begin() , v_Block.end() );
 
@@ -4379,9 +4403,11 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
     return;
 
    case( BinaryKnapsackBlockMod::eFixX ):  // - - - - - - - - - - - - - - - -
+    // the assignment Variable are those of the BinaryKnapsackBlock, of
+    // which no copy is kept here: only the facility one has to be followed
 
-    if( f < f_n_customers )
-     throw( std::invalid_argument( "unsupported variable fixing" ) );
+    if( s <= f_n_customers )
+     return;
 
     if( bkb->get_Var( f_n_customers )->get_value() == 1 )
      fix_open_facility( i , make_par( eNoBlck , chnl ) , eDryRun );
@@ -4392,8 +4418,8 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
 
    case( BinaryKnapsackBlockMod::eUnfixX ):  // - - - - - - - - - - - - - - -
 
-    if( f < f_n_customers )
-     throw( std::invalid_argument( "unsupported variable unfixing" ) );
+    if( s <= f_n_customers )
+     return;
 
     open_facility( i , make_par( eNoBlck , chnl ) , eDryRun );
 
@@ -4453,9 +4479,10 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
     return;
 
    case( BinaryKnapsackBlockMod::eFixX ):  // - - - - - - - - - - - - - - - -
+    // as in the ranged case, only the facility Variable is followed
 
-    if( ( nms.size() != 1 ) || ( nms.back() < f_n_customers ) )
-     throw( std::invalid_argument( "unsupported variable fixing" ) );
+    if( nms.back() < f_n_customers )
+     return;
 
     if( bkb->get_Var( f_n_customers )->get_value() == 1 )
      fix_open_facility( i , make_par( eNoBlck , chnl ) , eDryRun );
@@ -4466,8 +4493,8 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
 
    case( BinaryKnapsackBlockMod::eUnfixX ):  // - - - - - - - - - - - - - - -
 
-    if( ( nms.size() != 1 ) || ( nms.back() < f_n_customers ) )
-     throw( std::invalid_argument( "unsupported variable unfixing" ) );
+    if( nms.back() < f_n_customers )
+     return;
 
     open_facility( i , make_par( eNoBlck , chnl ) , eDryRun );
 
