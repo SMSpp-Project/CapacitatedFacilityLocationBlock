@@ -6,8 +6,8 @@
 # Generated netCDF instances and txt sources
 *.nc4
 data/txt
-data/txt.tgz
-data/.extracted
+data/txt*.tgz
+data/.extracted*
 data/nc4/.generated
 
 # Tool / test binaries

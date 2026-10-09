@@ -173,9 +173,8 @@ static LinearFunction * LF( Function * f ) {
 // returns true if two vectors differ, one of them being given as a pointer
 // to an array and a subset of indices
 
-template< typename T >
-static bool is_equal( T * vec , Block::c_Subset & nms ,
-		      typename std::vector< T >::const_iterator cmp ,
+template< typename T , class It >
+static bool is_equal( T * vec , Block::c_Subset & nms , It cmp ,
 		      Block::Index n_max )
 {
  for( auto nm : nms ) {
@@ -191,9 +190,8 @@ static bool is_equal( T * vec , Block::c_Subset & nms ,
 /*--------------------------------------------------------------------------*/
 // copies one vector to a given subset of another
 
-template< typename T >
-static void copyidx( T * vec , Block::c_Subset & nms ,
-		     typename std::vector< T >::const_iterator cpy )
+template< typename T , class It >
+static void copyidx( T * vec , Block::c_Subset & nms , It cpy )
 {
  for( auto nm : nms )
   *( vec + nm ) = *(cpy++);
@@ -262,9 +260,14 @@ void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
 
 
  // erase existing abstract representation, if any - - - - - - - - - - - - - -
+ // the knapsack structure, if chosen, is kept, its sub-Block being
+ // constructed anew for the new instance once its data are there
 
+ const bool knap = ( AR & FormMsk ) == KskForm;
  if( AR & ~7 )
   guts_of_destructor();
+ else
+  guts_of_set_structure( false );
 		   
  // move over problem data - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -289,6 +292,9 @@ void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
  f_max_facilities = k;
 
 
+ if( knap )  // the knapsack structure, for the new instance
+  guts_of_set_structure( true );
+
  // throw Modification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // note: this is a NBModification, the "nuclear option"
 
@@ -305,9 +311,14 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input ,
  static const std::string _prfx = "CapacitatedFacilityLocationBlock::load: ";
 
  // erase existing abstract representation, if any - - - - - - - - - - - - - -
+ // the knapsack structure, if chosen, is kept, its sub-Block being
+ // constructed anew for the new instance once its data are there
 
+ const bool knap = ( AR & FormMsk ) == KskForm;
  if( AR & ~7 )
   guts_of_destructor();
+ else
+  guts_of_set_structure( false );
 
  // read first non-comment line - - - - - - - - - - - - - - - - - - - - - - -
  // the first part of the three formats at least is common
@@ -440,6 +451,9 @@ void CapacitatedFacilityLocationBlock::load( std::istream & input ,
  f_unsplittable = false;
  f_max_facilities = iInf;
 
+ if( knap )  // the knapsack structure, for the new instance
+  guts_of_set_structure( true );
+
  // issue Modification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // note: this is a NBModification, the "nuclear option"
 
@@ -463,9 +477,14 @@ void CapacitatedFacilityLocationBlock::deserialize(
                             "CapacitatedFacilityLocationBlock::deserialize: ";
 
  // erase existing abstract representation, if any - - - - - - - - - - - - - -
+ // the knapsack structure, if chosen, is kept, its sub-Block being
+ // constructed anew for the new instance once its data are there
 
+ const bool knap = ( AR & FormMsk ) == KskForm;
  if( AR & ~7 )
   guts_of_destructor();
+ else
+  guts_of_set_structure( false );
 		   
  // read problem data- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -559,6 +578,9 @@ void CapacitatedFacilityLocationBlock::deserialize(
  if ( f_max_facilities != iInf && f_max_facilities > f_n_facilities )
   throw( std::invalid_argument( _prfx + "number of maximum facilities too high" ) ); 
 
+ if( knap )  // the knapsack structure, for the new instance
+  guts_of_set_structure( true );
+
  // call the method of Block- - - - - - - - - - - - - - - - - - - - - - - - -
  // inside this the NBModification, the "nuclear option",  is issued
 
@@ -595,6 +617,11 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
 
  f_unsplittable = wf & UnSpltF;
  const Index form = wf & FormMsk;
+
+ // a knapsack structure set by set_structure() is not what is asked for:
+ // its sub-Block are dropped, the formulation constructing its own
+ if( form != KskForm )
+  guts_of_set_structure( false );
 
  if( f_unsplittable && form >= 2 )
   throw( std::invalid_argument(
@@ -634,46 +661,18 @@ void CapacitatedFacilityLocationBlock::generate_abstract_variables(
 
   case( 1 ): {  // "knapsack" formulation (KskForm) - - - - - - - - - - - - -
                 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   AR |= KskForm;
-   // construct one knapsack problem for each facility
-   v_Block.resize( f_n_facilities );
-
-   // first construct the vector and sort it, so that the pointers are
-   // increasing with the facility index i, which speeds up some operations
-   for( auto & bi : v_Block )
-    bi = new BinaryKnapsackBlock( this );
-
-   std::sort( v_Block.begin() , v_Block.end() );
-
-   // now load the appropriate data into each BinaryKnapsackBlock
-   BinaryKnapsackBlock::doubleVec W( f_n_customers + 1 );
-   BinaryKnapsackBlock::doubleVec P( f_n_customers + 1 );
-   BinaryKnapsackBlock::boolVec I;
-
-   if( f_unsplittable ) {
+   // one knapsack problem for each facility, which set_structure() may
+   // have constructed already; if a change of the data made after it has
+   // left them behind, they are loaded again (which issues Modification,
+   // hence it is not done when nothing has changed)
+   guts_of_set_structure( true );
+   if( f_unsplittable )
     AR |= UnSpltF;
-    I.resize( f_n_customers + 1 , true );
-    }
-   else {
-    I.resize( f_n_customers + 1 , false );
-    I[ f_n_customers ] = true;
-    }
+   if( ! knapsacks_match() )
+    load_knapsacks();
 
-   for( Index i = 0 ; i < f_n_facilities ; ++i ) {
-    for( Index j = 0 ; j < f_n_customers ; ++j ) {
-     W[ j ] = v_demand[ j ];
-     P[ j ] = v_t_cost[ i ][ j ];
-     }
-    W[ f_n_customers ] = - v_capacity[ i ];
-    P[ f_n_customers ] = v_f_cost[ i ];
-
-    auto bi = BKB( v_Block[ i ] );
-    bi->load( f_n_customers + 1 , 0 , W , P , I );
-    if( v_fxd[ i ] != yFree )
-     bi->fix_x(  v_fxd[ i ] == yFxd1 , i , eNoMod , eNoMod );
-    bi->set_objective_sense( false , eNoMod , eNoMod );
+   for( auto bi : v_Block )
     bi->generate_abstract_variables();
-    }
 
    return;
    }
@@ -1096,6 +1095,11 @@ void CapacitatedFacilityLocationBlock::generate_objective(
   for( auto ki : v_Block )    // the Objective is all in the sub-Block
    ki->generate_objective();
 
+  // the CFL has an Objective of its own nonetheless, with no Variable, so
+  // that it is an FRealObjective like that of any other Block, which is
+  // what, e.g., a LagBFunction whose Block is the CFL needs
+  f_obj.set_function( new LinearFunction() , eNoMod );
+  set_objective( & f_obj , eNoMod );
   return;
   }
 
@@ -1992,31 +1996,38 @@ void CapacitatedFacilityLocationBlock::serialize( netCDF::NcGroup & group )
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::chg_facility_costs(
-				     c_CV_it NCost , Range rng ,
+				     MF_dbl_sp NCost , Range rng ,
 				     ModParam issueMod , ModParam issueAMod )
 {
  rng.second = std::min( rng.second , f_n_facilities );
  if( rng.second <= rng.first )  // nothing to change
   return;                       // cowardly (and silently) return
 
+ if( NCost.size() < rng.second - rng.first )
+  throw( std::invalid_argument( "CapacitatedFacilityLocationBlock::"
+				"chg_facility_costs: the span is shorter "
+				"than the Range" ) );
+
+ auto NCost_it = NCost.begin();
+
  c_Index num = rng.second - rng.first;
  // TODO: if some changes are "fake", rather restrict the range
- if( std::equal( NCost , NCost + num , v_f_cost.begin() + rng.first ) )
+ if( std::equal( NCost_it , NCost_it + num , v_f_cost.begin() + rng.first ) )
   return;  // actually nothing changes, avoid issuing the Modification
 
  if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
   // change abstract and physical representation together - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-  std::copy( NCost , NCost + num , v_f_cost.begin() + rng.first );
+  std::copy( NCost_it , NCost_it + num , v_f_cost.begin() + rng.first );
 
   if( ( AR & FormMsk ) != KskForm )
    // since modify_coefficients owns the vector, a copy has to be made
-   get_lfo()->modify_coefficients( CVector( NCost , NCost + num ) , rng ,
+   get_lfo()->modify_coefficients( CVector( NCost_it , NCost_it + num ) , rng ,
 				   un_ModBlock( issueAMod ) );
   else {
    f_mod_skip = true;
    for( Index i = rng.first ; i < rng.second ; ++i )
-    BKB( v_Block[ i ] )->chg_profit( *(NCost++) , f_n_customers ,
+    BKB( v_Block[ i ] )->chg_profit( *(NCost_it++) , f_n_customers ,
 				     issueMod , issueAMod );
    f_mod_skip = false;
    }
@@ -2024,7 +2035,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
   if( not_dry_run( issueMod ) )
-   std::copy( NCost , NCost + num , v_f_cost.begin() + rng.first );
+   std::copy( NCost_it , NCost_it + num , v_f_cost.begin() + rng.first );
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
@@ -2041,9 +2052,16 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::chg_facility_costs(
-		               c_CV_it NCost , Subset && nms , bool ordered ,
+		               MF_dbl_sp NCost , Subset && nms , bool ordered ,
 			       ModParam issueMod , ModParam issueAMod )
 {
+ if( NCost.size() < nms.size() )
+  throw( std::invalid_argument( "CapacitatedFacilityLocationBlock::"
+				"chg_facility_costs: the span is shorter "
+				"than the Subset" ) );
+
+ auto NCost_it = NCost.begin();
+
  if( nms.empty() )  // nothing to change
   return;           // cowardly (and silently) return
 
@@ -2051,23 +2069,23 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
   throw( std::invalid_argument( "invalid facility name" ) );
 
  // TODO: eliminate from nms the "fake" changes
- if( is_equal( v_f_cost.data() , nms , NCost , f_n_facilities ) )
+ if( is_equal( v_f_cost.data() , nms , NCost_it , f_n_facilities ) )
   return;  // actually nothing changes, avoid issuing the Modification
 
  if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
   // change abstract and physical representation together - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-  copyidx( v_f_cost.data() , nms , NCost );
+  copyidx( v_f_cost.data() , nms , NCost_it );
 
   if( ( AR & FormMsk ) != KskForm )
    // since modify_coefficients owns both vectors, two copies are made
-   get_lfo()->modify_coefficients( CVector( NCost , NCost + nms.size() ) ,
+   get_lfo()->modify_coefficients( CVector( NCost_it , NCost_it + nms.size() ) ,
 				   Subset( nms ) , ordered ,
 				   un_ModBlock( issueAMod ) );
   else {
    f_mod_skip = true;
    for( auto i : nms )
-    BKB( v_Block[ i ] )->chg_profit( *(NCost++) , f_n_customers ,
+    BKB( v_Block[ i ] )->chg_profit( *(NCost_it++) , f_n_customers ,
 				     issueMod , un_ModBlock( issueAMod ) );
    f_mod_skip = false;
    }
@@ -2075,7 +2093,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
   if( not_dry_run( issueMod ) )
-   copyidx( v_f_cost.data() , nms , NCost );
+   copyidx( v_f_cost.data() , nms , NCost_it );
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
@@ -2136,7 +2154,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_cost( Cost NCost ,
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::chg_transportation_costs(
-				     c_CV_it NCost , Range rng ,
+				     MF_dbl_sp NCost , Range rng ,
 				     ModParam issueMod , ModParam issueAMod )
 {
  c_Index maxn = f_n_facilities * f_n_customers;
@@ -2144,22 +2162,29 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
  if( rng.second <= rng.first )  // nothing to change
   return;                       // cowardly (and silently) return
 
+ if( NCost.size() < rng.second - rng.first )
+  throw( std::invalid_argument( "CapacitatedFacilityLocationBlock::"
+				"chg_transportation_costs: the span is shorter "
+				"than the Range" ) );
+
+ auto NCost_it = NCost.begin();
+
  c_Index num = rng.second - rng.first;
  // TODO: if some changes are "fake", rather restrict the range
- if( std::equal( NCost , NCost + num , v_t_cost.data() + rng.first ) )
+ if( std::equal( NCost_it , NCost_it + num , v_t_cost.data() + rng.first ) )
   return;  // actually nothing changes, avoid issuing the Modification
 
  if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
   // change abstract and physical representation together - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-  std::copy( NCost , NCost + num , v_t_cost.data() + rng.first );
+  std::copy( NCost_it , NCost_it + num , v_t_cost.data() + rng.first );
 
   f_mod_skip = true;
   switch( AR & FormMsk ) {
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
     // since modify_coefficients owns the vector, a copy has to be made
-    CVector NC( NCost , NCost + num );
+    CVector NC( NCost_it , NCost_it + num );
     get_lfo()->modify_coefficients( std::move( NC ) ,
 				    Range( rng.first + f_n_facilities ,
 					   rng.second + f_n_facilities ) ,
@@ -2172,7 +2197,8 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
     Index l = f % f_n_customers;
     if( ( ( rng.second - 1 ) / f_n_customers ) == i ) {
      // the range is all inside a single facility
-     BKB( v_Block[ i ] )->chg_profits( NCost , Range( l , l + num ) ,
+     BKB( v_Block[ i ] )->chg_profits( MF_dbl_sp( & * NCost_it , num ) ,
+				       Range( l , l + num ) ,
 				       issueMod , issueAMod );
      break;
      }
@@ -2183,23 +2209,26 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
 
     // the range of the first facility does not necessarily start from 0,
     // but it surely ends at f_n_customers
-    BKB( v_Block[ i++ ] )->chg_profits( NCost , Range( l , f_n_customers ) ,
-					issueMod , iAM );
-    NCost += ( f_n_customers - l );
+    BKB( v_Block[ i++ ] )->chg_profits(
+			  MF_dbl_sp( & * NCost_it , f_n_customers - l ) ,
+			  Range( l , f_n_customers ) , issueMod , iAM );
+    NCost_it += ( f_n_customers - l );
     f += ( f_n_customers - l );
  
     // the range of all other facilities starts from 0, but it does not
     // necessarily end at f_n_customers
-    for( ; ; ++i , NCost += f_n_customers ) {
+    for( ; ; ++i , NCost_it += f_n_customers ) {
      Index nf = f + f_n_customers;
      if( nf >= rng.second ) {  // last facility
-      BKB( v_Block[ i ] )->chg_profits( NCost , Range( 0 , rng.second - f ) ,
-					issueMod , iAM );
+      BKB( v_Block[ i ] )->chg_profits(
+			  MF_dbl_sp( & * NCost_it , rng.second - f ) ,
+			  Range( 0 , rng.second - f ) , issueMod , iAM );
       break;
       }
      else {
-      BKB( v_Block[ i ] )->chg_profits( NCost , Range( 0 , f_n_customers ) ,
-					issueMod , iAM );
+      BKB( v_Block[ i ] )->chg_profits(
+			  MF_dbl_sp( & * NCost_it , f_n_customers ) ,
+			  Range( 0 , f_n_customers ) , issueMod , iAM );
       f = nf;
       }
      }
@@ -2225,7 +2254,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
   // only change the physical representation- - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   if( not_dry_run( issueMod ) )
-   std::copy( NCost , NCost + num , v_t_cost.data() + rng.first );
+   std::copy( NCost_it , NCost_it + num , v_t_cost.data() + rng.first );
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
@@ -2242,9 +2271,16 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::chg_transportation_costs(
-			       c_CV_it NCost , Subset && nms , bool ordered ,
+			       MF_dbl_sp NCost , Subset && nms , bool ordered ,
 			       ModParam issueMod , ModParam issueAMod )
 {
+ if( NCost.size() < nms.size() )
+  throw( std::invalid_argument( "CapacitatedFacilityLocationBlock::"
+				"chg_transportation_costs: the span is shorter "
+				"than the Subset" ) );
+
+ auto NCost_it = NCost.begin();
+
  if( nms.empty() )  // nothing to change
   return;           // cowardly (and silently) return
 
@@ -2256,14 +2292,14 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
 				) );
 
  // TODO: eliminate from nms the "fake" changes
- if( is_equal( v_t_cost.data() , nms , NCost , maxn ) )
+ if( is_equal( v_t_cost.data() , nms , NCost_it , maxn ) )
   return;  // actually nothing changes, avoid issuing the Modification
 
  if( not_dry_run( issueAMod ) && ( AR & HasObj ) ) {
   // change abstract and physical representation together - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-  copyidx( v_t_cost.data() , nms , NCost );
+  copyidx( v_t_cost.data() , nms , NCost_it );
 
   f_mod_skip = true;
   switch( AR & FormMsk ) {
@@ -2273,7 +2309,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
      el += f_n_facilities;
 
     // since modify_coefficients owns both vectors, copies has to be made
-    CVector NC( NCost , NCost + nms.size() );
+    CVector NC( NCost_it , NCost_it + nms.size() );
     get_lfo()->modify_coefficients( std::move( NC ) , std::move( nnms ) ,
 				    ordered , un_ModBlock( issueAMod ) );
     break;
@@ -2281,13 +2317,13 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     // this operation is horribly complex if nms is not ordered, so order it;
     // but this means also re-ordering the values accordingly
-    auto tNC = NCost;
+    MF_dbl_sp tNC = NCost;
     CVector oNC;
     if( ! ordered ) {
      using ICPair = std::pair< Index , Cost >;
      std::vector< ICPair > tmp( nms.size() );
      for( Index i = 0 ; i < nms.size() ; ++i )
-      tmp[ i ] = std::make_pair( nms[ i ] , *(NCost++) );
+      tmp[ i ] = std::make_pair( nms[ i ] , *(NCost_it++) );
      std::sort( tmp.begin() , tmp.end() ,
 		[]( auto & a , auto & b ) { return( a.first < b.first ); } );
      oNC.resize( nms.size() );
@@ -2295,7 +2331,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
       nms[ i ] = tmp[ i ].first;
       oNC[ i ] = tmp[ i ].second;
       }
-     tNC = oNC.begin();
+     tNC = oNC;
      ordered = true;
      }
 
@@ -2305,8 +2341,9 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
      Subset nnms( nms );     // copy and translate names
      for( auto & el : nnms )
       el %= f_n_customers;
-     BKB( v_Block[ i ] )->chg_profits( tNC , std::move( nnms ) , true ,
-				       issueMod , issueAMod );
+     const auto nn = nnms.size();
+     BKB( v_Block[ i ] )->chg_profits( tNC.first( nn ) , std::move( nnms ) ,
+				       true , issueMod , issueAMod );
      break;
      }
 
@@ -2325,12 +2362,13 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
      for( auto & el : nnms )
       el %= f_n_customers;
 
-     BKB( v_Block[ i ] )->chg_profits( tNC , std::move( nnms ) , true ,
-				       issueMod , iAM );
+     const auto nn = nnms.size();
+     BKB( v_Block[ i ] )->chg_profits( tNC.first( nn ) , std::move( nnms ) ,
+				       true , issueMod , iAM );
      if( eit == nms.end() )
       break;
 
-     tNC += std::distance( bit , eit );
+     tNC = tNC.subspan( std::distance( bit , eit ) );
      bit = eit;
      }
 
@@ -2355,7 +2393,7 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
   // only change the physical representation- - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   if( not_dry_run( issueMod ) )
-   copyidx( v_t_cost.data() , nms , NCost );
+   copyidx( v_t_cost.data() , nms , NCost_it );
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
@@ -2441,22 +2479,29 @@ void CapacitatedFacilityLocationBlock::chg_transportation_cost( Cost NCost ,
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::chg_facility_capacities(
-				     c_DV_it NCap , Range rng ,
+				     MF_dbl_sp NCap , Range rng ,
 				     ModParam issueMod , ModParam issueAMod )
 {
  rng.second = std::min( rng.second , f_n_facilities );
  if( rng.second <= rng.first )  // nothing to change
   return;                       // cowardly (and silently) return
 
+ if( NCap.size() < rng.second - rng.first )
+  throw( std::invalid_argument( "CapacitatedFacilityLocationBlock::"
+				"chg_facility_capacities: the span is shorter "
+				"than the Range" ) );
+
+ auto NCap_it = NCap.begin();
+
  Index num = rng.second - rng.first;
  // TODO: if some changes are "fake", rather restrict the range
- if( std::equal( NCap , NCap + num , v_capacity.begin() + rng.first ) )
+ if( std::equal( NCap_it , NCap_it + num , v_capacity.begin() + rng.first ) )
   return;  // actually nothing changes, avoid issuing the Modification
 
  if( not_dry_run( issueAMod ) && ( AR & HasCapCns ) ) {
   // change abstract and physical representation together - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-  std::copy( NCap , NCap + num , v_capacity.begin() + rng.first );
+  std::copy( NCap_it , NCap_it + num , v_capacity.begin() + rng.first );
 
   // if appropriate, open a new channel to bunch up all abstract Modification
   not_ModBlock( issueAMod );
@@ -2469,20 +2514,21 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( Index i = rng.first ; i < rng.second ; ++i )
      LF( v_cap[ i ].get_function()
-	 )->modify_coefficient( f_n_customers , - *(NCap++) , iAM );
+	 )->modify_coefficient( f_n_customers , - *(NCap_it++) , iAM );
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( Index i = rng.first ; i < rng.second ; ++i )
      BKB( v_Block[ i ]
-	  )->chg_weight( - *(NCap++) , f_n_customers , issueMod , iAM );
+	  )->chg_weight( - *(NCap_it++) , f_n_customers , issueMod , iAM );
     break;
     }
    case( FlwForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
-    MCFB( v_Block[ 1 ] )->chg_ucaps( NCap , rng , issueMod , iAM );
+    MCFB( v_Block[ 1 ] )->chg_ucaps( NCap.first( num ) , rng , issueMod ,
+				     iAM );
     for( Index i = rng.first ; i < rng.second ; ++i )
      LF( v_cap[ i ].get_function()
-	 )->modify_coefficient( 1 , - *(NCap++) , iAM );
+	 )->modify_coefficient( 1 , - *(NCap_it++) , iAM );
     break;
     }
    case( BenForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2491,7 +2537,8 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
     // namespace (no parent): the channel of iAM was opened on *this*, so we
     // strip it via par2mod() before forwarding to mcfb. MCFBlock::chg_ucaps
     // will open its own internal channel if num > 1.
-    mcfb->chg_ucaps( NCap , rng , issueMod , Observer::par2mod( iAM ) );
+    mcfb->chg_ucaps( NCap.first( num ) , rng , issueMod ,
+		     Observer::par2mod( iAM ) );
     // update A_{i,i} = v_capacity[ i ] in the BendersBFunction mapping;
     // the v_capacity vector was just updated above so re-read from it
     for( Index i = rng.first ; i < rng.second ; ++i ) {
@@ -2511,7 +2558,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
   if( not_dry_run( issueMod ) )
-   std::copy( NCap , NCap + num , v_capacity.begin() + rng.first );
+   std::copy( NCap_it , NCap_it + num , v_capacity.begin() + rng.first );
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
@@ -2531,9 +2578,16 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::chg_facility_capacities(
-			        c_DV_it NCap , Subset && nms , bool ordered ,
+			        MF_dbl_sp NCap , Subset && nms , bool ordered ,
 				ModParam issueMod , ModParam issueAMod )
 {
+ if( NCap.size() < nms.size() )
+  throw( std::invalid_argument( "CapacitatedFacilityLocationBlock::"
+				"chg_facility_capacities: the span is shorter "
+				"than the Subset" ) );
+
+ auto NCap_it = NCap.begin();
+
  if( nms.empty() )  // nothing to change
   return;           // cowardly (and silently) return
 
@@ -2541,13 +2595,13 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
   throw( std::invalid_argument( "invalid facility name" ) );
 
  // TODO: eliminate from nms the "fake" changes
- if( is_equal( v_capacity.data() , nms , NCap , f_n_facilities ) )
+ if( is_equal( v_capacity.data() , nms , NCap_it , f_n_facilities ) )
   return;  // actually nothing changes, avoid issuing the Modification
 
  if( not_dry_run( issueAMod ) && ( AR & HasCapCns ) ) {
   // change abstract and physical representation together - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-  copyidx( v_capacity.data() , nms , NCap );
+  copyidx( v_capacity.data() , nms , NCap_it );
 
   // if appropriate, open a new channel to bunch up all abstract Modification
   Index num = nms.size() + ( ( AR & FormMsk ) == FlwForm ? 1 : 0 );
@@ -2559,21 +2613,22 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
    case( StdForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto i : nms )
      LF( v_cap[ i ].get_function()
-	 )->modify_coefficient( f_n_customers , - *(NCap++) , iAM );
+	 )->modify_coefficient( f_n_customers , - *(NCap_it++) , iAM );
     break;
     }
    case( KskForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto i : nms )
      BKB( v_Block[ i ]
-	  )->chg_weight( - *(NCap++) , f_n_customers , issueMod , iAM );
+	  )->chg_weight( - *(NCap_it++) , f_n_customers , issueMod , iAM );
     break;
     }
    case( FlwForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
-    MCFB( v_Block[ 1 ] )->chg_ucaps( NCap , Subset( nms ) , ordered ,
+    MCFB( v_Block[ 1 ] )->chg_ucaps( NCap.first( nms.size() ) ,
+				     Subset( nms ) , ordered ,
 				     issueMod , iAM );
     for( auto i : nms )
      LF( v_cap[ i ].get_function()
-	 )->modify_coefficient( 1 , - *(NCap++) , iAM );
+	 )->modify_coefficient( 1 , - *(NCap_it++) , iAM );
     break;
     }
    case( BenForm ): {  // - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2581,8 +2636,8 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
     // mcfb is the hidden inner Block of f_BF and lives in its own channel
     // namespace (no parent): the channel of iAM was opened on *this*, so we
     // strip it via par2mod() before forwarding to mcfb.
-    mcfb->chg_ucaps( NCap , Subset( nms ) , ordered , issueMod ,
-                     Observer::par2mod( iAM ) );
+    mcfb->chg_ucaps( NCap.first( nms.size() ) , Subset( nms ) , ordered ,
+                     issueMod , Observer::par2mod( iAM ) );
     for( auto i : nms ) {
      BendersBFunction::RealVector Ai( f_n_facilities , 0 );
      Ai[ i ] = v_capacity[ i ];
@@ -2599,7 +2654,7 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
   if( not_dry_run( issueMod ) )
-   copyidx( v_capacity.data() , nms , NCap );
+   copyidx( v_capacity.data() , nms , NCap_it );
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
@@ -2685,22 +2740,29 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacity( Demand NCap ,
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
+void CapacitatedFacilityLocationBlock::chg_customer_demands( MF_dbl_sp NDem ,
 			 Range rng , ModParam issueMod , ModParam issueAMod )
 {
  rng.second = std::min( rng.second , f_n_customers );
  if( rng.second <= rng.first )  // nothing to change
   return;                       // cowardly (and silently) return
 
+ if( NDem.size() < rng.second - rng.first )
+  throw( std::invalid_argument( "CapacitatedFacilityLocationBlock::"
+				"chg_customer_demands: the span is shorter "
+				"than the Range" ) );
+
+ auto NDem_it = NDem.begin();
+
  c_Index num = rng.second - rng.first;
  // TODO: if some changes are "fake", rather restrict the range
- if( std::equal( NDem , NDem + num , v_demand.begin() + rng.first ) )
+ if( std::equal( NDem_it , NDem_it + num , v_demand.begin() + rng.first ) )
   return;  // actually nothing changes, avoid issuing the Modification
 
  if( not_dry_run( issueAMod ) && ( AR & HasSatCns ) ) {
   // change abstract and physical representation together - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-  std::copy( NDem , NDem + num , v_demand.begin() + rng.first );
+  std::copy( NDem_it , NDem_it + num , v_demand.begin() + rng.first );
 
   // if appropriate, open a new channel to bunch up all abstract Modification
   Index nc = ( ( AR & FormMsk ) == FlwForm ) ? 0 : f_n_facilities;
@@ -2712,12 +2774,13 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
    case( StdForm ):    // - - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto & capi : v_cap )
      LF( capi.get_function()
-	 )->modify_coefficients( DVector( NDem , NDem + num ) , rng , iAM );
+	 )->modify_coefficients( DVector( NDem_it , NDem_it + num ) , rng , iAM );
     break;
 
    case( KskForm ):    // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto bi : v_Block )
-     BKB( bi )->chg_weights( NDem , rng , issueMod , iAM );
+     BKB( bi )->chg_weights( NDem.first( rng.second - rng.first ) , rng ,
+			     issueMod , iAM );
 
     break;
 
@@ -2739,7 +2802,7 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
   if( not_dry_run( issueMod ) )
-   std::copy( NDem , NDem + num , v_demand.begin() + rng.first );
+   std::copy( NDem_it , NDem_it + num , v_demand.begin() + rng.first );
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
@@ -2755,10 +2818,17 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
 
 /*--------------------------------------------------------------------------*/
 
-void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
+void CapacitatedFacilityLocationBlock::chg_customer_demands( MF_dbl_sp NDem ,
 			            Subset && nms , bool ordered ,
 				    ModParam issueMod , ModParam issueAMod )
 {
+ if( NDem.size() < nms.size() )
+  throw( std::invalid_argument( "CapacitatedFacilityLocationBlock::"
+				"chg_customer_demands: the span is shorter "
+				"than the Subset" ) );
+
+ auto NDem_it = NDem.begin();
+
  if( nms.empty() )  // nothing to change
   return;           // cowardly (and silently) return
 
@@ -2766,13 +2836,13 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
   throw( std::invalid_argument( "invalid customer name" ) );
 
  // TODO: eliminate from nms the "fake" changes
- if( is_equal( v_demand.data() , nms , NDem , f_n_customers ) )
+ if( is_equal( v_demand.data() , nms , NDem_it , f_n_customers ) )
   return;  // actually nothing changes, avoid issuing the Modification
 
  if( not_dry_run( issueAMod ) && ( AR & HasSatCns ) ) {
   // change abstract and physical representation together - - - - - - - - - -
   // in the meantime, if so instructed also issue abstract Modification
-  copyidx( v_demand.data() , nms , NDem );
+  copyidx( v_demand.data() , nms , NDem_it );
 
   // if appropriate, open a new channel to bunch up all abstract Modification
   Index nc = ( ( AR & FormMsk ) == FlwForm ) ? 0 : f_n_facilities;
@@ -2784,14 +2854,14 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
    case( StdForm ):    // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto & capi : v_cap )
      LF( capi.get_function()
-	 )->modify_coefficients( DVector( NDem , NDem + nms.size() ) ,
+	 )->modify_coefficients( DVector( NDem_it , NDem_it + nms.size() ) ,
 				 Subset( nms ) , ordered , iAM );
     break;
  
    case( KskForm ):    // - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto bi : v_Block )
-     BKB( bi )->chg_weights( NDem , Subset( nms ) , ordered ,
-			     issueMod , iAM );
+     BKB( bi )->chg_weights( NDem.first( nms.size() ) , Subset( nms ) ,
+			     ordered , issueMod , iAM );
 
     break;
 
@@ -2812,7 +2882,7 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( c_DV_it NDem ,
  else
   // only change the physical representation- - - - - - - - - - - - - - - - -
   if( not_dry_run( issueMod ) )
-   copyidx( v_demand.data() , nms , NDem );
+   copyidx( v_demand.data() , nms , NDem_it );
 
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
@@ -2954,7 +3024,7 @@ void CapacitatedFacilityLocationBlock::close_facilities( Range rng ,
  // TODO: if some changes are "fake", restrict the range
  Index cnt = 0;
  for( Index i = rng.first ; i < rng.second ; ++i )
-  if( v_fxd[ i ] != yFree )
+  if( v_fxd[ i ] == yFree )  // what closing changes are the free ones
    ++cnt;
 
  if( ! cnt )  // all facilities are fixed already
@@ -3026,7 +3096,7 @@ void CapacitatedFacilityLocationBlock::close_facilities( Subset && nms ,
  // TODO: if some changes are "fake", restrict the subset
  Index cnt = 0;
  for( auto i : nms )
-  if( v_fxd[ i ] != yFree )
+  if( v_fxd[ i ] == yFree )  // what closing changes are the free ones
    ++cnt;
 
  if( ! cnt )  // all facilities are fixed already
@@ -3542,6 +3612,153 @@ void CapacitatedFacilityLocationBlock::chg_UnSplittable( bool unsplt ,
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::set_structure( Configuration * strc )
+{
+ static const std::string _prfx =
+  "CapacitatedFacilityLocationBlock::set_structure: ";
+
+ if( ( ! strc ) && f_BlockConfig )
+  strc = f_BlockConfig->f_structure_Configuration;
+
+ if( ! strc )  // no structure is asked for: nothing is decided here
+  return;
+
+ auto c = dynamic_cast< SimpleConfiguration< int > * >( strc );
+ if( ! c )
+  throw( std::invalid_argument( _prfx + "the structure of a "
+                                "CapacitatedFacilityLocationBlock is a "
+                                "SimpleConfiguration< int >" ) );
+
+ const bool knap = ( c->f_value & FormMsk ) == KskForm;
+
+ if( AR & HasVar ) {  // the abstract representation is there already
+  if( knap == ( ( AR & FormMsk ) == KskForm ) )
+   return;            // and it has the structure being asked for
+  throw( std::logic_error( _prfx + "the abstract representation has been "
+                           "generated already, hence the structure can no "
+                           "longer be changed" ) );
+  }
+
+ guts_of_set_structure( knap );
+
+ }  // end( CapacitatedFacilityLocationBlock::set_structure )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::guts_of_set_structure( bool knap )
+{
+ // this may run while the Block is locked (the formulation is chosen when
+ // the abstract representation is generated, typically by a Solver that
+ // holds the lock): the sub-Block share the lock of the Block, hence the
+ // ones deleted are released first and the ones constructed are locked
+ // with the same owner, so that the final unlock() finds them owned
+ const void * owner = f_owner;
+ const bool ro = ( owner == ReadOnlyLock() );
+ auto release = [ owner , ro ]( Block * bi ) {
+  if( ro )
+   bi->read_unlock();
+  else
+   if( owner )
+    bi->unlock( owner );
+  delete bi;
+  };
+
+ if( ! knap ) {  // no sub-Block of its own until the formulation says so
+  if( ( AR & FormMsk ) == KskForm ) {
+   for( auto bi : v_Block )
+    release( bi );
+   v_Block.clear();
+   AR &= ~FormMsk;
+   }
+  return;
+  }
+
+ AR = ( AR & ~FormMsk ) | KskForm;
+ if( v_Block.size() == f_n_facilities )  // they are there already
+  return;
+
+ for( auto bi : v_Block )
+  release( bi );
+
+ // one knapsack problem for each facility: first construct the vector and
+ // sort it, so that the pointers are increasing with the facility index i,
+ // which speeds up some operations
+ v_Block.resize( f_n_facilities );
+ for( auto & bi : v_Block ) {
+  bi = new BinaryKnapsackBlock( this );
+  if( ro )
+   bi->read_lock();
+  else
+   if( owner && ( ! bi->lock( owner ) ) )
+    throw( std::logic_error( "CapacitatedFacilityLocationBlock::"
+                             "guts_of_set_structure: cannot lock a new "
+                             "sub-Block" ) );
+  }
+
+ std::sort( v_Block.begin() , v_Block.end() );
+
+ load_knapsacks();
+
+ }  // end( CapacitatedFacilityLocationBlock::guts_of_set_structure )
+
+/*--------------------------------------------------------------------------*/
+
+void CapacitatedFacilityLocationBlock::load_knapsacks( void )
+{
+ // the knapsack of facility i has the customers as its first items, with
+ // the demands as weights and the transportation costs as profits, and the
+ // opening of the facility as its last item, whose weight is minus the
+ // capacity and whose profit is the fixed cost
+ BinaryKnapsackBlock::doubleVec W( f_n_customers + 1 );
+ BinaryKnapsackBlock::doubleVec P( f_n_customers + 1 );
+ BinaryKnapsackBlock::boolVec I( f_n_customers + 1 , f_unsplittable );
+ I[ f_n_customers ] = true;
+
+ for( Index i = 0 ; i < f_n_facilities ; ++i ) {
+  for( Index j = 0 ; j < f_n_customers ; ++j ) {
+   W[ j ] = v_demand[ j ];
+   P[ j ] = v_t_cost[ i ][ j ];
+   }
+  W[ f_n_customers ] = - v_capacity[ i ];
+  P[ f_n_customers ] = v_f_cost[ i ];
+
+  auto bi = BKB( v_Block[ i ] );
+  bi->load( f_n_customers + 1 , 0 , W , P , I );
+  if( v_fxd[ i ] != yFree )
+   bi->fix_x( v_fxd[ i ] == yFxd1 , f_n_customers , eNoMod , eNoMod );
+  bi->set_objective_sense( false , eNoMod , eNoMod );
+  }
+ }  // end( CapacitatedFacilityLocationBlock::load_knapsacks )
+
+/*--------------------------------------------------------------------------*/
+
+bool CapacitatedFacilityLocationBlock::knapsacks_match( void ) const
+{
+ for( Index i = 0 ; i < f_n_facilities ; ++i ) {
+  auto bi = static_cast< const BinaryKnapsackBlock * >( v_Block[ i ] );
+  if( bi->get_NItems() != f_n_customers + 1 )
+   return( false );
+
+  const auto & W = bi->get_Weights();
+  const auto & P = bi->get_Profits();
+  const auto & I = bi->get_Integrality();
+  for( Index j = 0 ; j < f_n_customers ; ++j )
+   if( ( W[ j ] != v_demand[ j ] ) || ( P[ j ] != v_t_cost[ i ][ j ] ) ||
+       ( I[ j ] != f_unsplittable ) )
+    return( false );
+
+  if( ( W[ f_n_customers ] != - v_capacity[ i ] ) ||
+      ( P[ f_n_customers ] != v_f_cost[ i ] ) ||
+      ( bi->is_fixed( f_n_customers ) != ( v_fxd[ i ] != yFree ) ) )
+   return( false );
+  }
+
+ return( true );
+
+ }  // end( CapacitatedFacilityLocationBlock::knapsacks_match )
+
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
@@ -4186,9 +4403,11 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
     return;
 
    case( BinaryKnapsackBlockMod::eFixX ):  // - - - - - - - - - - - - - - - -
+    // the assignment Variable are those of the BinaryKnapsackBlock, of
+    // which no copy is kept here: only the facility one has to be followed
 
-    if( f < f_n_customers )
-     throw( std::invalid_argument( "unsupported variable fixing" ) );
+    if( s <= f_n_customers )
+     return;
 
     if( bkb->get_Var( f_n_customers )->get_value() == 1 )
      fix_open_facility( i , make_par( eNoBlck , chnl ) , eDryRun );
@@ -4199,8 +4418,8 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
 
    case( BinaryKnapsackBlockMod::eUnfixX ):  // - - - - - - - - - - - - - - -
 
-    if( f < f_n_customers )
-     throw( std::invalid_argument( "unsupported variable unfixing" ) );
+    if( s <= f_n_customers )
+     return;
 
     open_facility( i , make_par( eNoBlck , chnl ) , eDryRun );
 
@@ -4260,9 +4479,10 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
     return;
 
    case( BinaryKnapsackBlockMod::eFixX ):  // - - - - - - - - - - - - - - - -
+    // as in the ranged case, only the facility Variable is followed
 
-    if( ( nms.size() != 1 ) || ( nms.back() < f_n_customers ) )
-     throw( std::invalid_argument( "unsupported variable fixing" ) );
+    if( nms.back() < f_n_customers )
+     return;
 
     if( bkb->get_Var( f_n_customers )->get_value() == 1 )
      fix_open_facility( i , make_par( eNoBlck , chnl ) , eDryRun );
@@ -4273,8 +4493,8 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
 
    case( BinaryKnapsackBlockMod::eUnfixX ):  // - - - - - - - - - - - - - - -
 
-    if( ( nms.size() != 1 ) || ( nms.back() < f_n_customers ) )
-     throw( std::invalid_argument( "unsupported variable unfixing" ) );
+    if( nms.back() < f_n_customers )
+     return;
 
     open_facility( i , make_par( eNoBlck , chnl ) , eDryRun );
 

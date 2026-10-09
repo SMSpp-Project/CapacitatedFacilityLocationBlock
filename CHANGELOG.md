@@ -7,11 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-09
+
 ### Added
+
+- `set_structure()`: a structure Configuration that asks for the knapsack
+  formulation constructs the `BinaryKnapsackBlock` of the facilities when
+  the `BlockConfig` is applied, before any abstract representation, so that
+  whoever reads the tree of sub-Block sees them, e.g., a
+  `LagrangianDualSolver` that decomposes the Block recursively; the
+  knapsacks are loaded again when the abstract representation is generated
+  if the data have changed since, and `load()` keeps the structure
+
+- in the knapsack formulation the Block has an `FRealObjective` of its own,
+  with no Variable, besides those of the knapsacks, so that it can be the
+  Block of a `LagBFunction`, e.g., as the scenario of a
+  `TwoStageStochasticBlock` decomposed by a `LagrangianDualSolver`
 
 ### Changed
 
+- the data archive is downloaded by version: `DATA_VERSION` in CMakeLists.txt
+  names the version of the Package Registry to read, and the archive and the
+  marker of its extraction carry it in their name, so that a tree holding
+  an older extraction (the cache of the CI, or a clone extracted before)
+  downloads and extracts again instead of running on the old data;
+  data/upload-txt publishes the archive under that version
+
+- the makefile asks for `-O3 -DNDEBUG` and nothing else, the macro of the
+  patch for `boost::any` on macOS having no reason to be there since there is
+  no `boost::any` left in the core
+
+- whoever links the module keeps it: the classes of a module register
+  themselves in the factory from a static initialiser, and a linker that
+  drops what looks unused takes the registration away with it, so the target
+  now tells whoever links it to keep the symbol that forces the module in,
+  and on ELF, where naming the symbol is not enough, the library as a whole
+
+- `chg_facility_costs()`, `chg_transportation_costs()`,
+  `chg_facility_capacities()` and `chg_customer_demands()` take their data
+  as a `std::span< const double >`, whose length they check against the
+  Range or the Subset instead of reading past the end, and are registered in
+  the methods factory in that form too; the forms taking an iterator stay,
+  and defer to the span ones. What they pass on to the BinaryKnapsackBlock
+  and the MCFBlock inside is a span as well
+
 ### Fixed
+
+- the `BinaryKnapsackBlock` of the knapsack formulation constructed while the
+  Block is locked (the formulation is chosen when the abstract
+  representation is generated, typically by a `MILPSolver` that holds the
+  lock) share the lock of the Block, whose `unlock()` threw "invalid owner"
+  on them
+
+- fixing or unfixing the item of a customer in a `BinaryKnapsackBlock` of the
+  knapsack formulation (as a Branch-and-Bound does) is accepted, the
+  assignment Variable being those of the knapsack; only the facility item
+  was, the others threw "unsupported variable fixing"
+
+- the data archive is extracted by `cmake -E tar`, which also works with the
+  tar of macOS, where the option `--warning=no-unknown-keyword` of GNU tar
+  stopped the build
+
+- on macOS a program linking the module lost the classes the module
+  registers in the factories when the linker dropped the library, as it
+  does under `-dead_strip_dylibs`, which conda sets: the target now asks the
+  linker for the symbol that forces the module in (`-u`), which ld64,
+  unlike the ELF linker, counts as a use of the library
+
+- the step that fetches the data archive of this module says what went wrong
+  when it goes wrong: the download is checked, an archive that did not arrive
+  is removed instead of being left on disk for the build to take for the real
+  one, and the message names the URL. A server that answers with an error page
+  used to leave a file of a few bytes there, which made the next build fail
+  while extracting it, with the message of `tar` and no mention of the
+  download
+
+- a facility fixed open or closed in the data (`FacilityFix`) fixes, in
+  the knapsack formulation, the opening of the facility, i.e., the last item
+  of its knapsack, instead of the item with the index of the facility,
+  i.e., the assignment of a customer
+
+- `close_facilities()`, in both its forms, counted the facilities that were
+  already fixed where it acts on the free ones, so that it returned without
+  doing anything whenever all of them were free, the state every instance
+  starts in
+
+- the Subset form of `"CapacitatedFacilityLocationBlock::close_facilities"`
+  was registered in the methods factory on `open_facilities()`, so that
+  closing facilities by name opened them
+
+- the Subset form of `chg_transportation_costs()` was not registered in the
+  methods factory, while the documentation said it was
 
 ## [0.3.0] - 2026-09-12
 
@@ -52,16 +138,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - possibility of a constraint on maximum number of facilities
   (for scenario reduction applications)
 
-### Changed 
+### Changed
 
 - major data handling upgrade: instances are not included
   in the repo for space/time efficiency but a script to
   download them is provided
 
 - adapted to new standard organization of makefiles
-
-### Fixed 
-
 
 ## [0.1.1] - 2024-02-27
 
@@ -73,10 +156,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.0] - 2022-06-28
 
+### Added
+
 - First test release.
 
-
-[Unreleased]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.3.0...develop
+[Unreleased]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.4.0...develop
+[0.4.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.3.0...0.4.0
 [0.3.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.2.0...0.3.0
 [0.2.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.1.1...0.2.0
 [0.1.1]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.1.0...0.1.1

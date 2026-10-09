@@ -87,7 +87,7 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 # With the BUILD_SHARED_LIBS variable we can specify if the library will
 # be STATIC or SHARED, so no reason to do it now.
 add_library(${modName})
-target_compile_features(${modName} PUBLIC cxx_std_17)
+target_compile_features(${modName} PUBLIC cxx_std_20)
 
 # The name of the shared library carries the version of its binary interface,
 # which any minor release may change while the major version is 0, and then
@@ -101,8 +101,25 @@ set_target_properties(${modName} PROPERTIES
         VERSION ${PROJECT_VERSION}
         SOVERSION ${soVersion})
 
-if (MSVC AND BUILD_SHARED_LIBS)
-    target_link_options(${modName} INTERFACE "/INCLUDE:SMSpp_force_load_${modName}")
+# The classes of the module register themselves in the factory from a static
+# initialiser, and a linker that drops what looks unused takes the
+# registration away with it: the target tells whoever links it to keep the
+# symbol that forces the module in, or the library as a whole where naming
+# the symbol is not enough.
+if (BUILD_SHARED_LIBS)
+    if (MSVC)
+        target_link_options(${modName} INTERFACE
+                "/INCLUDE:SMSpp_force_load_${modName}")
+    elseif (UNIX AND (NOT APPLE))
+        # the ELF linker decides by the symbols a regular object asks for, so
+        # naming the symbol is not enough and the library has to be kept
+        target_link_options(${modName} INTERFACE "LINKER:--no-as-needed")
+    elseif (APPLE)
+        # ld64 keeps a dylib that provides a symbol to the link, one asked
+        # for by -u included, even under -dead_strip_dylibs
+        target_link_options(${modName} INTERFACE
+                "LINKER:-u,_SMSpp_force_load_${modName}")
+    endif ()
 endif ()
 
 # When adding source files with target_sources(), PRIVATE means that the files
@@ -148,13 +165,37 @@ add_subdirectory(tools)
 
 # ----- Custom commands and targets ----------------------------------------- #
 
+# The version of the archive in the Package Registry. A published version is
+# never replaced: new data go out under a new version, written here first [see
+# data/upload-txt], and the archive and the marker of its extraction carry it
+# in their name, so that a tree holding the data of an older version (a cache
+# of the CI, or a clone that has been extracted before) downloads and extracts
+# again instead of taking them for the current ones.
+set(DATA_VERSION 2025-07-29)
+
 # Download txt.tgz from GitLab Package Registry if it doesn't exist
-set(TXT_URL "https://gitlab.com/api/v4/projects/24780184/packages/generic/txt/latest/txt.tgz")
-set(TXT_ARCHIVE ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz)
+set(TXT_URL "https://gitlab.com/api/v4/projects/24780184/packages/generic/txt/${DATA_VERSION}/txt.tgz")
+set(TXT_ARCHIVE ${CMAKE_CURRENT_SOURCE_DIR}/data/txt-${DATA_VERSION}.tgz)
+set(DATA_MARKER ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted-${DATA_VERSION})
 set(TXT_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/download_cfl_txt.cmake)
 
 file(WRITE ${TXT_SCRIPT} "
-file(DOWNLOAD \"${TXT_URL}\" \"${TXT_ARCHIVE}\" SHOW_PROGRESS)
+file(DOWNLOAD \"${TXT_URL}\" \"${TXT_ARCHIVE}\" SHOW_PROGRESS STATUS _status)
+list(GET _status 0 _code)
+list(GET _status 1 _message)
+if(NOT _code EQUAL 0)
+  # what is on disk is whatever the server answered with, and leaving it there
+  # would let the build take it for the archive: the next attempt has to
+  # download again rather than fail while extracting it
+  file(REMOVE \"${TXT_ARCHIVE}\")
+  message(FATAL_ERROR \"cannot download ${TXT_URL}: \${_message}\")
+endif()
+file(SIZE \"${TXT_ARCHIVE}\" _size)
+if(_size LESS 1024)
+  file(REMOVE \"${TXT_ARCHIVE}\")
+  message(FATAL_ERROR \"${TXT_ARCHIVE} came down with \${_size} bytes, so the \
+server answered but not with the archive: try again later\")
+endif()
 ")
 
 add_custom_command(
@@ -168,17 +209,12 @@ add_custom_command(
 add_custom_target(download_cfl_txt
         DEPENDS ${TXT_ARCHIVE})
 
-# Custom command to extract the txt.tgz archive if the .extracted file does not exist
-if (UNIX)
-    set(TAR_FLAGS --warning=no-unknown-keyword -xzf)
-elseif (WIN32)
-    set(TAR_FLAGS xzf)
-endif ()
-
+# Custom command to extract the txt.tgz archive if the marker of this version
+# does not exist
 add_custom_command(
-        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted
-        COMMAND tar ${TAR_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/data/txt.tgz
-        COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted
+        OUTPUT ${DATA_MARKER}
+        COMMAND ${CMAKE_COMMAND} -E tar xzf ${TXT_ARCHIVE}
+        COMMAND echo > ${DATA_MARKER}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
         COMMENT "Extracting txt.tgz"
         VERBATIM
@@ -186,7 +222,7 @@ add_custom_command(
 
 # Create custom targets to run the txt extraction
 add_custom_target(extract_cfl_txt
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
+        DEPENDS ${DATA_MARKER})
 
 # Ensure that extract_cfl_txt is executed after the download
 add_dependencies(extract_cfl_txt download_cfl_txt)
@@ -200,7 +236,7 @@ if (UNIX)
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
             COMMENT "Running cfl2nc4"
             VERBATIM
-            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/cfl2nc4 ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/cfl2nc4 ${DATA_MARKER})
 elseif (WIN32)
     add_custom_command(
             OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
@@ -211,7 +247,7 @@ elseif (WIN32)
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
             COMMENT "Running cfl2nc4"
             VERBATIM
-            DEPENDS $<TARGET_FILE:cfl2nc4> ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted)
+            DEPENDS $<TARGET_FILE:cfl2nc4> ${DATA_MARKER})
 endif ()
 
 # Create custom targets to run the nc4 generation
