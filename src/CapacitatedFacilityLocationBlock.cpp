@@ -3774,16 +3774,11 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
   * afterward which means that any listening Observer already knows that
   * none of the previous Variable and Constraint are valid any longer. */
 
- for( auto & lst : v_sfc )  // clear the strong forcing constraints
-  for( auto & cnst : lst )
-   cnst.clear();
- for( auto & cnst : v_benders_cuts )  // clear the Benders cuts
-  cnst.clear();
- f_v_box.clear();            // clear the v_epi box constraint
- for( auto & cnst : v_cap )  // clear the capacity constraints
-  cnst.clear();
- for( auto & cnst : v_sat )  // clear the satisfaction constraints
-  cnst.clear();
+ Constraint::clear( v_sfc );           // clear the strong forcing constraints
+ Constraint::clear( v_benders_cuts );  // clear the Benders cuts
+ f_v_box.clear();                      // clear the v_epi box constraint
+ Constraint::clear( v_cap );           // clear the capacity constraints
+ Constraint::clear( v_sat );           // clear the satisfaction constraints
  maxF.clear();               // clear max. opened facilities constraint
  f_obj.clear();              // clear the objective function
 
@@ -3800,9 +3795,6 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
   AB( v_Block[ 0 ] )->reset_static_constraints();
   AB( v_Block[ 0 ] )->reset_static_variables();
   AB( v_Block[ 0 ] )->reset_objective();
-  // clear the capacity constraints before the AbstractBlock is destroyed
-  // to avoid the destruction looking at pointers to the deleted Block
-  v_cap.clear();
   // detach the objective from the AbstractBlock, since the latter will
   // be deleted before the former
   f_obj.set_Block( nullptr );
@@ -3813,12 +3805,6 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
   delete bi;
 
  v_Block.clear();  // then clear the vector
-
- // then delete them all
- v_sfc.clear();
- v_benders_cuts.clear();
- v_cap.clear();
- v_sat.clear();
 
  // delete all Variable
  v_x.resize( boost::extents[ 0 ][ 0 ] );
