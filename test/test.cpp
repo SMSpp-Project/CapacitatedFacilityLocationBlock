@@ -11,8 +11,10 @@
  * stops doing so in the abstract representation once it is relaxed, while
  * the physical one, which reads the data, is not affected by relaxing it.
  * The tolerance is checked in its relative and absolute forms, and so is
- * the maximum number of open facilities, built as a row and not. The rows
- * are relaxed with eNoMod, the Block not handling the Modification of that.
+ * the maximum number of open facilities, built as a row and not. In the
+ * "Benders friendly" formulation, which has no X, the open capacity is
+ * checked against the demand, and the Solution holds y alone. The rows are
+ * relaxed with eNoMod, the Block not handling the Modification of that.
  *
  * The checks hold under NDEBUG as well, not being assert(). The exit code
  * is the number of failed checks.
@@ -247,12 +249,70 @@ static void test_max_facilities( void )
 
 /*--------------------------------------------------------------------------*/
 
+static void test_benders( void )
+{
+ // the "Benders friendly" formulation has no X: only y and v are set, and
+ // the rows that need the hidden sub-problem (hence a Solver) are not built
+ auto b = make_instance( 1 );
+ SimpleConfiguration< int > ben( 2 );
+ b->generate_abstract_variables( & ben );
+ SimpleConfiguration< int > wc( 4 );  // the maximum facilities row only
+ b->generate_abstract_constraints( & wc );
+
+ check( b->get_x( 0 , 0 ) == nullptr , "benders: an X is there" );
+ check( b->get_v() != nullptr , "benders: no v" );
+
+ // facility 1 alone covers the demand of 8
+ b->get_y( 0 )->set_value( 0 );
+ b->get_y( 1 )->set_value( 1 );
+ check( abs_ok( b ) && phys_ok( b ) , "benders: a feasible point fails" );
+
+ // facility 0 alone does not: 6 < 8
+ b->get_y( 0 )->set_value( 1 );
+ b->get_y( 1 )->set_value( 0 );
+ check( ( ! abs_ok( b ) ) && ( ! phys_ok( b ) ) ,
+	"benders: open capacity short of the demand, the point passes" );
+
+ SimpleConfiguration< std::pair< double , int > > abs3( { 3 , 0 } );
+ check( abs_ok( b , & abs3 ) && phys_ok( b , & abs3 ) ,
+	"benders: a shortage of 2 beyond an absolute 3" );
+
+ // both open: the maximum facilities row is violated
+ b->get_y( 1 )->set_value( 1 );
+ check( ( ! abs_ok( b ) ) && ( ! phys_ok( b ) ) ,
+	"benders: two open facilities pass" );
+
+ auto maxF = b->get_static_constraint< FRowConstraint >( "maxF" );
+ check( maxF , "benders: no maximum facilities row" );
+ if( maxF ) {
+  maxF->relax( true , eNoMod );
+  check( abs_ok( b ) , "benders: the row is relaxed, yet the abstract "
+	 "check fails" );
+  check( ! phys_ok( b ) , "benders: the physical check reads the relaxed "
+	 "row" );
+  maxF->relax( false , eNoMod );
+  }
+
+ // the Solution holds y only
+ b->get_y( 1 )->set_value( 0 );
+ auto sol = b->get_Solution( nullptr , false );
+ b->get_y( 0 )->set_value( 0 );
+ sol->write( b );
+ check( b->get_y( 0 )->get_value() == 1 , "benders: the Solution loses y" );
+ delete sol;
+
+ delete b;
+ }
+
+/*--------------------------------------------------------------------------*/
+
 int main( void )
 {
  const std::vector< std::pair< std::string , void (*)( void ) > > tests = {
   { "natural" , test_natural } ,
   { "knapsack" , test_knapsack } ,
-  { "max_facilities" , test_max_facilities } };
+  { "max_facilities" , test_max_facilities } ,
+  { "benders" , test_benders } };
 
  for( auto & [ name , test ] : tests )
   try {

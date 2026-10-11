@@ -10,9 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - the unit test of the module, in `test/`, which checks `is_feasible()` on a
-  point set by hand in the natural and in the knapsack formulations, with
-  rows violated and relaxed, both tolerances and the maximum number of open
-  facilities, and runs in the CI of the module
+  point set by hand in the natural, knapsack and "Benders friendly"
+  formulations, with rows violated and relaxed, both tolerances and the
+  maximum number of open facilities, and runs in the CI of the module
 
 ### Changed
 
@@ -35,6 +35,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checked as well, on its row if it has been built and on the data if not;
   `customer_feasible()` and `facility_feasible()` take whether the tolerance
   is relative as a third parameter, `true` by default
+
+- in the "Benders friendly" formulation, which has no transportation
+  Variable, `is_feasible()` read them out of a sub-Block that is not there:
+  it now checks y and v, the bound on v and the Benders cuts with the
+  abstract representation, and that the open capacity covers the total
+  demand out of the data, which is what `customer_feasible()` and
+  `facility_feasible()` check there too; `get_x()` returns `nullptr`, the
+  getters and setters of the transportation solution throw, and
+  `get_Solution()` gives a Solution that holds y alone
+
+- `CapacitatedFacilityLocationSolution::read()` sized the transportation part
+  when it meant the design one
+
+- in the flow formulation X is the amount of demand served, and the physical
+  check of the customer satisfaction and capacity constraints read it as the
+  fraction of it
 
 ## [0.4.0] - 2026-10-09
 

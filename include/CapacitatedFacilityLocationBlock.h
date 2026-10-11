@@ -1026,6 +1026,13 @@ public:
   * makes the solution infeasible. The others, as well as all of them if
   * useabstract is false, are checked out of the data of the instance.
   *
+  * The "Benders friendly" formulation has no X: there the solution is y and
+  * v, if useabstract is true the bound on v and the Benders cuts are checked
+  * as well, and the customer satisfaction and the facility capacity
+  * constraints are checked out of the data, i.e., by checking that the
+  * capacity of the open facilities covers the total demand, which is when
+  * some X satisfies them both.
+  *
   * What "approximately feasible" exactly means is decided by a tolerance
   * and by whether it is relative or absolute (see RowConstraint::rel_viol()
   * and RowConstraint::abs_viol()); the tolerance is used as is for the
@@ -1056,7 +1063,11 @@ public:
   * to this method, and then of course that a solution has been written
   * there. The parameter eps is the accuracy defining "approximately", which
   * is relative if rel_viol is true and absolute otherwise. The parameter
-  * "useabstract" has the same meaning as in is_feasible(). */
+  * "useabstract" has the same meaning as in is_feasible().
+  * In the "Benders friendly" formulation, which has no X, this checks that
+  * the capacity of the open facilities covers the total demand, which is
+  * when some X satisfies both the customer satisfaction and the facility
+  * capacity constraints. */
 
  bool customer_feasible( double eps , bool useabstract = false ,
 			 bool rel_viol = true );
@@ -1072,7 +1083,11 @@ public:
   * there. The parameter eps is the accuracy defining "approximately", which
   * is relative (to the capacity of the facility, if the data are used) if
   * rel_viol is true and absolute otherwise. The parameter "useabstract" has
-  * the same meaning as in is_feasible(). */
+  * the same meaning as in is_feasible().
+  * In the "Benders friendly" formulation, which has no X, this checks that
+  * the capacity of the open facilities covers the total demand, which is
+  * when some X satisfies both the customer satisfaction and the facility
+  * capacity constraints. */
 
  bool facility_feasible( double eps , bool useabstract = false ,
 			 bool rel_viol = true );
@@ -1262,6 +1277,9 @@ public:
   *
   *   = everything else (e.g., 0) means "save everything";
   *
+  * The "Benders friendly" formulation has no transportation Variable, hence
+  * there the transportation part is never saved.
+  *
   * Note that CapacitatedFacilityLocationBlockSolution may not contain the
   * required solution if the Variable have not been constructed yet: this
   * throws an exception, unless emptys == true, in which case the
@@ -1336,7 +1354,9 @@ public:
  /// gets (a pointer to) the x[ i ][ j ] variable
  /** Gets a pointer to the ColVariable representing how much of the demand
   * of the customer j is served by facility i; returns nullptr if the
-  * abstract representation has not been constructed (yet).
+  * abstract representation has not been constructed (yet), or if the
+  * formulation in use is the "Benders friendly" one, which has no such
+  * ColVariable.
   *
   * Important note: in the Standard and Knapsack Formulation the variable
   *                 is in [ 0 , 1 ] and represents the fraction of the
@@ -1363,6 +1383,9 @@ public:
   if( ( AR & 3 ) == 1 )  // 3 = FormMsk , 1 = KskForm
    return( static_cast< BinaryKnapsackBlock * >(
 				              v_Block[ i ] )->get_Var( j ) );
+
+  if( ( AR & 3 ) == 3 )  // 3 = FormMsk , 3 = BenForm
+   return( nullptr );
 
   return( static_cast< MCFBlock * >( v_Block[ 1 ] )->i2p_x(
 			          f_n_facilities + i * f_n_customers + j ) );
@@ -2466,6 +2489,17 @@ public:
   * even with an empty Benders cut pool. */
 
  double compute_v_lower_bound( void ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// returns true if the open capacity (approximately) covers the demand
+ /** Returns true if the capacity of the facilities, each weighted by the
+  * current value of its y, covers the total demand up to eps, relative to
+  * the total demand if rel_viol is true and absolute otherwise. Every
+  * facility can serve every customer and the demand is splittable in the
+  * "Benders friendly" formulation, hence this is when some X satisfies
+  * both the customer satisfaction and the capacity constraints. */
+
+ bool open_capacity_feasible( double eps , bool rel_viol );
 
  /// (re)build the internal BendersBFunction f_BF for the BenForm
  /** Creates and fully initializes the hidden BendersBFunction f_BF used by

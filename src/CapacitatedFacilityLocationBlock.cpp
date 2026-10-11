@@ -26,6 +26,8 @@
 
 #include <iomanip>
 
+#include <numeric>
+
 /*--------------------------------------------------------------------------*/
 /*--------------------------------- MACROS ---------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -1177,6 +1179,17 @@ bool CapacitatedFacilityLocationBlock::is_feasible( bool useabstract ,
 	  ColVariable::is_feasible( v_x , eps ) ) )
    return( false );
   }
+ else if( ( AR & FormMsk ) == BenForm ) {
+  if( ! ( ColVariable::is_feasible( v_y , eps ) &&
+	  v_epi.is_feasible( eps ) ) )
+   return( false );
+
+  // the bound on v and the Benders cuts, if they have been built
+  if( useabstract && ( AR & HasCapCns ) )
+   if( ! ( RowConstraint::is_feasible( f_v_box , eps , rel_viol ) &&
+	   RowConstraint::is_feasible( v_benders_cuts , eps , rel_viol ) ) )
+    return( false );
+  }
  else {
   for( Index i = 0 ; i < f_n_facilities ; ++i )
    if( ! get_y( i )->is_feasible( eps ) )
@@ -1216,6 +1229,9 @@ bool CapacitatedFacilityLocationBlock::customer_feasible( double eps ,
 							  bool useabstract ,
 							  bool rel_viol )
 {
+ if( ( AR & FormMsk ) == BenForm )  // there is no X to check
+  return( open_capacity_feasible( eps , rel_viol ) );
+
  if( ! ( AR & HasSatCns ) )  // if customer constraints are not defined
   useabstract = false;       // you cannot use them to chek feasibility
 
@@ -1232,10 +1248,16 @@ bool CapacitatedFacilityLocationBlock::customer_feasible( double eps ,
 
  // do it using the physical representation- - - - - - - - - - - - - - - - -
 
+ // in FlwForm X is the amount of demand served, not the fraction of it
+ const bool amount = ( ( AR & FormMsk ) == FlwForm );
+
  for( Index j = 0 ; j < f_n_customers ; ++j ) {
   double tot = 0;
   for( Index i = 0 ; i < f_n_facilities ; ++i )
    tot += get_x( i , j )->get_value();
+
+  if( amount )
+   tot /= v_demand[ j ];
 
   if( std::abs( 1 - tot ) > eps )
    return( false );
@@ -1253,6 +1275,9 @@ bool CapacitatedFacilityLocationBlock::facility_feasible( double eps ,
 {
  const static std::string _prfx =
                      "CapacitatedFacilityLocationBlock::facility_feasible: ";
+
+ if( ( AR & FormMsk ) == BenForm )  // there is no X to check
+  return( open_capacity_feasible( eps , rel_viol ) );
 
  if( ! ( AR & HasCapCns ) )  // if capacity constraints are not defined
   useabstract = false;       // you cannot use them to check feasibility
@@ -1282,10 +1307,13 @@ bool CapacitatedFacilityLocationBlock::facility_feasible( double eps ,
 
  // do it using the physical representation- - - - - - - - - - - - - - - - -
 
+ // in FlwForm X is the amount of demand served, not the fraction of it
+ const bool amount = ( ( AR & FormMsk ) == FlwForm );
+
  for( Index i = 0 ; i < f_n_facilities ; ++i ) {
   auto tot = v_capacity[ i ] * get_y( i )->get_value();
   for( Index j = 0 ; j < f_n_customers ; ++j )
-   tot -= v_demand[ j ] * get_x( i , j )->get_value();
+   tot -= ( amount ? 1 : v_demand[ j ] ) * get_x( i , j )->get_value();
 
   if( tot < - ( rel_viol ? eps * v_capacity[ i ] : eps ) )
    return( false );
@@ -1294,6 +1322,26 @@ bool CapacitatedFacilityLocationBlock::facility_feasible( double eps ,
  return( true );
 
  }  // end( CapacitatedFacilityLocationBlock::facility_feasible )
+
+/*--------------------------------------------------------------------------*/
+
+bool CapacitatedFacilityLocationBlock::open_capacity_feasible( double eps ,
+							       bool rel_viol )
+{
+ // with all the facilities able to serve all the customers, and the demand
+ // splittable, some X satisfies both the customer satisfaction and the
+ // capacity constraints iff the open capacity covers the total demand
+ double cap = 0;
+ for( Index i = 0 ; i < f_n_facilities ; ++i )
+  cap += v_capacity[ i ] * v_y[ i ].get_value();
+
+ const double dem = std::accumulate( v_demand.begin() , v_demand.end() ,
+				     double( 0 ) );
+
+ return( dem - cap <= ( rel_viol ? eps * std::max( double( 1 ) , dem )
+			          : eps ) );
+
+ }  // end( CapacitatedFacilityLocationBlock::open_capacity_feasible )
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- Methods for R3 Blocks --------------------------*/
@@ -1698,7 +1746,8 @@ Solution * CapacitatedFacilityLocationBlock::get_Solution(
  if( wsol != 2 )
   sol->v_y.resize( f_n_facilities );
 
- if( wsol != 1 )
+ // the Benders formulation has no transportation Variable
+ if( ( wsol != 1 ) && ( ( AR & FormMsk ) != BenForm ) )
   sol->v_x.resize( f_n_customers * f_n_facilities );
 
  if( ! emptys )
@@ -6012,6 +6061,10 @@ void CapacitatedFacilityLocationBlock::get_x(
 		  "get_transportation_solution: variables not generated" ) );
  #endif
 
+ if( ( AR & FormMsk ) == BenForm )
+  throw( std::logic_error( "get_transportation_solution: no transportation"
+			   " Variable in the Benders formulation" ) );
+
  if( rng.second > f_n_facilities * f_n_customers )
   rng.second = f_n_facilities * f_n_customers;
  if( rng.second <= rng.first )  // Range is empty
@@ -6075,6 +6128,10 @@ void CapacitatedFacilityLocationBlock::get_x(
 		   [ & ]( auto i ) { return( i > f_n_facilities ); } ) )
    throw( std::logic_error( _prfx + "invalid index in nms" ) );
  #endif
+
+ if( ( AR & FormMsk ) == BenForm )
+  throw( std::logic_error( "get_transportation_solution: no transportation"
+			   " Variable in the Benders formulation" ) );
 
 
  if( ( AR & FormMsk ) == StdForm ) {  // standard formulation- - - - - - - - -
@@ -6181,6 +6238,10 @@ void CapacitatedFacilityLocationBlock::set_x(
 		  "set_transportation_solution: variables not generated" ) );
  #endif
 
+ if( ( AR & FormMsk ) == BenForm )
+  throw( std::logic_error( "set_transportation_solution: no transportation"
+			   " Variable in the Benders formulation" ) );
+
  if( rng.second > f_n_facilities * f_n_customers )
   rng.second = f_n_facilities * f_n_customers;
  if( rng.second <= rng.first )  // Range is empty
@@ -6248,6 +6309,10 @@ void CapacitatedFacilityLocationBlock::set_x(
 		   [ & ]( auto i ) { return( i > nmx ); } ) )
    throw( std::logic_error( _prfx + "invalid index in nms" ) );
  #endif
+
+ if( ( AR & FormMsk ) == BenForm )
+  throw( std::logic_error( "set_transportation_solution: no transportation"
+			   " Variable in the Benders formulation" ) );
 
  if( ( AR & FormMsk ) == StdForm ) {  // standard formulation- - - - - - - - -
   for( auto i : nms )
@@ -6344,8 +6409,8 @@ void CapacitatedFacilityLocationSolution::read( const Block * block )
 
  // read y- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( ! v_y.empty() ) {
-  if( v_x.size() < CFLB->get_NFacilities() )
-   v_x.resize( CFLB->get_NFacilities() );
+  if( v_y.size() < CFLB->get_NFacilities() )
+   v_y.resize( CFLB->get_NFacilities() );
 
   CFLB->get_facility_solution( v_y.begin() );
   }
