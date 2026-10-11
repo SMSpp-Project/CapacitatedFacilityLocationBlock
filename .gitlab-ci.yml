@@ -15,6 +15,7 @@ cache:
 
 stages:
   - build
+  - test
   - deploy
 
 build:
@@ -49,6 +50,23 @@ build:
   artifacts:
     paths:
       - smspp-project/build
+  only:
+    refs:
+      - develop
+      - tags
+    changes:
+      - cmake/*
+      - include/*
+      - src/*
+      - test/*
+      - tools/*
+      - CMakeLists.txt
+      - .gitlab-ci.yml
+
+test:
+  stage: test
+  script:
+    - ctest -V -C Release -L "$CI_PROJECT_TITLE" --test-dir smspp-project/build --no-tests=error
   only:
     refs:
       - develop

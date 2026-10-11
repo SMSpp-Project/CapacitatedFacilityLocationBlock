@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- the unit test of the module, in `test/`, which checks `is_feasible()` on a
+  point set by hand in the natural and in the knapsack formulations, with
+  rows violated and relaxed, both tolerances and the maximum number of open
+  facilities, and runs in the CI of the module
+
 ### Changed
 
 - the instances of `data/` are downloaded and extracted by the targets
@@ -14,6 +21,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that keeps its instances in the Package Registry, and the marker of the
   extraction carries the format in its name, so that a tree extracted
   before extracts once more; `run_cfl2nc4` builds `extract_cfl_txt` first
+
+### Fixed
+
+- `is_feasible()` with the abstract representation checks the rows with the
+  static `RowConstraint::is_feasible()` of the core, as the other Blocks do:
+  a relaxed row is skipped, a row that cannot be `compute()`-d makes the
+  point infeasible, and the knapsack rows of the knapsack formulation are
+  checked with the tolerance as well, no longer exactly; the tolerance may be
+  a `SimpleConfiguration< std::pair< double , int > >` saying whether it is
+  relative or absolute, a Configuration of another type falls back on the
+  one of the `BlockConfig`, and the maximum number of open facilities is
+  checked as well, on its row if it has been built and on the data if not;
+  `customer_feasible()` and `facility_feasible()` take whether the tolerance
+  is relative as a third parameter, `true` by default
 
 ## [0.4.0] - 2026-10-09
 

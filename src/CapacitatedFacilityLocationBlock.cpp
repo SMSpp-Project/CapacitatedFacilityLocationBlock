@@ -1145,41 +1145,77 @@ bool CapacitatedFacilityLocationBlock::is_feasible( bool useabstract ,
 						    Configuration * fsbc )
 {
  double eps = 1e-10;
+ bool rel_viol = true;
 
- if( ( ! fsbc ) && f_BlockConfig )
-  fsbc = f_BlockConfig->f_is_feasible_Configuration;
+ // the tolerance, and whether it is relative, out of a Configuration;
+ // false if it does not carry them
+ auto extract_parameters = [ & eps , & rel_viol ]( Configuration * c )
+  -> bool {
+  if( auto tc = dynamic_cast< SimpleConfiguration< double > * >( c ) ) {
+   eps = tc->f_value;
+   return( true );
+   }
+  if( auto tc = dynamic_cast<
+       SimpleConfiguration< std::pair< double , int > > * >( c ) ) {
+   eps = tc->f_value.first;
+   rel_viol = tc->f_value.second;
+   return( true );
+   }
+  return( false );
+  };
 
- if( auto tfsbc = dynamic_cast< SimpleConfiguration< double > * >( fsbc ) )
-  eps = tfsbc->f_value;
+ if( ( ! extract_parameters( fsbc ) ) && f_BlockConfig )
+  extract_parameters( f_BlockConfig->f_is_feasible_Configuration );
 
  if( ! ( AR & HasVar ) )
   throw( std::logic_error( "CapacitatedFacilityLocationBlock::is_feasible:"
 			   " generate_abstract_variables not called" ) );
 
  // check variable feasibility
- for( Index i = 0 ; i < f_n_facilities ; ++i )
-  if( ! get_y( i )->is_feasible( eps ) )
+ if( ( AR & FormMsk ) == StdForm ) {
+  if( ! ( ColVariable::is_feasible( v_y , eps ) &&
+	  ColVariable::is_feasible( v_x , eps ) ) )
    return( false );
-
- for( Index i = 0 ; i < f_n_facilities ; ++i )
-  for( Index j = 0 ; j < f_n_customers ; ++j )
-   if( ! get_x( i , j )->is_feasible( eps ) )
+  }
+ else {
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   if( ! get_y( i )->is_feasible( eps ) )
     return( false );
 
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   for( Index j = 0 ; j < f_n_customers ; ++j )
+    if( ! get_x( i , j )->is_feasible( eps ) )
+     return( false );
+  }
+
  // now check constraints feasibility
- return( customer_feasible( eps , useabstract ) &&
-	 facility_feasible( eps , useabstract ) );
+ if( ! ( customer_feasible( eps , useabstract , rel_viol ) &&
+	 facility_feasible( eps , useabstract , rel_viol ) ) )
+  return( false );
+
+ // the maximum number of open facilities
+ if( useabstract && ( AR & HasMaxCns ) )
+  return( RowConstraint::is_feasible( maxF , eps , rel_viol ) );
+
+ if( f_max_facilities >= f_n_facilities )
+  return( true );
+
+ double nopen = 0;
+ for( Index i = 0 ; i < f_n_facilities ; ++i )
+  nopen += get_y( i )->get_value();
+
+ return( nopen - f_max_facilities <=
+	 ( rel_viol ? eps * std::max( double( 1 ) ,
+				      double( f_max_facilities ) ) : eps ) );
 
  }  //  end( CapacitatedFacilityLocationBlock::is_feasible )
 
 /*--------------------------------------------------------------------------*/
 
 bool CapacitatedFacilityLocationBlock::customer_feasible( double eps ,
-							  bool useabstract )
+							  bool useabstract ,
+							  bool rel_viol )
 {
- const static std::string _prfx =
-                     "CapacitatedFacilityLocationBlock::customer_feasible: ";
-
  if( ! ( AR & HasSatCns ) )  // if customer constraints are not defined
   useabstract = false;       // you cannot use them to chek feasibility
 
@@ -1187,32 +1223,22 @@ bool CapacitatedFacilityLocationBlock::customer_feasible( double eps ,
   // do it using the abstract representation- - - - - - - - - - - - - - - - -
 
   if( ( ( AR & FormMsk ) == StdForm ) ||
-      ( ( AR & FormMsk ) == KskForm ) ) {
-   for( auto & cnst : v_sat ) {
-    cnst.compute();
-    if( cnst.rel_viol() > eps )
-     return( false );
-    }
+      ( ( AR & FormMsk ) == KskForm ) )
+   return( RowConstraint::is_feasible( v_sat , eps , rel_viol ) );
 
-   return( true );
-   }
-
-  SimpleConfiguration< double > cfg( eps ); 
+  SimpleConfiguration< double > cfg( eps );
   return( MCFB( v_Block[ 1 ] )->is_feasible( true , & cfg ) );
-  
-  throw( std::logic_error( _prfx + "flow formulation not supported yet" ) );
   }
- else {
-  // do it using the physical representation- - - - - - - - - - - - - - - - -
 
-  for( Index j = 0 ; j < f_n_customers ; ++j ) {
-   double tot = 0;
-   for( Index i = 0 ; i < f_n_facilities ; ++i )
-    tot += get_x( i , j )->get_value();
+ // do it using the physical representation- - - - - - - - - - - - - - - - -
 
-   if( std::abs( 1 - tot ) > eps )
-    return( false );
-   }
+ for( Index j = 0 ; j < f_n_customers ; ++j ) {
+  double tot = 0;
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   tot += get_x( i , j )->get_value();
+
+  if( std::abs( 1 - tot ) > eps )
+   return( false );
   }
 
  return( true );
@@ -1222,10 +1248,11 @@ bool CapacitatedFacilityLocationBlock::customer_feasible( double eps ,
 /*--------------------------------------------------------------------------*/
 
 bool CapacitatedFacilityLocationBlock::facility_feasible( double eps ,
-							  bool useabstract )
+							  bool useabstract ,
+							  bool rel_viol )
 {
  const static std::string _prfx =
-                     "CapacitatedFacilityLocationBlock::capacity_feasible: ";
+                     "CapacitatedFacilityLocationBlock::facility_feasible: ";
 
  if( ! ( AR & HasCapCns ) )  // if capacity constraints are not defined
   useabstract = false;       // you cannot use them to check feasibility
@@ -1234,44 +1261,39 @@ bool CapacitatedFacilityLocationBlock::facility_feasible( double eps ,
   // do it using the abstract representation- - - - - - - - - - - - - - - - -
 
   if( ( ( AR & FormMsk ) == StdForm ) ||
-      ( ( AR & FormMsk ) == FlwForm ) ) {
-   for( auto & cnst : v_cap ) {
-    cnst.compute();
-    if( cnst.rel_viol() > eps )
+      ( ( AR & FormMsk ) == FlwForm ) )
+   return( RowConstraint::is_feasible( v_cap , eps , rel_viol ) );
+
+  if( ( AR & FormMsk ) == KskForm ) {
+   // the capacity constraint is the knapsack one of each facility
+   for( auto bi : v_Block ) {
+    auto cnst = bi->get_static_constraint< FRowConstraint >( 0 );
+    if( ! cnst )
+     throw( std::logic_error( _prfx + "knapsack constraint not found" ) );
+    if( ! RowConstraint::is_feasible( *cnst , eps , rel_viol ) )
      return( false );
     }
 
    return( true );
    }
 
-  if( ( AR & FormMsk ) == KskForm ) {
-   SimpleConfiguration< double > cfg( eps );
-
-   for( Index i = 0 ; i < f_n_facilities ; ++i )
-    if( ! v_Block[ i ]->is_feasible( true , & cfg ) )
-     return( false );
-
-   return( true );
-   }
-
-  throw( std::logic_error( _prfx + "flow formulation not supported yet" ) );
+  throw( std::logic_error( _prfx + "formulation not supported" ) );
   }
- else {
-  // do it using the physical representation- - - - - - - - - - - - - - - - -
 
-  for( Index i = 0 ; i < f_n_facilities ; ++i ) {
-   auto tot = v_capacity[ i ] * get_y( i )->get_value();
-   for( Index j = 0 ; j < f_n_customers ; ++j )
-    tot -= v_demand[ j ] * get_x( i , j )->get_value();
+ // do it using the physical representation- - - - - - - - - - - - - - - - -
 
-   if( tot < - eps * v_capacity[ i ] )
-    return( false );
-   }
+ for( Index i = 0 ; i < f_n_facilities ; ++i ) {
+  auto tot = v_capacity[ i ] * get_y( i )->get_value();
+  for( Index j = 0 ; j < f_n_customers ; ++j )
+   tot -= v_demand[ j ] * get_x( i , j )->get_value();
+
+  if( tot < - ( rel_viol ? eps * v_capacity[ i ] : eps ) )
+   return( false );
   }
 
  return( true );
 
- }  // end( CapacitatedFacilityLocationBlock::capacity_feasible )
+ }  // end( CapacitatedFacilityLocationBlock::facility_feasible )
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- Methods for R3 Blocks --------------------------*/

@@ -160,6 +160,15 @@ target_link_libraries(${modName} PUBLIC
 # the library with this notation.
 add_library(${modNamespace}::${modName} ALIAS ${modName})
 
+# ----- Tests --------------------------------------------------------------- #
+if (BUILD_TESTING)
+    # enable testing in this directory's scope: the umbrella calls
+    # enable_testing() only after this subdirectory has been processed, so the
+    # test would otherwise not be registered with CTest
+    enable_testing()
+    add_subdirectory(test)
+endif ()
+
 # ----- Subdirectories ------------------------------------------------------ #
 add_subdirectory(tools)
 

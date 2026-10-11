@@ -1,0 +1,55 @@
+# --------------------------------------------------------------------------- #
+#    CMake file for CapacitatedFacilityLocationBlock/test                     #
+#                                                                             #
+#    In this file we define the unit tests for this library.                  #
+#    Tests that should be supported by ctest executable must be added         #
+#    with the add_test() command.                                             #
+#                                                                             #
+#                                Donato Meoli                                 #
+#                         Dipartimento di Informatica                         #
+#                             Universita' di Pisa                             #
+# --------------------------------------------------------------------------- #
+
+# The classes of the modules register themselves in the factories from
+# static objects, which nothing here names: a shared library is kept by
+# what its module asks of the linker [see the CMakeLists.txt of the
+# module], while an archive has to be taken whole.
+if (NOT BUILD_SHARED_LIBS)
+    if (MSVC)
+        add_link_options("/WHOLEARCHIVE" "/FORCE:MULTIPLE")
+    else () # Unix
+        if (APPLE)
+            add_link_options("-Wl,-all_load")
+        else ()
+            add_link_options("-Wl,--whole-archive,--allow-multiple-definition")
+        endif ()
+    endif ()
+endif ()
+
+# ----- CapacitatedFacilityLocationBlock_test ------------------------------- #
+
+add_executable(${modName}_test test.cpp)
+target_link_libraries(${modName}_test PRIVATE ${modNamespace}::${modName})
+
+if (WIN32 AND BUILD_SHARED_LIBS AND NOT DEFINED ENV{CONDA_BUILD})
+    # On Windows with shared libraries enabled copies all runtime DLL
+    # dependencies next to the executable in the build directory
+    # (POST_BUILD), using CMake's TARGET_RUNTIME_DLLS generator expression
+    add_custom_command(TARGET ${modName}_test POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_RUNTIME_DLLS:${modName}_test>
+            $<TARGET_FILE_DIR:${modName}_test>
+            COMMAND_EXPAND_LISTS
+            COMMENT "Copying runtime DLLs next to ${modName}_test.exe")
+endif ()
+
+add_test(NAME ${modName}_test
+         COMMAND ${modName}_test
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+# The label lets the module CI select exactly the tests exercising this
+# module with `ctest -L <module>` (see tests/cmake/TestLabels.cmake in the
+# umbrella for the system-tests counterpart).
+set_tests_properties(${modName}_test PROPERTIES LABELS "${modName}")
+
+# --------------------------------------------------------------------------- #

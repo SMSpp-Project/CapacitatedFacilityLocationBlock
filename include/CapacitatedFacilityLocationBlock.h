@@ -1018,20 +1018,29 @@ public:
   * prior to this method, and then of course that a solution has been
   * written there.
   *
-  * The parameter for deciding what "approximately feasible" exactly means is
-  * a single double value, representing the *relative* tolerance for
-  * satisfaction of both the customer satisfaction constraint and the
-  * facility capacity ones. This value is to be found as:
+  * The constraints checked are the customer satisfaction, the facility
+  * capacity and the maximum number of open facilities ones. If useabstract
+  * is true, those of the abstract representation that have been constructed
+  * are checked as the static methods RowConstraint::is_feasible() do: a
+  * relaxed Constraint is not checked, and one that cannot be compute()-d
+  * makes the solution infeasible. The others, as well as all of them if
+  * useabstract is false, are checked out of the data of the instance.
   *
-  * - if fsbc is not nullptr and it is a SimpleConfiguration< double >, then
-  *   it if fsbc->f_value;
+  * What "approximately feasible" exactly means is decided by a tolerance
+  * and by whether it is relative or absolute (see RowConstraint::rel_viol()
+  * and RowConstraint::abs_viol()); the tolerance is used as is for the
+  * Variable. They are to be found as:
   *
-  * - otherwise, if f_BlockConfig is not nullptr,
-  *   f_BlockConfig->f_is_feasible_Configuration is not nullptr and it
-  *   is a SimpleConfiguration< double >, then it is
-  *   f_BlockConfig->f_is_feasible_Configuration->f_value;
+  * - if fsbc is a SimpleConfiguration< double >, then fsbc->f_value is the
+  *   tolerance, which is relative; if it is a
+  *   SimpleConfiguration< std::pair< double , int > >, then
+  *   fsbc->f_value.first is the tolerance, which is relative if
+  *   fsbc->f_value.second is nonzero and absolute otherwise;
   *
-  * - otherwise, it is 1e-10. */
+  * - otherwise, if f_BlockConfig is not nullptr, the same holds for
+  *   f_BlockConfig->f_is_feasible_Configuration;
+  *
+  * - otherwise, the tolerance is 1e-10, and it is relative. */
 
  bool is_feasible( bool useabstract = false ,
 		   Configuration * fsbc = nullptr ) override;
@@ -1045,11 +1054,12 @@ public:
   * satisfaction constraints. This clearly requires the Variable to have been
   * defined, i.e., that generate_abstract_variables() has been called prior
   * to this method, and then of course that a solution has been written
-  * there. The parameter feps is the relative accuracy defining
-  * "approximately". The parameter "useabstract" has the same meaning as in
-  * is_feasible(). */
+  * there. The parameter eps is the accuracy defining "approximately", which
+  * is relative if rel_viol is true and absolute otherwise. The parameter
+  * "useabstract" has the same meaning as in is_feasible(). */
 
- bool customer_feasible( double eps , bool useabstract = false );
+ bool customer_feasible( double eps , bool useabstract = false ,
+			 bool rel_viol = true );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns true if the current solution is (approximately) facility feasible
@@ -1059,11 +1069,13 @@ public:
   * capacity constraints. This clearly requires the Variable to have been
   * defined, i.e., that generate_abstract_variables() has been called prior
   * to this method, and then of course that a solution has been written
-  * there. The parameter feps is the relative accuracy defining
-  * "approximately". The parameter "useabstract" has the same meaning as in
-  * is_feasible(). */
+  * there. The parameter eps is the accuracy defining "approximately", which
+  * is relative (to the capacity of the facility, if the data are used) if
+  * rel_viol is true and absolute otherwise. The parameter "useabstract" has
+  * the same meaning as in is_feasible(). */
 
- bool facility_feasible( double eps , bool useabstract = false );
+ bool facility_feasible( double eps , bool useabstract = false ,
+			 bool rel_viol = true );
 
 /** @} ---------------------------------------------------------------------*/
 /*------------------------- Methods for R3 Blocks --------------------------*/
