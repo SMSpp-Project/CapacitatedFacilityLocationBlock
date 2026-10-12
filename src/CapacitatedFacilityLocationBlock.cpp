@@ -2111,7 +2111,9 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
  
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgFCost ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgFCost ,
@@ -2169,7 +2171,9 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
 
- if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
+ // issue "physical Modification" - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgFCost ) ) ) {
   if( ! ordered )
    std::sort( nms.begin() , nms.end() );
   Block::add_Modification( std::make_shared<
@@ -2213,7 +2217,9 @@ void CapacitatedFacilityLocationBlock::chg_facility_cost( Cost NCost ,
   if( not_dry_run( issueMod ) )
    v_f_cost[ i ] = NCost;
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgFCost ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgFCost ,
@@ -2330,7 +2336,9 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgTCost ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgTCost ,
@@ -2469,7 +2477,9 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
 
- if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
+ // issue "physical Modification" - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgTCost ) ) ) {
   if( ! ordered )
    std::sort( nms.begin() , nms.end() );
   Block::add_Modification( std::make_shared<
@@ -2535,7 +2545,9 @@ void CapacitatedFacilityLocationBlock::chg_transportation_cost( Cost NCost ,
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
  
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgTCost ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			     CapacitatedFacilityLocationBlockMod::eChgTCost ,
@@ -2634,7 +2646,9 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgCap ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgCap ,
@@ -2730,7 +2744,9 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
 
- if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
+ // issue "physical Modification" - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgCap ) ) ) {
   if( ! ordered )
    std::sort( nms.begin() , nms.end() );
   Block::add_Modification( std::make_shared<
@@ -2797,7 +2813,9 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacity( Demand NCap ,
   if( not_dry_run( issueMod ) )
    v_capacity[ i ] = NCap;
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgCap ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgCap ,
@@ -2878,7 +2896,9 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( MF_dbl_sp NDem ,
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgDem ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgDem ,
@@ -2958,7 +2978,9 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( MF_dbl_sp NDem ,
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
 
- if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
+ // issue "physical Modification" - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgDem ) ) ) {
   if( ! ordered )
    std::sort( nms.begin() , nms.end() );
   Block::add_Modification( std::make_shared<
@@ -3029,7 +3051,9 @@ void CapacitatedFacilityLocationBlock::chg_customer_demand( Demand NDem ,
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
  
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgDem ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgDem ,
@@ -3071,7 +3095,8 @@ void CapacitatedFacilityLocationBlock::chg_max_facilities( Index NMaxFac ,
   }
 
  // issue "physical Modification"
- if( issue_pmod( issueMod ) )
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgMxF ) ) )
   Block::add_Modification( std::make_shared< 
                            CapacitatedFacilityLocationBlockMod >( this ,
                            CapacitatedFacilityLocationBlockMod::eChgMxF ) ,
@@ -3137,7 +3162,9 @@ void CapacitatedFacilityLocationBlock::close_facilities( Range rng ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eCloseF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod>( this ,
 			     CapacitatedFacilityLocationBlockMod::eCloseF ,
@@ -3209,7 +3236,9 @@ void CapacitatedFacilityLocationBlock::close_facilities( Subset && nms ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eCloseF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockSbstMod>( this ,
 			     CapacitatedFacilityLocationBlockMod::eCloseF ,
@@ -3252,7 +3281,9 @@ void CapacitatedFacilityLocationBlock::close_facility( Index i ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eCloseF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod>( this ,
 			     CapacitatedFacilityLocationBlockMod::eCloseF ,
@@ -3316,7 +3347,9 @@ void CapacitatedFacilityLocationBlock::open_facilities( Range rng ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eOpenF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod>( this ,
 			     CapacitatedFacilityLocationBlockMod::eOpenF ,
@@ -3386,7 +3419,9 @@ void CapacitatedFacilityLocationBlock::open_facilities( Subset && nms ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eOpenF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockSbstMod >( this ,
 			     CapacitatedFacilityLocationBlockMod::eOpenF ,
@@ -3427,7 +3462,9 @@ void CapacitatedFacilityLocationBlock::open_facility( Index i ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eOpenF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			     CapacitatedFacilityLocationBlockMod::eOpenF ,
@@ -3493,7 +3530,9 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Range rng ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eBuyF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			     CapacitatedFacilityLocationBlockMod::eBuyF ,
@@ -3566,7 +3605,9 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Subset && nms ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eBuyF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockSbstMod >( this ,
 			     CapacitatedFacilityLocationBlockMod::eBuyF ,
@@ -3609,7 +3650,9 @@ void CapacitatedFacilityLocationBlock::fix_open_facility( Index i ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eBuyF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			     CapacitatedFacilityLocationBlockMod::eBuyF ,
@@ -3671,7 +3714,9 @@ void CapacitatedFacilityLocationBlock::chg_UnSplittable( bool unsplt ,
   if( not_dry_run( issueMod ) )
    f_unsplittable = unsplt;
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgUnSplt ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockMod >( this ,
 								  unsplt

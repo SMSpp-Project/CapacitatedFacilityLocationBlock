@@ -2632,6 +2632,44 @@ class CapacitatedFacilityLocationBlockMod : public Modification
   eChgSplt          ///< change problem type to splittable
   };
 
+ /// what a Modification of the given type changes
+ /** What a Modification of the given type changes of the model [see
+  * Modification::ModConcern], which is what changes() says and what the
+  * methods that issue it ask before issuing it [see
+  * Observer::issue_pmod()]: the costs are the Objective, closing a facility
+  * or fixing it open makes the feasible region shrink and re-opening it
+  * makes it grow, the splittability is the integrality of the Variable, and
+  * the capacities, the demands and the maximum number of facilities are
+  * said to change the Constraint. */
+
+ static ModConcern changes_of( int type ) {
+  switch( type ) {
+   case( eChgFCost ):
+   case( eChgTCost ):
+    return( ePhysObj );
+   case( eChgCap ):
+   case( eChgDem ):
+   case( eChgMxF ):
+    return( ePhysCns );
+   case( eCloseF ):
+   case( eBuyF ):
+    return( eModPhys | eModVarData | eRegnShrink );
+   case( eOpenF ):
+    return( eModPhys | eModVarData | eRegnGrow );
+   case( eChgUnSplt ):
+    return( eModPhys | eModVarType | eRegnShrink );
+   case( eChgSplt ):
+    return( eModPhys | eModVarType | eRegnGrow );
+   default:
+    return( eModPhys | eEffAny );
+   }
+  }
+
+ /// what the Modification changes, as its type says [see changes_of()]
+ [[nodiscard]] ModConcern changes( void ) const override {
+  return( changes_of( type() ) );
+  }
+
 /*---------------------- CONSTRUCTOR & DESTRUCTOR --------------------------*/
 
  /// constructor: takes the CapacitatedFacilityLocationBlock and the type
