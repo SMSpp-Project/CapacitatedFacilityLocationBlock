@@ -2683,7 +2683,7 @@ class CapacitatedFacilityLocationBlockMod : public Modification
  virtual ~CapacitatedFacilityLocationBlockMod() = default;
  ///< destructor, does nothing
 
-/*-------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
+/*-------------------- PUBLIC METHODS OF THE CLASS -------------------------*/
 
  /** returns the [CapacitatedFacilityLocationBlock]Block to which the
   * CapacitatedFacilityLocationBlockMod refers */
@@ -2757,7 +2757,7 @@ class CapacitatedFacilityLocationBlockRngdMod
  virtual ~CapacitatedFacilityLocationBlockRngdMod() = default;
  ///< destructor, does nothing
 
-/*-------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
+/*-------------------- PUBLIC METHODS OF THE CLASS -------------------------*/
 
  /// accessor to the range
 
@@ -2822,7 +2822,7 @@ class CapacitatedFacilityLocationBlockSbstMod
  virtual ~CapacitatedFacilityLocationBlockSbstMod() = default;
  ///< destructor, does nothing
 
-/*-------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
+/*-------------------- PUBLIC METHODS OF THE CLASS -------------------------*/
 
  /// accessor to the subset
 
