@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- the licence is the GNU Lesser General Public License version 3.0
+
 - the instances of `data/` are downloaded and extracted by the targets
   `download_cfl_<fmt>` and `extract_cfl_<fmt>`, written as in every module
   that keeps its instances in the Package Registry, and the marker of the
