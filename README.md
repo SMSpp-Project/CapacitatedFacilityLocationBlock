@@ -1,5 +1,11 @@
 # CapacitatedFacilityLocationBlock
 
+[![Pipeline](https://gitlab.com/smspp/capacitatedfacilitylocationblock/badges/develop/pipeline.svg)](https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/pipelines?ref=develop)
+[![Release](https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/badges/release.svg)](https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/releases)
+[![Documentation](https://img.shields.io/badge/docs-Doxygen-blue)](https://smspp.gitlab.io/smspp-project/)
+[![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
+[![License: GPL v3](https://img.shields.io/badge/License-GPL_v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 This project provides `CapacitatedFacilityLocationBlock`, an implementation
 of the Block concept for a "pretty basic version" of the Capacitated Facility
 Location (CFL) problem, a.k.a., the Capacitated Warehouse Location (CWL)
