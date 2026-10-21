@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   formulations, with rows violated and relaxed, both tolerances and the
   maximum number of open facilities, and runs in the CI of the module
 
+- the C++20 module `smspp.capacitatedfacilitylocationblock`
+  (`src/CapacitatedFacilityLocationBlock.cppm`), which exports every name
+  that the headers declare at namespace scope and re-exports
+  `smspp.binaryknapsackblock` and `smspp.mcfblock`, so that a source file
+  can write `import smspp.capacitatedfacilitylocationblock;` in place of the
+  `#include` of the headers; it is built with the CMake option
+  `SMSpp_BUILD_MODULE`, as the target
+  `SMS++::CapacitatedFacilityLocationBlock_module`
+
 ### Changed
 
 - the licence is the GNU Lesser General Public License version 3.0
