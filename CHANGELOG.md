@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- the makefiles build the C++20 module
+  `smspp.capacitatedfacilitylocationblock` when `SMSppMOD` is not empty
+  (e.g., `make SMSppMOD=1`), with clang++ 16 or later [see
+  `lib/makefile-mod` of SMS++]
+
 - the unit test of the module, in `test/`, which checks `is_feasible()` on a
   point set by hand in the natural, knapsack and "Benders friendly"
   formulations, with rows violated and relaxed, both tolerances and the
@@ -24,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SMS++::CapacitatedFacilityLocationBlock_module`
 
 ### Changed
+
+- `SMSpp_BUILD_MODULE` no longer stops the configuration when the C++20
+  module cannot be built, i.e., with a CMake older than 3.28, a generator
+  other than Ninja or Visual Studio, a compiler other than Clang 16 (with
+  `clang-scan-deps`) or MSVC 19.34, or a module it imports that is not
+  there: the option is turned off with a warning that says why, and the
+  build goes on with the headers [see `cmake/CheckModule.cmake` of SMS++]
 
 - the licence is the GNU Lesser General Public License version 3.0
 

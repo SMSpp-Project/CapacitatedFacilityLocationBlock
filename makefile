@@ -47,6 +47,12 @@ CFLBkINC = -I$(CFLBkSDR)/include
 
 CFLBkH   = $(CFLBkSDR)/include/CapacitatedFacilityLocationBlock.h
 
+# the C++20 module smspp.capacitatedfacilitylocationblock - - - - - - - - - -
+# [see makefile-mod of SMS++]
+
+$(eval $(call SMSppMODrule,CFLBk,$(CFLBkSDR),CapacitatedFacilityLocationBlock,\
+	smspp.capacitatedfacilitylocationblock,$(BKBkMOD) $(MCFBkMOD)))
+
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 clean::
