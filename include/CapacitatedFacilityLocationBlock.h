@@ -70,8 +70,8 @@ namespace SMSpp_di_unipi_it
 /*--------------------------------------------------------------------------*/
 /*------------------------------- CLASSES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
-/** @defgroup CapacitatedFacilityLocationBlock_CLASSES
- *            Classes in CapacitatedFacilityLocationBlock.h
+/** @defgroup CapacitatedFacilityLocationBlock_CLASSES Classes in \
+ *            CapacitatedFacilityLocationBlock.h
  *  @{ */
 
 /*--------------------------------------------------------------------------*/
@@ -89,16 +89,16 @@ namespace SMSpp_di_unipi_it
  * Facilities / Warehouses whose role is to serve a set of n customers,
  * usually (but not necessarily) with n >> m. For ease of notation we define
  * the set I = { 1 , ... m } of Facilities / Warehouses and the set J =
- * { 1 , ... , n } of customers. Each Facility [ / Warehouse ] i \in I has a
- * capacity Q[ i ] corresponding to the maximum amount that it can deliver of
- * the unique commodity that the customers require; however, this can be done
- * only if the Facility [ ... ] is open, which has a fixed cost F[ i ].
- * Underlying the problem there is a complete bipartite graph G = ( I x J ,
- * A ) with m + n nodes and m * n = (directed) arcs corresponding to
- * (directed) routes from each facility i \in I to each customer j \in J.
- * Each arc ( i , j ) has a linear cost coefficient C[ i , j ] corresponding
- * to the cost of serving all the demand D[ j ] of the user j for the unique
- * commodity from facility i.
+ * { 1 , ... , n } of customers. Each Facility [ / Warehouse ]
+ * \f$ i \in I \f$ has a capacity Q[ i ] corresponding to the maximum amount
+ * that it can deliver of the unique commodity that the customers require;
+ * however, this can be done only if the Facility [ ... ] is open, which has
+ * a fixed cost F[ i ]. Underlying the problem there is a complete bipartite
+ * graph G = ( I x J , A ) with m + n nodes and m * n = (directed) arcs
+ * corresponding to (directed) routes from each facility \f$ i \in I \f$ to
+ * each customer \f$ j \in J \f$. Each arc ( i , j ) has a linear cost
+ * coefficient C[ i , j ] corresponding to the cost of serving all the demand
+ * D[ j ] of the user j for the unique commodity from facility i.
  *
  * Introducing flow variables X[ i , j ] that represent the percentage of the
  * total demand of customer j served by facility i and binary variables
@@ -308,13 +308,13 @@ public:
   *   exactly size() == n
   *
   * - C is the boost::multi_array< TCost , 2 > matrix of transportation costs,
-  *   arranged facility-wise; this means that C[ i ] for i \in I is a n-vector
-  *   so that C[ i ][ j ] is the total transportation cost between facility i
-  *   and customer j, i.e., the cost of serving all the demand D[ j ] of
-  *   customer j out of facility i.
+  *   arranged facility-wise; this means that C[ i ] for \f$ i \in I \f$ is an
+  *   n-vector so that C[ i ][ j ] is the total transportation cost between
+  *   facility i and customer j, i.e., the cost of serving all the demand
+  *   D[ j ] of customer j out of facility i.
   *
   * - unsplt is the bool that, if true [default], denotes that the
-  *   unsplittable version of of the problem needs be solved.
+  *   unsplittable version of the problem needs be solved.
   * 
   * - k is the number of maximum facilities that can be opened,
   *   [default] is iInf. 
@@ -713,9 +713,9 @@ public:
   *
   * Finally, if the third bit of ws is 1, then an appropriately arranged
   * group of dynamic Constraint is added that support the separation of
-  * the "strong linking" constraints x_{ij} \leq y_i. If this is done,
+  * the "strong linking" constraints \f$ x_{ij} \leq y_i \f$. If this is done,
   * then generate_dynamic_constraints() implements this separation. Note
-  * that, whatever the formulation, che corresponding "strong" group of
+  * that, whatever the formulation, the corresponding "strong" group of
   * dynamic Constraint is always added to the "root"
   * CapacitatedFacilityLocationBlock */
  
@@ -864,8 +864,8 @@ public:
  /// getting upper bounds on the value of the Objective
  /** An upper bound on the optimal value of the problem is computed as
   * \f$ \sum_{ i \in I } : F[ i ] > 0 F[ i ] \f$ plus, for each customer
-  * j \in J, the term \f$ C[ i , j ] \f$ corresponding to the maximum
-  * \f$ C[ i , j ] \f$ among all possible i \in I. */
+  * \f$ j \in J \f$, the term \f$ C[ i , j ] \f$ corresponding to the maximum
+  * \f$ C[ i , j ] \f$ among all possible \f$ i \in I \f$. */
 
  [[nodiscard]] double get_valid_upper_bound( bool conditional = false )
   override final {
@@ -882,8 +882,8 @@ public:
  /// getting a global valid lower bound on the value of the Objective
  /** An upper bound on the optimal value of the problem is computed as
   * \f$ \sum_{ i \in I } : F[ i ] < 0 F[ i ] \f$ plus, for each customer
-  * j \in J, the term \f$ C[ i , j ] \f$ corresponding to the minimum
-  * \f$ C[ i , j ] \f$ among all possible i \in I. */
+  * \f$ j \in J \f$, the term \f$ C[ i , j ] \f$ corresponding to the minimum
+  * \f$ C[ i , j ] \f$ among all possible \f$ i \in I \f$. */
 
  [[nodiscard]] double get_valid_lower_bound( bool conditional = false )
   override final {
@@ -1807,7 +1807,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// changes the transportation of the given pair ( facility , customer )
  /** Method to change the transportation costs for the given pair
-  * ( facility , customer ) \p, i.e., facility = p / get_NCustomers() and
+  * ( facility , customer ) \p p, i.e., facility = p / get_NCustomers() and
   * customer = p % get_NCustomers(). */
 
  void chg_transportation_cost( Cost NCost , Index p ,
@@ -2195,8 +2195,8 @@ public:
  std::vector< std::list< FRowConstraint > > v_sfc;
  ///< the strong forcing constraints
  /**< v_sfc is an array of FRowConstraint for the dynamic separation of
-  * "strong forcing" constraints x_{ij} \leq y_i; v_sfc[ i ] are all the
-  * strong forcing" constraints corresponding to y_i. */
+  * "strong forcing" constraints \f$ x_{ij} \leq y_i \f$; v_sfc[ i ] are all
+  * the "strong forcing" constraints corresponding to y_i. */
 
  // "Benders friendly" formulation - - - - - - - - - - - - - - - - - - - - - -
 
