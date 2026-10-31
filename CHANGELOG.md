@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- the tester checks what each physical Modification says it changes
+  (`changes()`) against what the change does to the model, written down in
+  the tester, for every type of `CapacitatedFacilityLocationBlockMod`
+
 - the makefiles build the C++20 module
   `smspp.capacitatedfacilitylocationblock` when `SMSppMOD` is not empty
   (e.g., `make SMSppMOD=1`), with clang++ 16 or later [see

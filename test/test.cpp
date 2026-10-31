@@ -15,6 +15,9 @@
  * "Benders friendly" formulation, which has no X, the open capacity is
  * checked against the demand, and the Solution holds y alone. The rows are
  * relaxed with eNoMod, the Block not handling the Modification of that.
+ * Each physical Modification is finally checked for what it says it
+ * changes [see Modification::changes()], against what the change does to
+ * the model, written down in the tester.
  *
  * The checks hold under NDEBUG as well, not being assert(). The exit code
  * is the number of failed checks.
@@ -31,9 +34,15 @@
 
 #include "CapacitatedFacilityLocationBlock.h"
 
+#include "FakeSolver.h"
+
 #include "FRowConstraint.h"
 
+#include <functional>
 #include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- USING -----------------------------------*/
@@ -305,6 +314,79 @@ static void test_benders( void )
  }
 
 /*--------------------------------------------------------------------------*/
+/// what each CapacitatedFacilityLocationBlockMod says it changes [see
+/// Modification::changes()], against what the change does to the model,
+/// written down here: the costs are the Objective, in either direction,
+/// the capacities, the demands and the maximum number of facilities the
+/// Constraint, closing a facility or fixing it open shrinks the feasible
+/// region and re-opening it enlarges it, and the splittability is the
+/// integrality of the Variable, unsplittable shrinking the region
+
+static void test_changes( void )
+{
+ using M = Modification;
+ using CM = CapacitatedFacilityLocationBlockMod;
+ auto b = make_instance( 2 );
+ auto fs = new FakeSolver();
+ b->register_Solver( fs );
+
+ // the call has to issue exactly one CapacitatedFacilityLocationBlockMod,
+ // of type t, saying that it changes c
+ const auto one = [ & ]( const std::function< void( void ) > & call , int t ,
+			 M::ModConcern c , const std::string & what ) {
+  fs->lock_Modification_list();
+  fs->get_Modification_list().clear();
+  fs->unlock_Modification_list();
+  call();
+  std::vector< std::shared_ptr< CM > > got;
+  fs->lock_Modification_list();
+  for( auto & mod : fs->get_Modification_list() )
+   if( auto cm = std::dynamic_pointer_cast< CM >( mod ) )
+    got.push_back( cm );
+  fs->get_Modification_list().clear();
+  fs->unlock_Modification_list();
+  check( got.size() == 1 , "changes, " + what + ": " +
+	 std::to_string( got.size() ) + " Modification instead of 1" );
+  if( got.size() != 1 )
+   return;
+  check( got.front()->type() == t , "changes, " + what + ": type " +
+	 std::to_string( got.front()->type() ) + " instead of " +
+	 std::to_string( t ) );
+  check( got.front()->changes() == c , "changes, " + what +
+	 ": it says it changes " + std::to_string( got.front()->changes() ) +
+	 " instead of " + std::to_string( c ) );
+  };
+
+ const auto obj = M::eModPhys | M::eModObj | M::eObjUp | M::eObjDown;
+ const auto cns = M::eModPhys | M::eModCnsSide | M::eModCnsCoef |
+                  M::eRegnShrink | M::eRegnGrow;
+ one( [ & ]() { b->chg_facility_cost( 5 , 0 ); } , CM::eChgFCost , obj ,
+      "a facility cost" );
+ one( [ & ]() { b->chg_transportation_cost( 4 , 1 ); } , CM::eChgTCost ,
+      obj , "a transportation cost" );
+ one( [ & ]() { b->chg_facility_capacity( 7 , 0 ); } , CM::eChgCap , cns ,
+      "a capacity" );
+ one( [ & ]() { b->chg_customer_demand( 3 , 1 ); } , CM::eChgDem , cns ,
+      "a demand" );
+ one( [ & ]() { b->chg_max_facilities( 1 ); } , CM::eChgMxF , cns ,
+      "the maximum number of facilities" );
+ one( [ & ]() { b->close_facility( 0 ); } , CM::eCloseF ,
+      M::eModPhys | M::eModVarData | M::eRegnShrink , "a closing" );
+ one( [ & ]() { b->open_facility( 0 ); } , CM::eOpenF ,
+      M::eModPhys | M::eModVarData | M::eRegnGrow , "a re-opening" );
+ one( [ & ]() { b->fix_open_facility( 1 ); } , CM::eBuyF ,
+      M::eModPhys | M::eModVarData | M::eRegnShrink , "a fixing open" );
+ one( [ & ]() { b->chg_UnSplittable( true ); } , CM::eChgUnSplt ,
+      M::eModPhys | M::eModVarType | M::eRegnShrink , "unsplittable" );
+ one( [ & ]() { b->chg_UnSplittable( false ); } , CM::eChgSplt ,
+      M::eModPhys | M::eModVarType | M::eRegnGrow , "splittable" );
+
+ b->unregister_Solver( fs );
+ delete fs;
+ delete b;
+ }
+
+/*--------------------------------------------------------------------------*/
 
 int main( void )
 {
@@ -312,7 +394,8 @@ int main( void )
   { "natural" , test_natural } ,
   { "knapsack" , test_knapsack } ,
   { "max_facilities" , test_max_facilities } ,
-  { "benders" , test_benders } };
+  { "benders" , test_benders } ,
+  { "changes" , test_changes } };
 
  for( auto & [ name , test ] : tests )
   try {
