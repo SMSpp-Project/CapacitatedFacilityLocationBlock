@@ -1688,21 +1688,6 @@ public:
                           ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the fixed costs of a contiguous interval, iterator form
- /** As the span form, \p NCost pointing to the first of the new values; its
-  * length is taken from \p rng, restricted to what there is. */
-
- void chg_facility_costs( c_CV_it NCost , Range rng = INFRange ,
-                          ModParam issueMod = eNoBlck ,
-                          ModParam issueAMod = eNoBlck ) {
-  rng.second = std::min( rng.second , get_NFacilities() );
-  if( rng.second > rng.first )
-   chg_facility_costs(
-    MF_dbl_sp( & * NCost , rng.second - rng.first ) , rng , issueMod ,
-    issueAMod );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// change the facility_costs of an arbitrary subset of facilities
  /** Method to change the costs of an arbitrary subset of facilities. That is,
   * *( NCost + h ) becomes the new cost of facility nms[ h ] for all 0 <= h <
@@ -1715,21 +1700,6 @@ public:
                           Subset && nms , bool ordered = false ,
                           ModParam issueMod = eNoBlck ,
                           ModParam issueAMod = eNoBlck );
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the fixed costs of an arbitrary subset, iterator form
- /** As the span form, \p NCost pointing to the first of the new values; its
-  * length is taken from \p nms. */
-
- void chg_facility_costs( c_CV_it NCost ,
-                          Subset && nms , bool ordered = false ,
-                          ModParam issueMod = eNoBlck ,
-                          ModParam issueAMod = eNoBlck ) {
-  if( ! nms.empty() )
-   chg_facility_costs(
-    MF_dbl_sp( & * NCost , nms.size() ) , std::move( nms ) , ordered ,
-    issueMod , issueAMod );
-  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// changes the cost of the given facility
@@ -1759,21 +1729,6 @@ public:
                                 ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the transportation costs of a contiguous interval, iterator form
- /** As the span form, \p NCost pointing to the first of the new values; its
-  * length is taken from \p rng, restricted to what there is. */
-
- void chg_transportation_costs( c_CV_it NCost , Range rng = INFRange ,
-                                ModParam issueMod = eNoBlck ,
-                                ModParam issueAMod = eNoBlck ) {
-  rng.second = std::min( rng.second , get_NFacilities() * get_NCustomers() );
-  if( rng.second > rng.first )
-   chg_transportation_costs(
-    MF_dbl_sp( & * NCost , rng.second - rng.first ) , rng , issueMod ,
-    issueAMod );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// change the transportation costs of an arbitrary subset
  /** Method to change the transportation costs for an arbitrary subset of the
   * pairs ( facility , customer ). The matrix of transportation costs is
@@ -1788,21 +1743,6 @@ public:
                                 Subset && nms , bool ordered = false ,
                                 ModParam issueMod = eNoBlck ,
                                 ModParam issueAMod = eNoBlck );
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the transportation costs of an arbitrary subset, iterator form
- /** As the span form, \p NCost pointing to the first of the new values; its
-  * length is taken from \p nms. */
-
- void chg_transportation_costs( c_CV_it NCost ,
-                                Subset && nms , bool ordered = false ,
-                                ModParam issueMod = eNoBlck ,
-                                ModParam issueAMod = eNoBlck ) {
-  if( ! nms.empty() )
-   chg_transportation_costs(
-    MF_dbl_sp( & * NCost , nms.size() ) , std::move( nms ) , ordered ,
-    issueMod , issueAMod );
-  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// changes the transportation of the given pair ( facility , customer )
@@ -1829,21 +1769,6 @@ public:
                                ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the capacities of a contiguous interval, iterator form
- /** As the span form, \p NCap pointing to the first of the new values; its
-  * length is taken from \p rng, restricted to what there is. */
-
- void chg_facility_capacities( c_DV_it NCap , Range rng = INFRange ,
-                               ModParam issueMod = eNoBlck ,
-                               ModParam issueAMod = eNoBlck ) {
-  rng.second = std::min( rng.second , get_NFacilities() );
-  if( rng.second > rng.first )
-   chg_facility_capacities(
-    MF_dbl_sp( & * NCap , rng.second - rng.first ) , rng , issueMod ,
-    issueAMod );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// change the capacities of an arbitrary subset of facilities
  /** Method to change the capacities of an arbitrary subset of facilities.
   * That is, *( NCop + h ) becomes the capacity of facility nms[ h ] for all
@@ -1856,21 +1781,6 @@ public:
                                Subset && nms , bool ordered = false ,
                                ModParam issueMod = eNoBlck ,
                                ModParam issueAMod = eNoBlck );
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the capacities of an arbitrary subset, iterator form
- /** As the span form, \p NCap pointing to the first of the new values; its
-  * length is taken from \p nms. */
-
- void chg_facility_capacities( c_DV_it NCap ,
-                               Subset && nms , bool ordered = false ,
-                               ModParam issueMod = eNoBlck ,
-                               ModParam issueAMod = eNoBlck ) {
-  if( ! nms.empty() )
-   chg_facility_capacities(
-    MF_dbl_sp( & * NCap , nms.size() ) , std::move( nms ) , ordered ,
-    issueMod , issueAMod );
-  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// changes the capacity of the given facility
@@ -1894,21 +1804,6 @@ public:
                             ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the demands of a contiguous interval, iterator form
- /** As the span form, \p NDem pointing to the first of the new values; its
-  * length is taken from \p rng, restricted to what there is. */
-
- void chg_customer_demands( c_DV_it NDem , Range rng = INFRange ,
-                            ModParam issueMod = eNoBlck ,
-                            ModParam issueAMod = eNoBlck ) {
-  rng.second = std::min( rng.second , get_NCustomers() );
-  if( rng.second > rng.first )
-   chg_customer_demands(
-    MF_dbl_sp( & * NDem , rng.second - rng.first ) , rng , issueMod ,
-    issueAMod );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// change the demands of an arbitrary subset of customers
  /** Method to change the demands of an arbitrary subset of customers. That
   * is, *( NDem + h ) becomes the demand of customer nms[ h ] for all 0 <= h
@@ -1921,21 +1816,6 @@ public:
                             Subset && nms , bool ordered = false ,
                             ModParam issueMod = eNoBlck ,
                             ModParam issueAMod = eNoBlck );
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the demands of an arbitrary subset, iterator form
- /** As the span form, \p NDem pointing to the first of the new values; its
-  * length is taken from \p nms. */
-
- void chg_customer_demands( c_DV_it NDem ,
-                            Subset && nms , bool ordered = false ,
-                            ModParam issueMod = eNoBlck ,
-                            ModParam issueAMod = eNoBlck ) {
-  if( ! nms.empty() )
-   chg_customer_demands(
-    MF_dbl_sp( & * NDem , nms.size() ) , std::move( nms ) , ordered ,
-    issueMod , issueAMod );
-  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// changes the demand of the given customer
@@ -2281,45 +2161,6 @@ public:
 
  static void static_initialization( void )
  {
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
-   "CapacitatedFacilityLocationBlock::chg_facility_costs",
-   & CapacitatedFacilityLocationBlock::chg_facility_costs );
-
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
-   bool >(
-   "CapacitatedFacilityLocationBlock::chg_facility_costs" ,
-   & CapacitatedFacilityLocationBlock::chg_facility_costs );
-
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
-   "CapacitatedFacilityLocationBlock::chg_transportation_costs" ,
-   &CapacitatedFacilityLocationBlock::chg_transportation_costs );
-
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
-   bool >(
-   "CapacitatedFacilityLocationBlock::chg_transportation_costs" ,
-   & CapacitatedFacilityLocationBlock::chg_transportation_costs );
-
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
-   bool >(
-   "CapacitatedFacilityLocationBlock::chg_facility_capacities",
-   & CapacitatedFacilityLocationBlock::chg_facility_capacities );
-
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
-   "CapacitatedFacilityLocationBlock::chg_facility_capacities",
-   & CapacitatedFacilityLocationBlock::chg_facility_capacities );
-
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
-   bool >(
-   "CapacitatedFacilityLocationBlock::chg_customer_demands",
-   &CapacitatedFacilityLocationBlock::chg_customer_demands );
-
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
-   "CapacitatedFacilityLocationBlock::chg_customer_demands",
-   & CapacitatedFacilityLocationBlock::chg_customer_demands );
-
-  // the same data-carrying methods in the span form, which the iterator
-  // one defers to
-
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_sp , Range >(
    "CapacitatedFacilityLocationBlock::chg_facility_costs",
    & CapacitatedFacilityLocationBlock::chg_facility_costs );

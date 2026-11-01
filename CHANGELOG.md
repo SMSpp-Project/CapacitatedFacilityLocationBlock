@@ -60,6 +60,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   extraction carries the format in its name, so that a tree extracted
   before extracts once more; `run_cfl2nc4` builds `extract_cfl_txt` first
 
+### Removed
+
+- the forms of `chg_facility_costs()`, `chg_transportation_costs()`,
+  `chg_facility_capacities()` and `chg_customer_demands()` taking an
+  iterator, and their registration in the methods factory, which has only
+  the span forms; the module passes spans to them and to the setters of
+  `BinaryKnapsackBlock` and `MCFBlock`
+
 ### Fixed
 
 - on Windows, the executables that copy their DLLs next to themselves

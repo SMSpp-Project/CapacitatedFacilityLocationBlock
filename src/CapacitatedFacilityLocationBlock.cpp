@@ -4071,7 +4071,7 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_tcost_MCF(
  rng.first += f_n_facilities;
  rng.second += f_n_facilities;
  
- mcfb->chg_costs( NSC.begin() , rng , issueMod , issueAMod );
+ mcfb->chg_costs( MF_dbl_sp( NSC ) , rng , issueMod , issueAMod );
 
  }  // end( CapacitatedFacilityLocationBlock::guts_of_chg_tcost_MCF( range ) )
 
@@ -4097,7 +4097,7 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_tcost_MCF(
   *(nnmsit++) = h + f_n_facilities;
   }
 
- mcfb->chg_costs( NSC.begin() , std::move( nnms ) , ordered ,
+ mcfb->chg_costs( MF_dbl_sp( NSC ) , std::move( nnms ) , ordered ,
 		  issueMod , issueAMod );
 
  }  // end( CapacitatedFacilityLocationBlock::guts_of_chg_tcost_MCF( range ) )
@@ -4129,7 +4129,7 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
   mcfb->chg_dfct( v_demand[ rng.first ] , f_n_facilities + rng.first ,
 		  issueMod , iAM );
  else
-  mcfb->chg_dfcts( v_demand.begin() + rng.first ,
+  mcfb->chg_dfcts( MF_dbl_sp( v_demand ).subspan( rng.first ) ,
 		   Range( rng.first + f_n_facilities ,
 			  rng.second + f_n_facilities ) , issueMod , iAM );
 
@@ -4187,7 +4187,8 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
 				Demand( 0 ) );
  nnms.back() = f_n_facilities + f_n_customers;
 
- mcfb->chg_dfcts( ND.begin() , std::move( nnms ) , ordered , issueMod , iAM );
+ mcfb->chg_dfcts( MF_dbl_sp( ND ) , std::move( nnms ) , ordered , issueMod ,
+                  iAM );
 
  // now update the costs of all arcs ( i , j ) s.t. the capacity of j changed
  nnms.resize( nms.size() * f_n_facilities );
@@ -4246,7 +4247,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF(
      auto NCit = NC.begin();
      for( Index i = f ; i < end ; )
       *(NCit++) = (lfo->get_v_var())[ i++ ].second;
-     chg_facility_costs( NC.begin() , Range( f , end ) ,
+     chg_facility_costs( MF_dbl_sp( NC ) , Range( f , end ) ,
 			 make_par( eNoBlck , chnl ) , eDryRun );
      }
 
@@ -4264,7 +4265,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF(
      auto NCit = NC.begin();
      for( Index i = f ; i < s ; )
       *(NCit++) = (lfo->get_v_var())[ i++ ].second;
-     chg_transportation_costs( NC.begin() , Range( f - f_n_facilities ,
+     chg_transportation_costs( MF_dbl_sp( NC ) , Range( f - f_n_facilities ,
 						   s - f_n_facilities ) ,
 			       make_par( eNoBlck , chnl ) , eDryRun );
      }
@@ -4322,7 +4323,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF(
       *(nnmsit++) = i;
       *(NCit++) = (lfo->get_v_var())[ i ].second;
       }
-     chg_facility_costs( NC.begin() , std::move( nnms ) , true ,
+     chg_facility_costs( MF_dbl_sp( NC ) , std::move( nnms ) , true ,
 			 make_par( eNoBlck , chnl ) , eDryRun );
      }
     }
@@ -4342,7 +4343,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF(
       *(nnmsit++) = h - f_n_facilities;
       *(NCit++) = (lfo->get_v_var())[ h ].second;
       }
-     chg_transportation_costs( NC.begin() , std::move( nnms ) , true ,
+     chg_transportation_costs( MF_dbl_sp( NC ) , std::move( nnms ) , true ,
 			       make_par( eNoBlck , chnl ) , eDryRun );
      }
     }
@@ -4493,7 +4494,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
      else {                      // many pairs
       CVector NC( bkb->get_Profits().begin() + f ,
 		  bkb->get_Profits().begin() + end );
-      chg_transportation_costs( NC.begin() ,
+      chg_transportation_costs( MF_dbl_sp( NC ) ,
 				Range( f + offst , end + offst ) ,
 				make_par( eNoBlck , chnl ) , eDryRun );
       }
@@ -4570,7 +4571,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
        *(NCit++) = (bkb->get_Profits())[ j ];
        j += offst;
        }
-      chg_transportation_costs( NC.begin() , std::move( nnms ) , true ,
+      chg_transportation_costs( MF_dbl_sp( NC ) , std::move( nnms ) , true ,
 				make_par( eNoBlck , chnl ) , eDryRun );
       }
      }
@@ -4698,7 +4699,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFA(
      auto NCit = NC.begin();
      for( Index i = f ; i < s ; )
       *(NCit++) = (lfo->get_v_var())[ i++ ].second;
-     chg_facility_costs( NC.begin() , Range( f , s ) ,
+     chg_facility_costs( MF_dbl_sp( NC ) , Range( f , s ) ,
 			 make_par( eNoBlck , chnl ) , eDryRun );
      }
 
@@ -4754,7 +4755,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFA(
      auto NCit = NC.begin();
      for( auto h : nms )
       *(NCit++) = (lfo->get_v_var())[ h ].second;
-     chg_transportation_costs( NC.begin() , Subset( nms ) , true ,
+     chg_transportation_costs( MF_dbl_sp( NC ) , Subset( nms ) , true ,
 			       make_par( eNoBlck , chnl ) , eDryRun );
      }
 
@@ -4887,7 +4888,8 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 			      make_par( eNoBlck , chnl ) , eDryRun );
     else              // many pairs
      // note that the cost vector is supposed to exist (costs not all 0)
-     chg_transportation_costs( MCFB( v_Block.back() )->get_C().begin() + f ,
+     chg_transportation_costs( MF_dbl_sp( MCFB( v_Block.back() )->get_C()
+					 ).subspan( f ) ,
 			       Range( f - f_n_facilities ,
 				      s - f_n_facilities ) ,
 			       make_par( eNoBlck , chnl ) , eDryRun );
@@ -4904,7 +4906,8 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 			    make_par( eNoBlck , chnl ) , eDryRun );
     else              // many facilities
      // note that the capacity vector is supposed to exist (not all +INF)
-     chg_facility_capacities( MCFB( v_Block.back() )->get_U().begin() + f ,
+     chg_facility_capacities( MF_dbl_sp( MCFB( v_Block.back() )->get_U()
+					).subspan( f ) ,
 			      tmod->rng() ,
 			      make_par( eNoBlck , chnl ) , eDryRun );
     return;
@@ -4924,7 +4927,8 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 			  make_par( eNoBlck , chnl ) , eDryRun );
     else              // many customers
      // note that the deficits vector is supposed to exist (not all 0)
-     chg_customer_demands( MCFB( v_Block.back() )->get_B().begin() + f ,
+     chg_customer_demands( MF_dbl_sp( MCFB( v_Block.back() )->get_B()
+				     ).subspan( f ) ,
 			   Range( f - f_n_facilities , s - f_n_facilities ) ,
 			   make_par( eNoBlck , chnl ) , eDryRun );
     return;
@@ -4961,7 +4965,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
      Subset nnms( nms.begin() , nms.end() );
      for( auto & h : nnms )
       h -= f_n_facilities;
-     chg_transportation_costs( NC.begin() , std::move( nnms ) , true ,
+     chg_transportation_costs( MF_dbl_sp( NC ) , std::move( nnms ) , true ,
 			       make_par( eNoBlck , chnl ) , eDryRun );
      }
 
@@ -4983,7 +4987,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
      auto NUit = NU.begin();
      for( auto i : nms )
       *(NUit++) = ( MCFB( v_Block.back() )->get_U() )[ i ];
-     chg_facility_capacities( NU.begin() , Subset( nms ) , true ,
+     chg_facility_capacities( MF_dbl_sp( NU ) , Subset( nms ) , true ,
 			      make_par( eNoBlck , chnl ) , eDryRun );
       }
 
@@ -5014,7 +5018,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
        *(NBit++) = ( MCFB( v_Block.back() )->get_B() )[ *nmsit ];
        *(nnmsit++) = *(nmsit++) - f_n_facilities;
        }
-      chg_customer_demands( NB.begin() , std::move( nnms ) , true ,
+      chg_customer_demands( MF_dbl_sp( NB ) , std::move( nnms ) , true ,
 			    make_par( eNoBlck , chnl ) , eDryRun );
       }
      }
@@ -5032,7 +5036,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
       Subset nnms( nms.begin() , nms.end() );
       for( auto & h : nnms )
        h -= f_n_facilities;
-      chg_customer_demands( NB.begin() , Subset( nms ) , true ,
+      chg_customer_demands( MF_dbl_sp( NB ) , Subset( nms ) , true ,
 			    make_par( eNoBlck , chnl ) , eDryRun );
       }
 
@@ -5088,7 +5092,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationBFA(
    auto NCit = NC.begin();
    for( Index i = f ; i < s ; )
     *(NCit++) = (lfo->get_v_var())[ i++ ].second;
-   chg_facility_costs( NC.begin() , Range( f , s ) ,
+   chg_facility_costs( MF_dbl_sp( NC ) , Range( f , s ) ,
 		       make_par( eNoBlck , chnl ) , eDryRun );
    }
 
@@ -5116,7 +5120,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationBFA(
    auto NCit = NC.begin();
    for( auto h : nms )
     *(NCit++) = (lfo->get_v_var())[ h ].second;
-   chg_facility_costs( NC.begin() , Subset( nms ) , true ,
+   chg_facility_costs( MF_dbl_sp( NC ) , Subset( nms ) , true ,
 		       make_par( eNoBlck , chnl ) , eDryRun );
    }
 
@@ -5231,8 +5235,8 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
     if( s == f + 1 )
      R3B->chg_facility_cost( v_f_cost[ f ] , f , issuePMod , issueAMod );
     else
-     R3B->chg_facility_costs( v_f_cost.begin() + f , tmod->rng() ,
-			      issuePMod , issueAMod );
+     R3B->chg_facility_costs( MF_dbl_sp( v_f_cost ).subspan( f ) ,
+			      tmod->rng() , issuePMod , issueAMod );
     break;
 
    case( CapacitatedFacilityLocationBlockMod::eChgTCost ):  //- - - - - - - -
@@ -5244,7 +5248,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
      auto NCit = NC.begin();
      for( Index i = f ; i < s ; ++i )
       *(NCit++) = (v_t_cost.data())[ i ]; 
-     R3B->chg_transportation_costs( NC.begin() , tmod->rng() ,
+     R3B->chg_transportation_costs( MF_dbl_sp( NC ) , tmod->rng() ,
 				    issuePMod , issueAMod );
      }
     break;
@@ -5254,16 +5258,16 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
      R3B->chg_facility_capacity( v_capacity[ f ] , f ,
 				 issuePMod , issueAMod );
     else
-     R3B->chg_facility_capacities( v_capacity.begin() + f , tmod->rng() ,
-				   issuePMod , issueAMod );
+     R3B->chg_facility_capacities( MF_dbl_sp( v_capacity ).subspan( f ) ,
+				   tmod->rng() , issuePMod , issueAMod );
     break;
 
    case( CapacitatedFacilityLocationBlockMod::eChgDem ):  //- - - - - - - - -
     if( s == f + 1 )
      R3B->chg_customer_demand( v_demand[ f ] , f , issuePMod , issueAMod );
     else
-     R3B->chg_customer_demands( v_demand.begin() + f , tmod->rng() ,
-				issuePMod , issueAMod );
+     R3B->chg_customer_demands( MF_dbl_sp( v_demand ).subspan( f ) ,
+				tmod->rng() , issuePMod , issueAMod );
     break;
 
    case( CapacitatedFacilityLocationBlockMod::eCloseF ):  //- - - - - - - - -
@@ -5312,7 +5316,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
      auto NCit = NC.begin();
      for( auto i : tmod->nms() )
       *(NCit++) = v_f_cost[ i ]; 
-     R3B->chg_facility_costs( NC.begin() , Subset( tmod->nms() ) , true ,
+     R3B->chg_facility_costs( MF_dbl_sp( NC ) , Subset( tmod->nms() ) , true ,
 			      issuePMod , issueAMod );
      }
     break;
@@ -5327,7 +5331,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
      auto NCit = NC.begin();
      for( auto i : tmod->nms() )
       *(NCit++) = (v_t_cost.data())[ i ]; 
-     R3B->chg_transportation_costs( NC.begin() , Subset( tmod->nms() ) ,
+     R3B->chg_transportation_costs( MF_dbl_sp( NC ) , Subset( tmod->nms() ) ,
 				    true , issuePMod , issueAMod );
      }
     break;
@@ -5342,7 +5346,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
      auto NCit = NC.begin();
      for( auto i : tmod->nms() )
       *(NCit++) = v_capacity[ i ]; 
-     R3B->chg_facility_capacities( NC.begin() , Subset( tmod->nms() ) ,
+     R3B->chg_facility_capacities( MF_dbl_sp( NC ) , Subset( tmod->nms() ) ,
 				   true , issuePMod , issueAMod );
      }
     break;
@@ -5357,8 +5361,8 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
      auto NDit = ND.begin();
      for( auto i : tmod->nms() )
       *(NDit++) = v_demand[ i ]; 
-     R3B->chg_customer_demands( ND.begin() , Subset( tmod->nms() ) , true ,
-				issuePMod , issueAMod );
+     R3B->chg_customer_demands( MF_dbl_sp( ND ) , Subset( tmod->nms() ) ,
+				true , issuePMod , issueAMod );
      }
     break;
 
@@ -5509,7 +5513,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
      auto NCit = NC.begin();
      for( Index i = f ; i < s ; ++i )
       *(NCit++) = v_f_cost[ i ] / v_capacity[ i ];
-     R3B->chg_costs( NC.begin() , tmod->rng() , issuePMod , issueAMod );
+     R3B->chg_costs( MF_dbl_sp( NC ) , tmod->rng() , issuePMod , issueAMod );
      }
 
     break;
@@ -5525,13 +5529,13 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
 		    issuePMod , issueAMod );
       }
     else {
-     R3B->chg_ucaps( v_capacity.begin() + f , tmod->rng() ,
+     R3B->chg_ucaps( MF_dbl_sp( v_capacity ).subspan( f ) , tmod->rng() ,
 		     issuePMod , issueAMod );
      MCFBlock::Vec_CNumber NC( s - f );
      auto NCit = NC.begin();
      for( Index i = f ; i < s ; ++i )
       *(NCit++) = v_f_cost[ i ] / v_capacity[ i ];
-     R3B->chg_costs( NC.begin() , tmod->rng() , issuePMod , issueAMod );
+     R3B->chg_costs( MF_dbl_sp( NC ) , tmod->rng() , issuePMod , issueAMod );
      }
 
     break;
@@ -5585,7 +5589,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
      auto NCit = NC.begin();
      for( auto i : tmod->nms() )
       *(NCit++) = v_f_cost[ i ] / v_capacity[ i ]; 
-     R3B->chg_costs( NC.begin() , Subset( tmod->nms() ) , true ,
+     R3B->chg_costs( MF_dbl_sp( NC ) , Subset( tmod->nms() ) , true ,
 		     issuePMod , issueAMod );
      }
 
@@ -5611,9 +5615,9 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
       *(NCPit++) = v_capacity[ i ];
       *(NCSit++) = v_f_cost[ i ] / v_capacity[ i ];
       }
-     R3B->chg_ucaps( NCP.begin() , Subset( tmod->nms() ) , true ,
+     R3B->chg_ucaps( MF_dbl_sp( NCP ) , Subset( tmod->nms() ) , true ,
 		     issuePMod , issueAMod );
-     R3B->chg_costs( NCS.begin() , Subset( tmod->nms() ) , true ,
+     R3B->chg_costs( MF_dbl_sp( NCS ) , Subset( tmod->nms() ) , true ,
 		     issuePMod , issueAMod );
      }
 
