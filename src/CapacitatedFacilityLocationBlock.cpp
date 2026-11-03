@@ -26,6 +26,8 @@
 
 #include <iomanip>
 
+#include <numeric>
+
 /*--------------------------------------------------------------------------*/
 /*--------------------------------- MACROS ---------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -1145,40 +1147,90 @@ bool CapacitatedFacilityLocationBlock::is_feasible( bool useabstract ,
 						    Configuration * fsbc )
 {
  double eps = 1e-10;
+ bool rel_viol = true;
 
- if( ( ! fsbc ) && f_BlockConfig )
-  fsbc = f_BlockConfig->f_is_feasible_Configuration;
+ // the tolerance, and whether it is relative, out of a Configuration;
+ // false if it does not carry them
+ auto extract_parameters = [ & eps , & rel_viol ]( Configuration * c )
+  -> bool {
+  if( auto tc = dynamic_cast< SimpleConfiguration< double > * >( c ) ) {
+   eps = tc->f_value;
+   return( true );
+   }
+  if( auto tc = dynamic_cast<
+       SimpleConfiguration< std::pair< double , int > > * >( c ) ) {
+   eps = tc->f_value.first;
+   rel_viol = tc->f_value.second;
+   return( true );
+   }
+  return( false );
+  };
 
- if( auto tfsbc = dynamic_cast< SimpleConfiguration< double > * >( fsbc ) )
-  eps = tfsbc->f_value;
+ if( ( ! extract_parameters( fsbc ) ) && f_BlockConfig )
+  extract_parameters( f_BlockConfig->f_is_feasible_Configuration );
 
  if( ! ( AR & HasVar ) )
   throw( std::logic_error( "CapacitatedFacilityLocationBlock::is_feasible:"
 			   " generate_abstract_variables not called" ) );
 
  // check variable feasibility
- for( Index i = 0 ; i < f_n_facilities ; ++i )
-  if( ! get_y( i )->is_feasible( eps ) )
+ if( ( AR & FormMsk ) == StdForm ) {
+  if( ! ( ColVariable::is_feasible( v_y , eps ) &&
+	  ColVariable::is_feasible( v_x , eps ) ) )
+   return( false );
+  }
+ else if( ( AR & FormMsk ) == BenForm ) {
+  if( ! ( ColVariable::is_feasible( v_y , eps ) &&
+	  v_epi.is_feasible( eps ) ) )
    return( false );
 
- for( Index i = 0 ; i < f_n_facilities ; ++i )
-  for( Index j = 0 ; j < f_n_customers ; ++j )
-   if( ! get_x( i , j )->is_feasible( eps ) )
+  // the bound on v and the Benders cuts, if they have been built
+  if( useabstract && ( AR & HasCapCns ) )
+   if( ! ( RowConstraint::is_feasible( f_v_box , eps , rel_viol ) &&
+	   RowConstraint::is_feasible( v_benders_cuts , eps , rel_viol ) ) )
+    return( false );
+  }
+ else {
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   if( ! get_y( i )->is_feasible( eps ) )
     return( false );
 
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   for( Index j = 0 ; j < f_n_customers ; ++j )
+    if( ! get_x( i , j )->is_feasible( eps ) )
+     return( false );
+  }
+
  // now check constraints feasibility
- return( customer_feasible( eps , useabstract ) &&
-	 facility_feasible( eps , useabstract ) );
+ if( ! ( customer_feasible( eps , useabstract , rel_viol ) &&
+	 facility_feasible( eps , useabstract , rel_viol ) ) )
+  return( false );
+
+ // the maximum number of open facilities
+ if( useabstract && ( AR & HasMaxCns ) )
+  return( RowConstraint::is_feasible( maxF , eps , rel_viol ) );
+
+ if( f_max_facilities >= f_n_facilities )
+  return( true );
+
+ double nopen = 0;
+ for( Index i = 0 ; i < f_n_facilities ; ++i )
+  nopen += get_y( i )->get_value();
+
+ return( nopen - f_max_facilities <=
+	 ( rel_viol ? eps * std::max( double( 1 ) ,
+				      double( f_max_facilities ) ) : eps ) );
 
  }  //  end( CapacitatedFacilityLocationBlock::is_feasible )
 
 /*--------------------------------------------------------------------------*/
 
 bool CapacitatedFacilityLocationBlock::customer_feasible( double eps ,
-							  bool useabstract )
+							  bool useabstract ,
+							  bool rel_viol )
 {
- const static std::string _prfx =
-                     "CapacitatedFacilityLocationBlock::customer_feasible: ";
+ if( ( AR & FormMsk ) == BenForm )  // there is no X to check
+  return( open_capacity_feasible( eps , rel_viol ) );
 
  if( ! ( AR & HasSatCns ) )  // if customer constraints are not defined
   useabstract = false;       // you cannot use them to chek feasibility
@@ -1187,32 +1239,28 @@ bool CapacitatedFacilityLocationBlock::customer_feasible( double eps ,
   // do it using the abstract representation- - - - - - - - - - - - - - - - -
 
   if( ( ( AR & FormMsk ) == StdForm ) ||
-      ( ( AR & FormMsk ) == KskForm ) ) {
-   for( auto & cnst : v_sat ) {
-    cnst.compute();
-    if( cnst.rel_viol() > eps )
-     return( false );
-    }
+      ( ( AR & FormMsk ) == KskForm ) )
+   return( RowConstraint::is_feasible( v_sat , eps , rel_viol ) );
 
-   return( true );
-   }
-
-  SimpleConfiguration< double > cfg( eps ); 
+  SimpleConfiguration< double > cfg( eps );
   return( MCFB( v_Block[ 1 ] )->is_feasible( true , & cfg ) );
-  
-  throw( std::logic_error( _prfx + "flow formulation not supported yet" ) );
   }
- else {
-  // do it using the physical representation- - - - - - - - - - - - - - - - -
 
-  for( Index j = 0 ; j < f_n_customers ; ++j ) {
-   double tot = 0;
-   for( Index i = 0 ; i < f_n_facilities ; ++i )
-    tot += get_x( i , j )->get_value();
+ // do it using the physical representation- - - - - - - - - - - - - - - - -
 
-   if( std::abs( 1 - tot ) > eps )
-    return( false );
-   }
+ // in FlwForm X is the amount of demand served, not the fraction of it
+ const bool amount = ( ( AR & FormMsk ) == FlwForm );
+
+ for( Index j = 0 ; j < f_n_customers ; ++j ) {
+  double tot = 0;
+  for( Index i = 0 ; i < f_n_facilities ; ++i )
+   tot += get_x( i , j )->get_value();
+
+  if( amount )
+   tot /= v_demand[ j ];
+
+  if( std::abs( 1 - tot ) > eps )
+   return( false );
   }
 
  return( true );
@@ -1222,10 +1270,14 @@ bool CapacitatedFacilityLocationBlock::customer_feasible( double eps ,
 /*--------------------------------------------------------------------------*/
 
 bool CapacitatedFacilityLocationBlock::facility_feasible( double eps ,
-							  bool useabstract )
+							  bool useabstract ,
+							  bool rel_viol )
 {
  const static std::string _prfx =
-                     "CapacitatedFacilityLocationBlock::capacity_feasible: ";
+                     "CapacitatedFacilityLocationBlock::facility_feasible: ";
+
+ if( ( AR & FormMsk ) == BenForm )  // there is no X to check
+  return( open_capacity_feasible( eps , rel_viol ) );
 
  if( ! ( AR & HasCapCns ) )  // if capacity constraints are not defined
   useabstract = false;       // you cannot use them to check feasibility
@@ -1234,44 +1286,62 @@ bool CapacitatedFacilityLocationBlock::facility_feasible( double eps ,
   // do it using the abstract representation- - - - - - - - - - - - - - - - -
 
   if( ( ( AR & FormMsk ) == StdForm ) ||
-      ( ( AR & FormMsk ) == FlwForm ) ) {
-   for( auto & cnst : v_cap ) {
-    cnst.compute();
-    if( cnst.rel_viol() > eps )
+      ( ( AR & FormMsk ) == FlwForm ) )
+   return( RowConstraint::is_feasible( v_cap , eps , rel_viol ) );
+
+  if( ( AR & FormMsk ) == KskForm ) {
+   // the capacity constraint is the knapsack one of each facility
+   for( auto bi : v_Block ) {
+    auto cnst = bi->get_static_constraint< FRowConstraint >( 0 );
+    if( ! cnst )
+     throw( std::logic_error( _prfx + "knapsack constraint not found" ) );
+    if( ! RowConstraint::is_feasible( *cnst , eps , rel_viol ) )
      return( false );
     }
 
    return( true );
    }
 
-  if( ( AR & FormMsk ) == KskForm ) {
-   SimpleConfiguration< double > cfg( eps );
-
-   for( Index i = 0 ; i < f_n_facilities ; ++i )
-    if( ! v_Block[ i ]->is_feasible( true , & cfg ) )
-     return( false );
-
-   return( true );
-   }
-
-  throw( std::logic_error( _prfx + "flow formulation not supported yet" ) );
+  throw( std::logic_error( _prfx + "formulation not supported" ) );
   }
- else {
-  // do it using the physical representation- - - - - - - - - - - - - - - - -
 
-  for( Index i = 0 ; i < f_n_facilities ; ++i ) {
-   auto tot = v_capacity[ i ] * get_y( i )->get_value();
-   for( Index j = 0 ; j < f_n_customers ; ++j )
-    tot -= v_demand[ j ] * get_x( i , j )->get_value();
+ // do it using the physical representation- - - - - - - - - - - - - - - - -
 
-   if( tot < - eps * v_capacity[ i ] )
-    return( false );
-   }
+ // in FlwForm X is the amount of demand served, not the fraction of it
+ const bool amount = ( ( AR & FormMsk ) == FlwForm );
+
+ for( Index i = 0 ; i < f_n_facilities ; ++i ) {
+  auto tot = v_capacity[ i ] * get_y( i )->get_value();
+  for( Index j = 0 ; j < f_n_customers ; ++j )
+   tot -= ( amount ? 1 : v_demand[ j ] ) * get_x( i , j )->get_value();
+
+  if( tot < - ( rel_viol ? eps * v_capacity[ i ] : eps ) )
+   return( false );
   }
 
  return( true );
 
- }  // end( CapacitatedFacilityLocationBlock::capacity_feasible )
+ }  // end( CapacitatedFacilityLocationBlock::facility_feasible )
+
+/*--------------------------------------------------------------------------*/
+
+bool CapacitatedFacilityLocationBlock::open_capacity_feasible( double eps ,
+							       bool rel_viol )
+{
+ // with all the facilities able to serve all the customers, and the demand
+ // splittable, some X satisfies both the customer satisfaction and the
+ // capacity constraints iff the open capacity covers the total demand
+ double cap = 0;
+ for( Index i = 0 ; i < f_n_facilities ; ++i )
+  cap += v_capacity[ i ] * v_y[ i ].get_value();
+
+ const double dem = std::accumulate( v_demand.begin() , v_demand.end() ,
+				     double( 0 ) );
+
+ return( dem - cap <= ( rel_viol ? eps * std::max( double( 1 ) , dem )
+			          : eps ) );
+
+ }  // end( CapacitatedFacilityLocationBlock::open_capacity_feasible )
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- Methods for R3 Blocks --------------------------*/
@@ -1676,7 +1746,8 @@ Solution * CapacitatedFacilityLocationBlock::get_Solution(
  if( wsol != 2 )
   sol->v_y.resize( f_n_facilities );
 
- if( wsol != 1 )
+ // the Benders formulation has no transportation Variable
+ if( ( wsol != 1 ) && ( ( AR & FormMsk ) != BenForm ) )
   sol->v_x.resize( f_n_customers * f_n_facilities );
 
  if( ! emptys )
@@ -2040,7 +2111,9 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
  
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgFCost ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgFCost ,
@@ -2098,7 +2171,9 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
 
- if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
+ // issue "physical Modification" - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgFCost ) ) ) {
   if( ! ordered )
    std::sort( nms.begin() , nms.end() );
   Block::add_Modification( std::make_shared<
@@ -2142,7 +2217,9 @@ void CapacitatedFacilityLocationBlock::chg_facility_cost( Cost NCost ,
   if( not_dry_run( issueMod ) )
    v_f_cost[ i ] = NCost;
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgFCost ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgFCost ,
@@ -2259,7 +2336,9 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgTCost ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgTCost ,
@@ -2398,7 +2477,9 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
 
- if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
+ // issue "physical Modification" - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgTCost ) ) ) {
   if( ! ordered )
    std::sort( nms.begin() , nms.end() );
   Block::add_Modification( std::make_shared<
@@ -2464,7 +2545,9 @@ void CapacitatedFacilityLocationBlock::chg_transportation_cost( Cost NCost ,
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
  
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgTCost ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			     CapacitatedFacilityLocationBlockMod::eChgTCost ,
@@ -2563,7 +2646,9 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgCap ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgCap ,
@@ -2659,7 +2744,9 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacities(
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
 
- if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
+ // issue "physical Modification" - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgCap ) ) ) {
   if( ! ordered )
    std::sort( nms.begin() , nms.end() );
   Block::add_Modification( std::make_shared<
@@ -2726,7 +2813,9 @@ void CapacitatedFacilityLocationBlock::chg_facility_capacity( Demand NCap ,
   if( not_dry_run( issueMod ) )
    v_capacity[ i ] = NCap;
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgCap ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgCap ,
@@ -2807,7 +2896,9 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( MF_dbl_sp NDem ,
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgDem ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgDem ,
@@ -2887,7 +2978,9 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( MF_dbl_sp NDem ,
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
 
- if( issue_pmod( issueMod ) ) {  // issue "physical Modification" - - - - - -
+ // issue "physical Modification" - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgDem ) ) ) {
   if( ! ordered )
    std::sort( nms.begin() , nms.end() );
   Block::add_Modification( std::make_shared<
@@ -2958,7 +3051,9 @@ void CapacitatedFacilityLocationBlock::chg_customer_demand( Demand NDem ,
  f_cond_lower = NAN;  // reset conditional bounds
  f_cond_upper = NAN;
  
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgDem ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			    CapacitatedFacilityLocationBlockMod::eChgDem ,
@@ -3000,7 +3095,8 @@ void CapacitatedFacilityLocationBlock::chg_max_facilities( Index NMaxFac ,
   }
 
  // issue "physical Modification"
- if( issue_pmod( issueMod ) )
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgMxF ) ) )
   Block::add_Modification( std::make_shared< 
                            CapacitatedFacilityLocationBlockMod >( this ,
                            CapacitatedFacilityLocationBlockMod::eChgMxF ) ,
@@ -3066,7 +3162,9 @@ void CapacitatedFacilityLocationBlock::close_facilities( Range rng ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eCloseF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod>( this ,
 			     CapacitatedFacilityLocationBlockMod::eCloseF ,
@@ -3138,7 +3236,9 @@ void CapacitatedFacilityLocationBlock::close_facilities( Subset && nms ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eCloseF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockSbstMod>( this ,
 			     CapacitatedFacilityLocationBlockMod::eCloseF ,
@@ -3181,7 +3281,9 @@ void CapacitatedFacilityLocationBlock::close_facility( Index i ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eCloseF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod>( this ,
 			     CapacitatedFacilityLocationBlockMod::eCloseF ,
@@ -3245,7 +3347,9 @@ void CapacitatedFacilityLocationBlock::open_facilities( Range rng ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eOpenF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod>( this ,
 			     CapacitatedFacilityLocationBlockMod::eOpenF ,
@@ -3315,7 +3419,9 @@ void CapacitatedFacilityLocationBlock::open_facilities( Subset && nms ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eOpenF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockSbstMod >( this ,
 			     CapacitatedFacilityLocationBlockMod::eOpenF ,
@@ -3356,7 +3462,9 @@ void CapacitatedFacilityLocationBlock::open_facility( Index i ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eOpenF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			     CapacitatedFacilityLocationBlockMod::eOpenF ,
@@ -3422,7 +3530,9 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Range rng ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eBuyF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			     CapacitatedFacilityLocationBlockMod::eBuyF ,
@@ -3495,7 +3605,9 @@ void CapacitatedFacilityLocationBlock::fix_open_facilities( Subset && nms ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eBuyF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockSbstMod >( this ,
 			     CapacitatedFacilityLocationBlockMod::eBuyF ,
@@ -3538,7 +3650,9 @@ void CapacitatedFacilityLocationBlock::fix_open_facility( Index i ,
  // conditional bounds could be reset if they were computed looking at
  // facilities fixings, but they are not, and therefore they are not (reset)
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eBuyF ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockRngdMod >( this ,
 			     CapacitatedFacilityLocationBlockMod::eBuyF ,
@@ -3600,7 +3714,9 @@ void CapacitatedFacilityLocationBlock::chg_UnSplittable( bool unsplt ,
   if( not_dry_run( issueMod ) )
    f_unsplittable = unsplt;
 
- if( issue_pmod( issueMod ) )  // issue "physical Modification" - - - - - - -
+ // issue "physical Modification" - - - - - - -
+ if( issue_pmod( issueMod , CapacitatedFacilityLocationBlockMod::changes_of(
+                 CapacitatedFacilityLocationBlockMod::eChgUnSplt ) ) )
   Block::add_Modification( std::make_shared<
 			   CapacitatedFacilityLocationBlockMod >( this ,
 								  unsplt
@@ -3774,16 +3890,11 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
   * afterward which means that any listening Observer already knows that
   * none of the previous Variable and Constraint are valid any longer. */
 
- for( auto & lst : v_sfc )  // clear the strong forcing constraints
-  for( auto & cnst : lst )
-   cnst.clear();
- for( auto & cnst : v_benders_cuts )  // clear the Benders cuts
-  cnst.clear();
- f_v_box.clear();            // clear the v_epi box constraint
- for( auto & cnst : v_cap )  // clear the capacity constraints
-  cnst.clear();
- for( auto & cnst : v_sat )  // clear the satisfaction constraints
-  cnst.clear();
+ Constraint::clear( v_sfc );           // clear the strong forcing constraints
+ Constraint::clear( v_benders_cuts );  // clear the Benders cuts
+ f_v_box.clear();                      // clear the v_epi box constraint
+ Constraint::clear( v_cap );           // clear the capacity constraints
+ Constraint::clear( v_sat );           // clear the satisfaction constraints
  maxF.clear();               // clear max. opened facilities constraint
  f_obj.clear();              // clear the objective function
 
@@ -3800,9 +3911,6 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
   AB( v_Block[ 0 ] )->reset_static_constraints();
   AB( v_Block[ 0 ] )->reset_static_variables();
   AB( v_Block[ 0 ] )->reset_objective();
-  // clear the capacity constraints before the AbstractBlock is destroyed
-  // to avoid the destruction looking at pointers to the deleted Block
-  v_cap.clear();
   // detach the objective from the AbstractBlock, since the latter will
   // be deleted before the former
   f_obj.set_Block( nullptr );
@@ -3813,12 +3921,6 @@ void CapacitatedFacilityLocationBlock::guts_of_destructor( void )
   delete bi;
 
  v_Block.clear();  // then clear the vector
-
- // then delete them all
- v_sfc.clear();
- v_benders_cuts.clear();
- v_cap.clear();
- v_sat.clear();
 
  // delete all Variable
  v_x.resize( boost::extents[ 0 ][ 0 ] );
@@ -3969,7 +4071,7 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_tcost_MCF(
  rng.first += f_n_facilities;
  rng.second += f_n_facilities;
  
- mcfb->chg_costs( NSC.begin() , rng , issueMod , issueAMod );
+ mcfb->chg_costs( MF_dbl_sp( NSC ) , rng , issueMod , issueAMod );
 
  }  // end( CapacitatedFacilityLocationBlock::guts_of_chg_tcost_MCF( range ) )
 
@@ -3995,7 +4097,7 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_tcost_MCF(
   *(nnmsit++) = h + f_n_facilities;
   }
 
- mcfb->chg_costs( NSC.begin() , std::move( nnms ) , ordered ,
+ mcfb->chg_costs( MF_dbl_sp( NSC ) , std::move( nnms ) , ordered ,
 		  issueMod , issueAMod );
 
  }  // end( CapacitatedFacilityLocationBlock::guts_of_chg_tcost_MCF( range ) )
@@ -4027,7 +4129,7 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
   mcfb->chg_dfct( v_demand[ rng.first ] , f_n_facilities + rng.first ,
 		  issueMod , iAM );
  else
-  mcfb->chg_dfcts( v_demand.begin() + rng.first ,
+  mcfb->chg_dfcts( MF_dbl_sp( v_demand ).subspan( rng.first ) ,
 		   Range( rng.first + f_n_facilities ,
 			  rng.second + f_n_facilities ) , issueMod , iAM );
 
@@ -4085,7 +4187,8 @@ void CapacitatedFacilityLocationBlock::guts_of_chg_dem_MCF( MCFBlock * mcfb ,
 				Demand( 0 ) );
  nnms.back() = f_n_facilities + f_n_customers;
 
- mcfb->chg_dfcts( ND.begin() , std::move( nnms ) , ordered , issueMod , iAM );
+ mcfb->chg_dfcts( MF_dbl_sp( ND ) , std::move( nnms ) , ordered , issueMod ,
+                  iAM );
 
  // now update the costs of all arcs ( i , j ) s.t. the capacity of j changed
  nnms.resize( nms.size() * f_n_facilities );
@@ -4144,7 +4247,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF(
      auto NCit = NC.begin();
      for( Index i = f ; i < end ; )
       *(NCit++) = (lfo->get_v_var())[ i++ ].second;
-     chg_facility_costs( NC.begin() , Range( f , end ) ,
+     chg_facility_costs( MF_dbl_sp( NC ) , Range( f , end ) ,
 			 make_par( eNoBlck , chnl ) , eDryRun );
      }
 
@@ -4162,7 +4265,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF(
      auto NCit = NC.begin();
      for( Index i = f ; i < s ; )
       *(NCit++) = (lfo->get_v_var())[ i++ ].second;
-     chg_transportation_costs( NC.begin() , Range( f - f_n_facilities ,
+     chg_transportation_costs( MF_dbl_sp( NC ) , Range( f - f_n_facilities ,
 						   s - f_n_facilities ) ,
 			       make_par( eNoBlck , chnl ) , eDryRun );
      }
@@ -4220,7 +4323,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF(
       *(nnmsit++) = i;
       *(NCit++) = (lfo->get_v_var())[ i ].second;
       }
-     chg_facility_costs( NC.begin() , std::move( nnms ) , true ,
+     chg_facility_costs( MF_dbl_sp( NC ) , std::move( nnms ) , true ,
 			 make_par( eNoBlck , chnl ) , eDryRun );
      }
     }
@@ -4240,7 +4343,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationSF(
       *(nnmsit++) = h - f_n_facilities;
       *(NCit++) = (lfo->get_v_var())[ h ].second;
       }
-     chg_transportation_costs( NC.begin() , std::move( nnms ) , true ,
+     chg_transportation_costs( MF_dbl_sp( NC ) , std::move( nnms ) , true ,
 			       make_par( eNoBlck , chnl ) , eDryRun );
      }
     }
@@ -4391,7 +4494,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
      else {                      // many pairs
       CVector NC( bkb->get_Profits().begin() + f ,
 		  bkb->get_Profits().begin() + end );
-      chg_transportation_costs( NC.begin() ,
+      chg_transportation_costs( MF_dbl_sp( NC ) ,
 				Range( f + offst , end + offst ) ,
 				make_par( eNoBlck , chnl ) , eDryRun );
       }
@@ -4468,7 +4571,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationKFP(
        *(NCit++) = (bkb->get_Profits())[ j ];
        j += offst;
        }
-      chg_transportation_costs( NC.begin() , std::move( nnms ) , true ,
+      chg_transportation_costs( MF_dbl_sp( NC ) , std::move( nnms ) , true ,
 				make_par( eNoBlck , chnl ) , eDryRun );
       }
      }
@@ -4596,7 +4699,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFA(
      auto NCit = NC.begin();
      for( Index i = f ; i < s ; )
       *(NCit++) = (lfo->get_v_var())[ i++ ].second;
-     chg_facility_costs( NC.begin() , Range( f , s ) ,
+     chg_facility_costs( MF_dbl_sp( NC ) , Range( f , s ) ,
 			 make_par( eNoBlck , chnl ) , eDryRun );
      }
 
@@ -4652,7 +4755,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFA(
      auto NCit = NC.begin();
      for( auto h : nms )
       *(NCit++) = (lfo->get_v_var())[ h ].second;
-     chg_transportation_costs( NC.begin() , Subset( nms ) , true ,
+     chg_transportation_costs( MF_dbl_sp( NC ) , Subset( nms ) , true ,
 			       make_par( eNoBlck , chnl ) , eDryRun );
      }
 
@@ -4785,7 +4888,8 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 			      make_par( eNoBlck , chnl ) , eDryRun );
     else              // many pairs
      // note that the cost vector is supposed to exist (costs not all 0)
-     chg_transportation_costs( MCFB( v_Block.back() )->get_C().begin() + f ,
+     chg_transportation_costs( MF_dbl_sp( MCFB( v_Block.back() )->get_C()
+					 ).subspan( f ) ,
 			       Range( f - f_n_facilities ,
 				      s - f_n_facilities ) ,
 			       make_par( eNoBlck , chnl ) , eDryRun );
@@ -4802,7 +4906,8 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 			    make_par( eNoBlck , chnl ) , eDryRun );
     else              // many facilities
      // note that the capacity vector is supposed to exist (not all +INF)
-     chg_facility_capacities( MCFB( v_Block.back() )->get_U().begin() + f ,
+     chg_facility_capacities( MF_dbl_sp( MCFB( v_Block.back() )->get_U()
+					).subspan( f ) ,
 			      tmod->rng() ,
 			      make_par( eNoBlck , chnl ) , eDryRun );
     return;
@@ -4822,7 +4927,8 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 			  make_par( eNoBlck , chnl ) , eDryRun );
     else              // many customers
      // note that the deficits vector is supposed to exist (not all 0)
-     chg_customer_demands( MCFB( v_Block.back() )->get_B().begin() + f ,
+     chg_customer_demands( MF_dbl_sp( MCFB( v_Block.back() )->get_B()
+				     ).subspan( f ) ,
 			   Range( f - f_n_facilities , s - f_n_facilities ) ,
 			   make_par( eNoBlck , chnl ) , eDryRun );
     return;
@@ -4859,7 +4965,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
      Subset nnms( nms.begin() , nms.end() );
      for( auto & h : nnms )
       h -= f_n_facilities;
-     chg_transportation_costs( NC.begin() , std::move( nnms ) , true ,
+     chg_transportation_costs( MF_dbl_sp( NC ) , std::move( nnms ) , true ,
 			       make_par( eNoBlck , chnl ) , eDryRun );
      }
 
@@ -4881,7 +4987,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
      auto NUit = NU.begin();
      for( auto i : nms )
       *(NUit++) = ( MCFB( v_Block.back() )->get_U() )[ i ];
-     chg_facility_capacities( NU.begin() , Subset( nms ) , true ,
+     chg_facility_capacities( MF_dbl_sp( NU ) , Subset( nms ) , true ,
 			      make_par( eNoBlck , chnl ) , eDryRun );
       }
 
@@ -4912,7 +5018,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
        *(NBit++) = ( MCFB( v_Block.back() )->get_B() )[ *nmsit ];
        *(nnmsit++) = *(nmsit++) - f_n_facilities;
        }
-      chg_customer_demands( NB.begin() , std::move( nnms ) , true ,
+      chg_customer_demands( MF_dbl_sp( NB ) , std::move( nnms ) , true ,
 			    make_par( eNoBlck , chnl ) , eDryRun );
       }
      }
@@ -4930,7 +5036,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
       Subset nnms( nms.begin() , nms.end() );
       for( auto & h : nnms )
        h -= f_n_facilities;
-      chg_customer_demands( NB.begin() , Subset( nms ) , true ,
+      chg_customer_demands( MF_dbl_sp( NB ) , Subset( nms ) , true ,
 			    make_par( eNoBlck , chnl ) , eDryRun );
       }
 
@@ -4986,7 +5092,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationBFA(
    auto NCit = NC.begin();
    for( Index i = f ; i < s ; )
     *(NCit++) = (lfo->get_v_var())[ i++ ].second;
-   chg_facility_costs( NC.begin() , Range( f , s ) ,
+   chg_facility_costs( MF_dbl_sp( NC ) , Range( f , s ) ,
 		       make_par( eNoBlck , chnl ) , eDryRun );
    }
 
@@ -5014,7 +5120,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationBFA(
    auto NCit = NC.begin();
    for( auto h : nms )
     *(NCit++) = (lfo->get_v_var())[ h ].second;
-   chg_facility_costs( NC.begin() , Subset( nms ) , true ,
+   chg_facility_costs( MF_dbl_sp( NC ) , Subset( nms ) , true ,
 		       make_par( eNoBlck , chnl ) , eDryRun );
    }
 
@@ -5129,8 +5235,8 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
     if( s == f + 1 )
      R3B->chg_facility_cost( v_f_cost[ f ] , f , issuePMod , issueAMod );
     else
-     R3B->chg_facility_costs( v_f_cost.begin() + f , tmod->rng() ,
-			      issuePMod , issueAMod );
+     R3B->chg_facility_costs( MF_dbl_sp( v_f_cost ).subspan( f ) ,
+			      tmod->rng() , issuePMod , issueAMod );
     break;
 
    case( CapacitatedFacilityLocationBlockMod::eChgTCost ):  //- - - - - - - -
@@ -5142,7 +5248,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
      auto NCit = NC.begin();
      for( Index i = f ; i < s ; ++i )
       *(NCit++) = (v_t_cost.data())[ i ]; 
-     R3B->chg_transportation_costs( NC.begin() , tmod->rng() ,
+     R3B->chg_transportation_costs( MF_dbl_sp( NC ) , tmod->rng() ,
 				    issuePMod , issueAMod );
      }
     break;
@@ -5152,16 +5258,16 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
      R3B->chg_facility_capacity( v_capacity[ f ] , f ,
 				 issuePMod , issueAMod );
     else
-     R3B->chg_facility_capacities( v_capacity.begin() + f , tmod->rng() ,
-				   issuePMod , issueAMod );
+     R3B->chg_facility_capacities( MF_dbl_sp( v_capacity ).subspan( f ) ,
+				   tmod->rng() , issuePMod , issueAMod );
     break;
 
    case( CapacitatedFacilityLocationBlockMod::eChgDem ):  //- - - - - - - - -
     if( s == f + 1 )
      R3B->chg_customer_demand( v_demand[ f ] , f , issuePMod , issueAMod );
     else
-     R3B->chg_customer_demands( v_demand.begin() + f , tmod->rng() ,
-				issuePMod , issueAMod );
+     R3B->chg_customer_demands( MF_dbl_sp( v_demand ).subspan( f ) ,
+				tmod->rng() , issuePMod , issueAMod );
     break;
 
    case( CapacitatedFacilityLocationBlockMod::eCloseF ):  //- - - - - - - - -
@@ -5210,7 +5316,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
      auto NCit = NC.begin();
      for( auto i : tmod->nms() )
       *(NCit++) = v_f_cost[ i ]; 
-     R3B->chg_facility_costs( NC.begin() , Subset( tmod->nms() ) , true ,
+     R3B->chg_facility_costs( MF_dbl_sp( NC ) , Subset( tmod->nms() ) , true ,
 			      issuePMod , issueAMod );
      }
     break;
@@ -5225,7 +5331,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
      auto NCit = NC.begin();
      for( auto i : tmod->nms() )
       *(NCit++) = (v_t_cost.data())[ i ]; 
-     R3B->chg_transportation_costs( NC.begin() , Subset( tmod->nms() ) ,
+     R3B->chg_transportation_costs( MF_dbl_sp( NC ) , Subset( tmod->nms() ) ,
 				    true , issuePMod , issueAMod );
      }
     break;
@@ -5240,7 +5346,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
      auto NCit = NC.begin();
      for( auto i : tmod->nms() )
       *(NCit++) = v_capacity[ i ]; 
-     R3B->chg_facility_capacities( NC.begin() , Subset( tmod->nms() ) ,
+     R3B->chg_facility_capacities( MF_dbl_sp( NC ) , Subset( tmod->nms() ) ,
 				   true , issuePMod , issueAMod );
      }
     break;
@@ -5255,8 +5361,8 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_copy(
      auto NDit = ND.begin();
      for( auto i : tmod->nms() )
       *(NDit++) = v_demand[ i ]; 
-     R3B->chg_customer_demands( ND.begin() , Subset( tmod->nms() ) , true ,
-				issuePMod , issueAMod );
+     R3B->chg_customer_demands( MF_dbl_sp( ND ) , Subset( tmod->nms() ) ,
+				true , issuePMod , issueAMod );
      }
     break;
 
@@ -5407,7 +5513,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
      auto NCit = NC.begin();
      for( Index i = f ; i < s ; ++i )
       *(NCit++) = v_f_cost[ i ] / v_capacity[ i ];
-     R3B->chg_costs( NC.begin() , tmod->rng() , issuePMod , issueAMod );
+     R3B->chg_costs( MF_dbl_sp( NC ) , tmod->rng() , issuePMod , issueAMod );
      }
 
     break;
@@ -5423,13 +5529,13 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
 		    issuePMod , issueAMod );
       }
     else {
-     R3B->chg_ucaps( v_capacity.begin() + f , tmod->rng() ,
+     R3B->chg_ucaps( MF_dbl_sp( v_capacity ).subspan( f ) , tmod->rng() ,
 		     issuePMod , issueAMod );
      MCFBlock::Vec_CNumber NC( s - f );
      auto NCit = NC.begin();
      for( Index i = f ; i < s ; ++i )
       *(NCit++) = v_f_cost[ i ] / v_capacity[ i ];
-     R3B->chg_costs( NC.begin() , tmod->rng() , issuePMod , issueAMod );
+     R3B->chg_costs( MF_dbl_sp( NC ) , tmod->rng() , issuePMod , issueAMod );
      }
 
     break;
@@ -5483,7 +5589,7 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
      auto NCit = NC.begin();
      for( auto i : tmod->nms() )
       *(NCit++) = v_f_cost[ i ] / v_capacity[ i ]; 
-     R3B->chg_costs( NC.begin() , Subset( tmod->nms() ) , true ,
+     R3B->chg_costs( MF_dbl_sp( NC ) , Subset( tmod->nms() ) , true ,
 		     issuePMod , issueAMod );
      }
 
@@ -5509,9 +5615,9 @@ bool CapacitatedFacilityLocationBlock::guts_of_guts_of_map_f_Mod_MCF(
       *(NCPit++) = v_capacity[ i ];
       *(NCSit++) = v_f_cost[ i ] / v_capacity[ i ];
       }
-     R3B->chg_ucaps( NCP.begin() , Subset( tmod->nms() ) , true ,
+     R3B->chg_ucaps( MF_dbl_sp( NCP ) , Subset( tmod->nms() ) , true ,
 		     issuePMod , issueAMod );
-     R3B->chg_costs( NCS.begin() , Subset( tmod->nms() ) , true ,
+     R3B->chg_costs( MF_dbl_sp( NCS ) , Subset( tmod->nms() ) , true ,
 		     issuePMod , issueAMod );
      }
 
@@ -6004,6 +6110,10 @@ void CapacitatedFacilityLocationBlock::get_x(
 		  "get_transportation_solution: variables not generated" ) );
  #endif
 
+ if( ( AR & FormMsk ) == BenForm )
+  throw( std::logic_error( "get_transportation_solution: no transportation"
+			   " Variable in the Benders formulation" ) );
+
  if( rng.second > f_n_facilities * f_n_customers )
   rng.second = f_n_facilities * f_n_customers;
  if( rng.second <= rng.first )  // Range is empty
@@ -6067,6 +6177,10 @@ void CapacitatedFacilityLocationBlock::get_x(
 		   [ & ]( auto i ) { return( i > f_n_facilities ); } ) )
    throw( std::logic_error( _prfx + "invalid index in nms" ) );
  #endif
+
+ if( ( AR & FormMsk ) == BenForm )
+  throw( std::logic_error( "get_transportation_solution: no transportation"
+			   " Variable in the Benders formulation" ) );
 
 
  if( ( AR & FormMsk ) == StdForm ) {  // standard formulation- - - - - - - - -
@@ -6173,6 +6287,10 @@ void CapacitatedFacilityLocationBlock::set_x(
 		  "set_transportation_solution: variables not generated" ) );
  #endif
 
+ if( ( AR & FormMsk ) == BenForm )
+  throw( std::logic_error( "set_transportation_solution: no transportation"
+			   " Variable in the Benders formulation" ) );
+
  if( rng.second > f_n_facilities * f_n_customers )
   rng.second = f_n_facilities * f_n_customers;
  if( rng.second <= rng.first )  // Range is empty
@@ -6240,6 +6358,10 @@ void CapacitatedFacilityLocationBlock::set_x(
 		   [ & ]( auto i ) { return( i > nmx ); } ) )
    throw( std::logic_error( _prfx + "invalid index in nms" ) );
  #endif
+
+ if( ( AR & FormMsk ) == BenForm )
+  throw( std::logic_error( "set_transportation_solution: no transportation"
+			   " Variable in the Benders formulation" ) );
 
  if( ( AR & FormMsk ) == StdForm ) {  // standard formulation- - - - - - - - -
   for( auto i : nms )
@@ -6336,8 +6458,8 @@ void CapacitatedFacilityLocationSolution::read( const Block * block )
 
  // read y- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( ! v_y.empty() ) {
-  if( v_x.size() < CFLB->get_NFacilities() )
-   v_x.resize( CFLB->get_NFacilities() );
+  if( v_y.size() < CFLB->get_NFacilities() )
+   v_y.resize( CFLB->get_NFacilities() );
 
   CFLB->get_facility_solution( v_y.begin() );
   }

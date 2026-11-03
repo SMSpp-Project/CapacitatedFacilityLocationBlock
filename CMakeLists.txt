@@ -119,6 +119,11 @@ if (BUILD_SHARED_LIBS)
         # for by -u included, even under -dead_strip_dylibs
         target_link_options(${modName} INTERFACE
                 "LINKER:-u,_SMSpp_force_load_${modName}")
+    elseif (MINGW)
+        # the PE linker imports a DLL for the symbols asked for, -u
+        # included
+        target_link_options(${modName} INTERFACE
+                "LINKER:-u,SMSpp_force_load_${modName}")
     endif ()
 endif ()
 
@@ -160,94 +165,153 @@ target_link_libraries(${modName} PUBLIC
 # the library with this notation.
 add_library(${modNamespace}::${modName} ALIAS ${modName})
 
+# ----- C++20 module -------------------------------------------------------- #
+# The module smspp.capacitatedfacilitylocationblock
+# (src/CapacitatedFacilityLocationBlock.cppm) exports the names of the headers
+# and re-exports smspp.binaryknapsackblock, smspp.mcfblock; like the module
+# smspp of the core, it is built when SMSpp_BUILD_MODULE is ON, which needs
+# CMake 3.28 or later, the Ninja or Visual Studio generator and a compiler that
+# scans the dependencies of the modules.
+# Where these are missing, or a module it imports is not there, the option
+# is turned off with a warning [see CheckModule.cmake of SMS++].
+smspp_check_module(${modNamespace}::BinaryKnapsackBlock_module
+                   ${modNamespace}::MCFBlock_module)
+if (SMSpp_BUILD_MODULE)
+    # the scan of the module dependencies, and $<LINK_ONLY> honoured also for
+    # the target itself, which cmake_policy(VERSION 3.15) above leaves off
+    cmake_policy(SET CMP0155 NEW)
+    cmake_policy(SET CMP0131 NEW)
+
+    add_library(${modName}_module)
+    target_sources(${modName}_module PUBLIC
+            FILE_SET CXX_MODULES
+            BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src
+            FILES src/${modName}.cppm)
+    target_compile_features(${modName}_module PUBLIC cxx_std_20)
+    # the interface takes the include paths and the definitions of the
+    # library, but not its compile options (e.g., the -fopenmp of a source,
+    # which no header needs), so that it agrees with the module it imports
+    target_include_directories(${modName}_module PRIVATE
+            $<TARGET_PROPERTY:${modName},INTERFACE_INCLUDE_DIRECTORIES>)
+    target_compile_definitions(${modName}_module PRIVATE
+            $<TARGET_PROPERTY:${modName},INTERFACE_COMPILE_DEFINITIONS>)
+    target_link_libraries(${modName}_module PUBLIC $<LINK_ONLY:${modName}>
+            ${modNamespace}::BinaryKnapsackBlock_module
+            ${modNamespace}::MCFBlock_module)
+    add_library(${modNamespace}::${modName}_module ALIAS ${modName}_module)
+endif ()
+
+# ----- Tests --------------------------------------------------------------- #
+if (BUILD_TESTING)
+    # enable testing in this directory's scope: the umbrella calls
+    # enable_testing() only after this subdirectory has been processed, so the
+    # test would otherwise not be registered with CTest
+    enable_testing()
+    add_subdirectory(test)
+endif ()
+
 # ----- Subdirectories ------------------------------------------------------ #
 add_subdirectory(tools)
 
-# ----- Custom commands and targets ----------------------------------------- #
-
-# The version of the archive in the Package Registry. A published version is
-# never replaced: new data go out under a new version, written here first [see
-# data/upload-txt], and the archive and the marker of its extraction carry it
-# in their name, so that a tree holding the data of an older version (a cache
-# of the CI, or a clone that has been extracted before) downloads and extracts
-# again instead of taking them for the current ones.
+# ----- Data ---------------------------------------------------------------- #
+# The instances the tests read are, for each <fmt> of DATA_FORMATS, the
+# archive <fmt>.tgz in the GitLab Package Registry of the project
+# DATA_PROJECT, extracted into data/<fmt>. Nothing of this is built with the
+# module: extract_<DATA_PREFIX>_<fmt> downloads the archive (by building
+# download_<DATA_PREFIX>_<fmt>) and extracts it, and it is built when the
+# tests that read the instances are run, by a test that sets up the fixture
+# <DATA_PREFIX>_<fmt>_extracted they require.
+#
+# A published version is never replaced: new data go out under a new
+# version, written here first [see the upload scripts in data/], and the
+# archive and the marker of its extraction carry it in their name, so that a
+# tree holding the data of an older version (a cache of the CI, or a clone
+# that has been extracted before) downloads and extracts again instead of
+# taking them for the current ones.
 set(DATA_VERSION 2025-07-29)
+set(DATA_PROJECT 24780184)
+set(DATA_PREFIX cfl)
+set(DATA_FORMATS txt)
 
-# Download txt.tgz from GitLab Package Registry if it doesn't exist
-set(TXT_URL "https://gitlab.com/api/v4/projects/24780184/packages/generic/txt/${DATA_VERSION}/txt.tgz")
-set(TXT_ARCHIVE ${CMAKE_CURRENT_SOURCE_DIR}/data/txt-${DATA_VERSION}.tgz)
-set(DATA_MARKER ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted-${DATA_VERSION})
-set(TXT_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/download_cfl_txt.cmake)
+foreach (fmt ${DATA_FORMATS})
+    set(url "https://gitlab.com/api/v4/projects/${DATA_PROJECT}/packages/\
+generic/${fmt}/${DATA_VERSION}/${fmt}.tgz")
+    set(archive ${CMAKE_CURRENT_SOURCE_DIR}/data/${fmt}-${DATA_VERSION}.tgz)
+    set(script
+        ${CMAKE_CURRENT_BINARY_DIR}/download_${DATA_PREFIX}_${fmt}.cmake)
+    # the marker of the extraction, on which what is made from the instances
+    # depends too
+    set(DATA_MARKER_${fmt}
+        ${CMAKE_CURRENT_SOURCE_DIR}/data/.extracted-${fmt}-${DATA_VERSION})
 
-file(WRITE ${TXT_SCRIPT} "
-file(DOWNLOAD \"${TXT_URL}\" \"${TXT_ARCHIVE}\" SHOW_PROGRESS STATUS _status)
+    file(WRITE ${script} "
+file(DOWNLOAD \"${url}\" \"${archive}\" SHOW_PROGRESS STATUS _status)
 list(GET _status 0 _code)
 list(GET _status 1 _message)
 if(NOT _code EQUAL 0)
   # what is on disk is whatever the server answered with, and leaving it there
   # would let the build take it for the archive: the next attempt has to
   # download again rather than fail while extracting it
-  file(REMOVE \"${TXT_ARCHIVE}\")
-  message(FATAL_ERROR \"cannot download ${TXT_URL}: \${_message}\")
+  file(REMOVE \"${archive}\")
+  message(FATAL_ERROR \"cannot download ${url}: \${_message}\")
 endif()
-file(SIZE \"${TXT_ARCHIVE}\" _size)
+file(SIZE \"${archive}\" _size)
 if(_size LESS 1024)
-  file(REMOVE \"${TXT_ARCHIVE}\")
-  message(FATAL_ERROR \"${TXT_ARCHIVE} came down with \${_size} bytes, so the \
+  file(REMOVE \"${archive}\")
+  message(FATAL_ERROR \"${archive} came down with \${_size} bytes, so the \
 server answered but not with the archive: try again later\")
 endif()
 ")
 
-add_custom_command(
-        OUTPUT ${TXT_ARCHIVE}
-        COMMAND ${CMAKE_COMMAND} -E echo "Downloading txt.tgz from GitLab Package Registry..."
-        COMMAND ${CMAKE_COMMAND} -P ${TXT_SCRIPT}
-        COMMENT "Downloading txt.tgz"
-        VERBATIM
-)
+    add_custom_command(
+            OUTPUT ${archive}
+            COMMAND ${CMAKE_COMMAND} -P ${script}
+            COMMENT "Downloading ${fmt}.tgz from the GitLab Package Registry"
+            VERBATIM)
+    add_custom_target(download_${DATA_PREFIX}_${fmt} DEPENDS ${archive})
 
-add_custom_target(download_cfl_txt
-        DEPENDS ${TXT_ARCHIVE})
+    add_custom_command(
+            OUTPUT ${DATA_MARKER_${fmt}}
+            COMMAND ${CMAKE_COMMAND} -E tar xzf ${archive}
+            COMMAND ${CMAKE_COMMAND} -E touch ${DATA_MARKER_${fmt}}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
+            COMMENT "Extracting ${fmt}.tgz"
+            VERBATIM
+            DEPENDS ${archive})
+    add_custom_target(extract_${DATA_PREFIX}_${fmt}
+                      DEPENDS ${DATA_MARKER_${fmt}})
+    # the archive is the output of a command in both targets: it has to be
+    # downloaded once, before it is extracted
+    add_dependencies(extract_${DATA_PREFIX}_${fmt}
+                     download_${DATA_PREFIX}_${fmt})
+endforeach ()
 
-# Custom command to extract the txt.tgz archive if the marker of this version
-# does not exist
-add_custom_command(
-        OUTPUT ${DATA_MARKER}
-        COMMAND ${CMAKE_COMMAND} -E tar xzf ${TXT_ARCHIVE}
-        COMMAND echo > ${DATA_MARKER}
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data
-        COMMENT "Extracting txt.tgz"
-        VERBATIM
-        DEPENDS download_cfl_txt)
-
-# Create custom targets to run the txt extraction
-add_custom_target(extract_cfl_txt
-        DEPENDS ${DATA_MARKER})
-
-# Ensure that extract_cfl_txt is executed after the download
-add_dependencies(extract_cfl_txt download_cfl_txt)
-
-# Custom command to run tools/batch with the cfl2nc4 exe if the .generated file does not exist
+# Custom command to run tools/batch with the cfl2nc4 exe if the .generated
+# file does not exist
 if (UNIX)
     add_custom_command(
             OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
-            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/batch ${CMAKE_CURRENT_BINARY_DIR}/tools/cfl2nc4
-            COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/batch
+                    ${CMAKE_CURRENT_BINARY_DIR}/tools/cfl2nc4
+            COMMAND ${CMAKE_COMMAND} -E touch
+                    ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
             COMMENT "Running cfl2nc4"
             VERBATIM
-            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/cfl2nc4 ${DATA_MARKER})
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/tools/cfl2nc4
+                    ${DATA_MARKER_txt})
 elseif (WIN32)
     add_custom_command(
             OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
             # using Git for Windows that includes Git Bash
             COMMAND "C:/Program Files/Git/bin/bash.exe"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/batch" "$<TARGET_FILE:cfl2nc4>"
-            COMMAND echo > ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
+            COMMAND ${CMAKE_COMMAND} -E touch
+                    ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tools
             COMMENT "Running cfl2nc4"
             VERBATIM
-            DEPENDS $<TARGET_FILE:cfl2nc4> ${DATA_MARKER})
+            DEPENDS $<TARGET_FILE:cfl2nc4> ${DATA_MARKER_txt})
 endif ()
 
 # Create custom targets to run the nc4 generation
@@ -255,7 +319,7 @@ add_custom_target(run_cfl2nc4
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/nc4/.generated)
 
 # Ensure that run_cfl2nc4 is executed after the build
-add_dependencies(run_cfl2nc4 cfl2nc4)
+add_dependencies(run_cfl2nc4 cfl2nc4 extract_cfl_txt)
 
 # ----- Install instructions ------------------------------------------------ #
 # The following commands are used when installing the library
@@ -271,8 +335,20 @@ install(TARGETS ${modName}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} # .so .dylib
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}) # .lib
 
+# Install the module, whose interface is compiled again by each importer
+if (SMSpp_BUILD_MODULE)
+    install(TARGETS ${modName}_module
+            EXPORT ${modName}Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            FILE_SET CXX_MODULES
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace}/modules)
+endif ()
+
 # Install the headers
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/CapacitatedFacilityLocationBlock.h
+install(FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/CapacitatedFacilityLocationBlock.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace})
 
 # Install the auto-generated configuration header (see above).

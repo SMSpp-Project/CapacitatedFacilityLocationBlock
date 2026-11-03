@@ -7,6 +7,115 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-03
+
+### Added
+
+- the tester checks what each physical Modification says it changes
+  (`changes()`) against what the change does to the model, written down in
+  the tester, for every type of `CapacitatedFacilityLocationBlockMod`
+
+- the makefiles build the C++20 module
+  `smspp.capacitatedfacilitylocationblock` when `SMSppMOD` is not empty
+  (e.g., `make SMSppMOD=1`), with clang++ 16 or later [see
+  `lib/makefile-mod` of SMS++]
+
+- the unit test of the module, in `test/`, which checks `is_feasible()` on a
+  point set by hand in the natural, knapsack and "Benders friendly"
+  formulations, with rows violated and relaxed, both tolerances and the
+  maximum number of open facilities, and runs in the CI of the module
+
+- the C++20 module `smspp.capacitatedfacilitylocationblock`
+  (`src/CapacitatedFacilityLocationBlock.cppm`), which exports every name
+  that the headers declare at namespace scope and re-exports
+  `smspp.binaryknapsackblock` and `smspp.mcfblock`, so that a source file
+  can write `import smspp.capacitatedfacilitylocationblock;` in place of the
+  `#include` of the headers; it is built with the CMake option
+  `SMSpp_BUILD_MODULE`, as the target
+  `SMS++::CapacitatedFacilityLocationBlock_module`
+
+### Changed
+
+- the README leaves the channels that distribute SMS++ to the
+  installation guide of the wiki (Installing-SMS++), keeping the names
+  of the packages of the module
+
+- the Modification of the module say what they change to the constructor
+  of `Modification`, since `changes()` is no longer virtual and returns
+  that value, which whoever forwards them can refine with `set_changes()`
+
+- the pipeline builds the module also with its makefiles, after CMake, and
+  runs on a change of the makefiles too [see `ci/makefile` of the umbrella]
+
+- `SMSpp_BUILD_MODULE` no longer stops the configuration when the C++20
+  module cannot be built, i.e., with a CMake older than 3.28, a generator
+  other than Ninja or Visual Studio, a compiler other than Clang 16 (with
+  `clang-scan-deps`) or MSVC 19.34, or a module it imports that is not
+  there: the option is turned off with a warning that says why, and the
+  build goes on with the headers [see `cmake/CheckModule.cmake` of SMS++]
+
+- the licence is the GNU Lesser General Public License version 3.0
+
+- the instances of `data/` are downloaded and extracted by the targets
+  `download_cfl_<fmt>` and `extract_cfl_<fmt>`, written as in every module
+  that keeps its instances in the Package Registry, and the marker of the
+  extraction carries the format in its name, so that a tree extracted
+  before extracts once more; `run_cfl2nc4` builds `extract_cfl_txt` first
+
+### Removed
+
+- the forms of `chg_facility_costs()`, `chg_transportation_costs()`,
+  `chg_facility_capacities()` and `chg_customer_demands()` taking an
+  iterator, and their registration in the methods factory, which has only
+  the span forms; the module passes spans to them and to the setters of
+  `BinaryKnapsackBlock` and `MCFBlock`
+
+### Fixed
+
+- on Windows, the executables that copy their DLLs next to themselves
+  are linked one at a time (a job pool of Ninja), since two copies of the
+  same DLL into one directory collided (e.g., with the clang++ of MSYS2)
+
+- with the compilers of MinGW (MSYS2) the target asks whoever links it
+  for the symbol that forces the module in, as with MSVC and on macOS:
+  the linker imports a DLL only for the symbols asked for, so that a
+  program that used none had the module left out and its classes
+  missing from the factory
+
+- the makefiles of the tests and of the tools build also with g++: they
+  take the option that stops at the first error and the one of the
+  debugging information, which clang++ and g++ spell differently
+  (`-ferror-limit=1` and `-glldb` against `-fmax-errors=1` and `-ggdb`),
+  from `SMSppSWERR` and `SMSppSWDBG` of `lib/makefile-OS` of SMS++
+
+- `is_feasible()` with the abstract representation checks the rows with the
+  static `RowConstraint::is_feasible()` of the core, as the other Blocks do:
+  a relaxed row is skipped, a row that cannot be `compute()`-d makes the
+  point infeasible, and the knapsack rows of the knapsack formulation are
+  checked with the tolerance as well, no longer exactly; the tolerance may be
+  a `SimpleConfiguration< std::pair< double , int > >` saying whether it is
+  relative or absolute, a Configuration of another type falls back on the
+  one of the `BlockConfig`, and the maximum number of open facilities is
+  checked as well, on its row if it has been built and on the data if not;
+  `customer_feasible()` and `facility_feasible()` take whether the tolerance
+  is relative as a third parameter, `true` by default
+
+- in the "Benders friendly" formulation, which has no transportation
+  Variable, `is_feasible()` read them out of a sub-Block that is not there:
+  it now checks y and v, the bound on v and the Benders cuts with the
+  abstract representation, and that the open capacity covers the total
+  demand out of the data, which is what `customer_feasible()` and
+  `facility_feasible()` check there too; `get_x()` returns `nullptr`, the
+  getters and setters of the transportation solution throw, and
+  `get_Solution()` gives a Solution that holds y alone
+
+- `CapacitatedFacilityLocationSolution::read()` sized the transportation part
+  when it meant the design one
+
+- in the flow formulation X is the amount of demand served, and the physical
+  check of the customer satisfaction and capacity constraints read it as the
+  fraction of it
+
 ## [0.4.0] - 2026-10-09
 
 ### Added
@@ -160,7 +269,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - First test release.
 
-[Unreleased]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.4.0...develop
+[Unreleased]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.5.0...develop
+[0.5.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.4.0...0.5.0
 [0.4.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.3.0...0.4.0
 [0.3.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.2.0...0.3.0
 [0.2.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.1.1...0.2.0

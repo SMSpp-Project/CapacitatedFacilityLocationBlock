@@ -70,8 +70,8 @@ namespace SMSpp_di_unipi_it
 /*--------------------------------------------------------------------------*/
 /*------------------------------- CLASSES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
-/** @defgroup CapacitatedFacilityLocationBlock_CLASSES
- *            Classes in CapacitatedFacilityLocationBlock.h
+/** @defgroup CapacitatedFacilityLocationBlock_CLASSES Classes in \
+ *            CapacitatedFacilityLocationBlock.h
  *  @{ */
 
 /*--------------------------------------------------------------------------*/
@@ -89,16 +89,16 @@ namespace SMSpp_di_unipi_it
  * Facilities / Warehouses whose role is to serve a set of n customers,
  * usually (but not necessarily) with n >> m. For ease of notation we define
  * the set I = { 1 , ... m } of Facilities / Warehouses and the set J =
- * { 1 , ... , n } of customers. Each Facility [ / Warehouse ] i \in I has a
- * capacity Q[ i ] corresponding to the maximum amount that it can deliver of
- * the unique commodity that the customers require; however, this can be done
- * only if the Facility [ ... ] is open, which has a fixed cost F[ i ].
- * Underlying the problem there is a complete bipartite graph G = ( I x J ,
- * A ) with m + n nodes and m * n = (directed) arcs corresponding to
- * (directed) routes from each facility i \in I to each customer j \in J.
- * Each arc ( i , j ) has a linear cost coefficient C[ i , j ] corresponding
- * to the cost of serving all the demand D[ j ] of the user j for the unique
- * commodity from facility i.
+ * { 1 , ... , n } of customers. Each Facility [ / Warehouse ]
+ * \f$ i \in I \f$ has a capacity Q[ i ] corresponding to the maximum amount
+ * that it can deliver of the unique commodity that the customers require;
+ * however, this can be done only if the Facility [ ... ] is open, which has
+ * a fixed cost F[ i ]. Underlying the problem there is a complete bipartite
+ * graph G = ( I x J , A ) with m + n nodes and m * n = (directed) arcs
+ * corresponding to (directed) routes from each facility \f$ i \in I \f$ to
+ * each customer \f$ j \in J \f$. Each arc ( i , j ) has a linear cost
+ * coefficient C[ i , j ] corresponding to the cost of serving all the demand
+ * D[ j ] of the user j for the unique commodity from facility i.
  *
  * Introducing flow variables X[ i , j ] that represent the percentage of the
  * total demand of customer j served by facility i and binary variables
@@ -308,13 +308,13 @@ public:
   *   exactly size() == n
   *
   * - C is the boost::multi_array< TCost , 2 > matrix of transportation costs,
-  *   arranged facility-wise; this means that C[ i ] for i \in I is a n-vector
-  *   so that C[ i ][ j ] is the total transportation cost between facility i
-  *   and customer j, i.e., the cost of serving all the demand D[ j ] of
-  *   customer j out of facility i.
+  *   arranged facility-wise; this means that C[ i ] for \f$ i \in I \f$ is an
+  *   n-vector so that C[ i ][ j ] is the total transportation cost between
+  *   facility i and customer j, i.e., the cost of serving all the demand
+  *   D[ j ] of customer j out of facility i.
   *
   * - unsplt is the bool that, if true [default], denotes that the
-  *   unsplittable version of of the problem needs be solved.
+  *   unsplittable version of the problem needs be solved.
   * 
   * - k is the number of maximum facilities that can be opened,
   *   [default] is iInf. 
@@ -713,9 +713,9 @@ public:
   *
   * Finally, if the third bit of ws is 1, then an appropriately arranged
   * group of dynamic Constraint is added that support the separation of
-  * the "strong linking" constraints x_{ij} \leq y_i. If this is done,
+  * the "strong linking" constraints \f$ x_{ij} \leq y_i \f$. If this is done,
   * then generate_dynamic_constraints() implements this separation. Note
-  * that, whatever the formulation, che corresponding "strong" group of
+  * that, whatever the formulation, the corresponding "strong" group of
   * dynamic Constraint is always added to the "root"
   * CapacitatedFacilityLocationBlock */
  
@@ -864,8 +864,8 @@ public:
  /// getting upper bounds on the value of the Objective
  /** An upper bound on the optimal value of the problem is computed as
   * \f$ \sum_{ i \in I } : F[ i ] > 0 F[ i ] \f$ plus, for each customer
-  * j \in J, the term \f$ C[ i , j ] \f$ corresponding to the maximum
-  * \f$ C[ i , j ] \f$ among all possible i \in I. */
+  * \f$ j \in J \f$, the term \f$ C[ i , j ] \f$ corresponding to the maximum
+  * \f$ C[ i , j ] \f$ among all possible \f$ i \in I \f$. */
 
  [[nodiscard]] double get_valid_upper_bound( bool conditional = false )
   override final {
@@ -882,8 +882,8 @@ public:
  /// getting a global valid lower bound on the value of the Objective
  /** An upper bound on the optimal value of the problem is computed as
   * \f$ \sum_{ i \in I } : F[ i ] < 0 F[ i ] \f$ plus, for each customer
-  * j \in J, the term \f$ C[ i , j ] \f$ corresponding to the minimum
-  * \f$ C[ i , j ] \f$ among all possible i \in I. */
+  * \f$ j \in J \f$, the term \f$ C[ i , j ] \f$ corresponding to the minimum
+  * \f$ C[ i , j ] \f$ among all possible \f$ i \in I \f$. */
 
  [[nodiscard]] double get_valid_lower_bound( bool conditional = false )
   override final {
@@ -1018,20 +1018,36 @@ public:
   * prior to this method, and then of course that a solution has been
   * written there.
   *
-  * The parameter for deciding what "approximately feasible" exactly means is
-  * a single double value, representing the *relative* tolerance for
-  * satisfaction of both the customer satisfaction constraint and the
-  * facility capacity ones. This value is to be found as:
+  * The constraints checked are the customer satisfaction, the facility
+  * capacity and the maximum number of open facilities ones. If useabstract
+  * is true, those of the abstract representation that have been constructed
+  * are checked as the static methods RowConstraint::is_feasible() do: a
+  * relaxed Constraint is not checked, and one that cannot be compute()-d
+  * makes the solution infeasible. The others, as well as all of them if
+  * useabstract is false, are checked out of the data of the instance.
   *
-  * - if fsbc is not nullptr and it is a SimpleConfiguration< double >, then
-  *   it if fsbc->f_value;
+  * The "Benders friendly" formulation has no X: there the solution is y and
+  * v, if useabstract is true the bound on v and the Benders cuts are checked
+  * as well, and the customer satisfaction and the facility capacity
+  * constraints are checked out of the data, i.e., by checking that the
+  * capacity of the open facilities covers the total demand, which is when
+  * some X satisfies them both.
   *
-  * - otherwise, if f_BlockConfig is not nullptr,
-  *   f_BlockConfig->f_is_feasible_Configuration is not nullptr and it
-  *   is a SimpleConfiguration< double >, then it is
-  *   f_BlockConfig->f_is_feasible_Configuration->f_value;
+  * What "approximately feasible" exactly means is decided by a tolerance
+  * and by whether it is relative or absolute (see RowConstraint::rel_viol()
+  * and RowConstraint::abs_viol()); the tolerance is used as is for the
+  * Variable. They are to be found as:
   *
-  * - otherwise, it is 1e-10. */
+  * - if fsbc is a SimpleConfiguration< double >, then fsbc->f_value is the
+  *   tolerance, which is relative; if it is a
+  *   SimpleConfiguration< std::pair< double , int > >, then
+  *   fsbc->f_value.first is the tolerance, which is relative if
+  *   fsbc->f_value.second is nonzero and absolute otherwise;
+  *
+  * - otherwise, if f_BlockConfig is not nullptr, the same holds for
+  *   f_BlockConfig->f_is_feasible_Configuration;
+  *
+  * - otherwise, the tolerance is 1e-10, and it is relative. */
 
  bool is_feasible( bool useabstract = false ,
 		   Configuration * fsbc = nullptr ) override;
@@ -1045,11 +1061,16 @@ public:
   * satisfaction constraints. This clearly requires the Variable to have been
   * defined, i.e., that generate_abstract_variables() has been called prior
   * to this method, and then of course that a solution has been written
-  * there. The parameter feps is the relative accuracy defining
-  * "approximately". The parameter "useabstract" has the same meaning as in
-  * is_feasible(). */
+  * there. The parameter eps is the accuracy defining "approximately", which
+  * is relative if rel_viol is true and absolute otherwise. The parameter
+  * "useabstract" has the same meaning as in is_feasible().
+  * In the "Benders friendly" formulation, which has no X, this checks that
+  * the capacity of the open facilities covers the total demand, which is
+  * when some X satisfies both the customer satisfaction and the facility
+  * capacity constraints. */
 
- bool customer_feasible( double eps , bool useabstract = false );
+ bool customer_feasible( double eps , bool useabstract = false ,
+			 bool rel_viol = true );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns true if the current solution is (approximately) facility feasible
@@ -1059,11 +1080,17 @@ public:
   * capacity constraints. This clearly requires the Variable to have been
   * defined, i.e., that generate_abstract_variables() has been called prior
   * to this method, and then of course that a solution has been written
-  * there. The parameter feps is the relative accuracy defining
-  * "approximately". The parameter "useabstract" has the same meaning as in
-  * is_feasible(). */
+  * there. The parameter eps is the accuracy defining "approximately", which
+  * is relative (to the capacity of the facility, if the data are used) if
+  * rel_viol is true and absolute otherwise. The parameter "useabstract" has
+  * the same meaning as in is_feasible().
+  * In the "Benders friendly" formulation, which has no X, this checks that
+  * the capacity of the open facilities covers the total demand, which is
+  * when some X satisfies both the customer satisfaction and the facility
+  * capacity constraints. */
 
- bool facility_feasible( double eps , bool useabstract = false );
+ bool facility_feasible( double eps , bool useabstract = false ,
+			 bool rel_viol = true );
 
 /** @} ---------------------------------------------------------------------*/
 /*------------------------- Methods for R3 Blocks --------------------------*/
@@ -1250,6 +1277,9 @@ public:
   *
   *   = everything else (e.g., 0) means "save everything";
   *
+  * The "Benders friendly" formulation has no transportation Variable, hence
+  * there the transportation part is never saved.
+  *
   * Note that CapacitatedFacilityLocationBlockSolution may not contain the
   * required solution if the Variable have not been constructed yet: this
   * throws an exception, unless emptys == true, in which case the
@@ -1324,7 +1354,9 @@ public:
  /// gets (a pointer to) the x[ i ][ j ] variable
  /** Gets a pointer to the ColVariable representing how much of the demand
   * of the customer j is served by facility i; returns nullptr if the
-  * abstract representation has not been constructed (yet).
+  * abstract representation has not been constructed (yet), or if the
+  * formulation in use is the "Benders friendly" one, which has no such
+  * ColVariable.
   *
   * Important note: in the Standard and Knapsack Formulation the variable
   *                 is in [ 0 , 1 ] and represents the fraction of the
@@ -1351,6 +1383,9 @@ public:
   if( ( AR & 3 ) == 1 )  // 3 = FormMsk , 1 = KskForm
    return( static_cast< BinaryKnapsackBlock * >(
 				              v_Block[ i ] )->get_Var( j ) );
+
+  if( ( AR & 3 ) == 3 )  // 3 = FormMsk , 3 = BenForm
+   return( nullptr );
 
   return( static_cast< MCFBlock * >( v_Block[ 1 ] )->i2p_x(
 			          f_n_facilities + i * f_n_customers + j ) );
@@ -1653,21 +1688,6 @@ public:
                           ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the fixed costs of a contiguous interval, iterator form
- /** As the span form, \p NCost pointing to the first of the new values; its
-  * length is taken from \p rng, restricted to what there is. */
-
- void chg_facility_costs( c_CV_it NCost , Range rng = INFRange ,
-                          ModParam issueMod = eNoBlck ,
-                          ModParam issueAMod = eNoBlck ) {
-  rng.second = std::min( rng.second , get_NFacilities() );
-  if( rng.second > rng.first )
-   chg_facility_costs(
-    MF_dbl_sp( & * NCost , rng.second - rng.first ) , rng , issueMod ,
-    issueAMod );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// change the facility_costs of an arbitrary subset of facilities
  /** Method to change the costs of an arbitrary subset of facilities. That is,
   * *( NCost + h ) becomes the new cost of facility nms[ h ] for all 0 <= h <
@@ -1680,21 +1700,6 @@ public:
                           Subset && nms , bool ordered = false ,
                           ModParam issueMod = eNoBlck ,
                           ModParam issueAMod = eNoBlck );
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the fixed costs of an arbitrary subset, iterator form
- /** As the span form, \p NCost pointing to the first of the new values; its
-  * length is taken from \p nms. */
-
- void chg_facility_costs( c_CV_it NCost ,
-                          Subset && nms , bool ordered = false ,
-                          ModParam issueMod = eNoBlck ,
-                          ModParam issueAMod = eNoBlck ) {
-  if( ! nms.empty() )
-   chg_facility_costs(
-    MF_dbl_sp( & * NCost , nms.size() ) , std::move( nms ) , ordered ,
-    issueMod , issueAMod );
-  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// changes the cost of the given facility
@@ -1724,21 +1729,6 @@ public:
                                 ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the transportation costs of a contiguous interval, iterator form
- /** As the span form, \p NCost pointing to the first of the new values; its
-  * length is taken from \p rng, restricted to what there is. */
-
- void chg_transportation_costs( c_CV_it NCost , Range rng = INFRange ,
-                                ModParam issueMod = eNoBlck ,
-                                ModParam issueAMod = eNoBlck ) {
-  rng.second = std::min( rng.second , get_NFacilities() * get_NCustomers() );
-  if( rng.second > rng.first )
-   chg_transportation_costs(
-    MF_dbl_sp( & * NCost , rng.second - rng.first ) , rng , issueMod ,
-    issueAMod );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// change the transportation costs of an arbitrary subset
  /** Method to change the transportation costs for an arbitrary subset of the
   * pairs ( facility , customer ). The matrix of transportation costs is
@@ -1755,24 +1745,9 @@ public:
                                 ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the transportation costs of an arbitrary subset, iterator form
- /** As the span form, \p NCost pointing to the first of the new values; its
-  * length is taken from \p nms. */
-
- void chg_transportation_costs( c_CV_it NCost ,
-                                Subset && nms , bool ordered = false ,
-                                ModParam issueMod = eNoBlck ,
-                                ModParam issueAMod = eNoBlck ) {
-  if( ! nms.empty() )
-   chg_transportation_costs(
-    MF_dbl_sp( & * NCost , nms.size() ) , std::move( nms ) , ordered ,
-    issueMod , issueAMod );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// changes the transportation of the given pair ( facility , customer )
  /** Method to change the transportation costs for the given pair
-  * ( facility , customer ) \p, i.e., facility = p / get_NCustomers() and
+  * ( facility , customer ) \p p, i.e., facility = p / get_NCustomers() and
   * customer = p % get_NCustomers(). */
 
  void chg_transportation_cost( Cost NCost , Index p ,
@@ -1794,21 +1769,6 @@ public:
                                ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the capacities of a contiguous interval, iterator form
- /** As the span form, \p NCap pointing to the first of the new values; its
-  * length is taken from \p rng, restricted to what there is. */
-
- void chg_facility_capacities( c_DV_it NCap , Range rng = INFRange ,
-                               ModParam issueMod = eNoBlck ,
-                               ModParam issueAMod = eNoBlck ) {
-  rng.second = std::min( rng.second , get_NFacilities() );
-  if( rng.second > rng.first )
-   chg_facility_capacities(
-    MF_dbl_sp( & * NCap , rng.second - rng.first ) , rng , issueMod ,
-    issueAMod );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// change the capacities of an arbitrary subset of facilities
  /** Method to change the capacities of an arbitrary subset of facilities.
   * That is, *( NCop + h ) becomes the capacity of facility nms[ h ] for all
@@ -1821,21 +1781,6 @@ public:
                                Subset && nms , bool ordered = false ,
                                ModParam issueMod = eNoBlck ,
                                ModParam issueAMod = eNoBlck );
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the capacities of an arbitrary subset, iterator form
- /** As the span form, \p NCap pointing to the first of the new values; its
-  * length is taken from \p nms. */
-
- void chg_facility_capacities( c_DV_it NCap ,
-                               Subset && nms , bool ordered = false ,
-                               ModParam issueMod = eNoBlck ,
-                               ModParam issueAMod = eNoBlck ) {
-  if( ! nms.empty() )
-   chg_facility_capacities(
-    MF_dbl_sp( & * NCap , nms.size() ) , std::move( nms ) , ordered ,
-    issueMod , issueAMod );
-  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// changes the capacity of the given facility
@@ -1859,21 +1804,6 @@ public:
                             ModParam issueAMod = eNoBlck );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the demands of a contiguous interval, iterator form
- /** As the span form, \p NDem pointing to the first of the new values; its
-  * length is taken from \p rng, restricted to what there is. */
-
- void chg_customer_demands( c_DV_it NDem , Range rng = INFRange ,
-                            ModParam issueMod = eNoBlck ,
-                            ModParam issueAMod = eNoBlck ) {
-  rng.second = std::min( rng.second , get_NCustomers() );
-  if( rng.second > rng.first )
-   chg_customer_demands(
-    MF_dbl_sp( & * NDem , rng.second - rng.first ) , rng , issueMod ,
-    issueAMod );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// change the demands of an arbitrary subset of customers
  /** Method to change the demands of an arbitrary subset of customers. That
   * is, *( NDem + h ) becomes the demand of customer nms[ h ] for all 0 <= h
@@ -1886,21 +1816,6 @@ public:
                             Subset && nms , bool ordered = false ,
                             ModParam issueMod = eNoBlck ,
                             ModParam issueAMod = eNoBlck );
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
- /// change the demands of an arbitrary subset, iterator form
- /** As the span form, \p NDem pointing to the first of the new values; its
-  * length is taken from \p nms. */
-
- void chg_customer_demands( c_DV_it NDem ,
-                            Subset && nms , bool ordered = false ,
-                            ModParam issueMod = eNoBlck ,
-                            ModParam issueAMod = eNoBlck ) {
-  if( ! nms.empty() )
-   chg_customer_demands(
-    MF_dbl_sp( & * NDem , nms.size() ) , std::move( nms ) , ordered ,
-    issueMod , issueAMod );
-  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
  /// changes the demand of the given customer
@@ -2160,8 +2075,8 @@ public:
  std::vector< std::list< FRowConstraint > > v_sfc;
  ///< the strong forcing constraints
  /**< v_sfc is an array of FRowConstraint for the dynamic separation of
-  * "strong forcing" constraints x_{ij} \leq y_i; v_sfc[ i ] are all the
-  * strong forcing" constraints corresponding to y_i. */
+  * "strong forcing" constraints \f$ x_{ij} \leq y_i \f$; v_sfc[ i ] are all
+  * the "strong forcing" constraints corresponding to y_i. */
 
  // "Benders friendly" formulation - - - - - - - - - - - - - - - - - - - - - -
 
@@ -2246,45 +2161,6 @@ public:
 
  static void static_initialization( void )
  {
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
-   "CapacitatedFacilityLocationBlock::chg_facility_costs",
-   & CapacitatedFacilityLocationBlock::chg_facility_costs );
-
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
-   bool >(
-   "CapacitatedFacilityLocationBlock::chg_facility_costs" ,
-   & CapacitatedFacilityLocationBlock::chg_facility_costs );
-
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
-   "CapacitatedFacilityLocationBlock::chg_transportation_costs" ,
-   &CapacitatedFacilityLocationBlock::chg_transportation_costs );
-
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
-   bool >(
-   "CapacitatedFacilityLocationBlock::chg_transportation_costs" ,
-   & CapacitatedFacilityLocationBlock::chg_transportation_costs );
-
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
-   bool >(
-   "CapacitatedFacilityLocationBlock::chg_facility_capacities",
-   & CapacitatedFacilityLocationBlock::chg_facility_capacities );
-
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
-   "CapacitatedFacilityLocationBlock::chg_facility_capacities",
-   & CapacitatedFacilityLocationBlock::chg_facility_capacities );
-
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Subset && ,
-   bool >(
-   "CapacitatedFacilityLocationBlock::chg_customer_demands",
-   &CapacitatedFacilityLocationBlock::chg_customer_demands );
-
-  register_method< CapacitatedFacilityLocationBlock , MF_dbl_it , Range >(
-   "CapacitatedFacilityLocationBlock::chg_customer_demands",
-   & CapacitatedFacilityLocationBlock::chg_customer_demands );
-
-  // the same data-carrying methods in the span form, which the iterator
-  // one defers to
-
   register_method< CapacitatedFacilityLocationBlock , MF_dbl_sp , Range >(
    "CapacitatedFacilityLocationBlock::chg_facility_costs",
    & CapacitatedFacilityLocationBlock::chg_facility_costs );
@@ -2455,6 +2331,17 @@ public:
 
  double compute_v_lower_bound( void ) const;
 
+/*--------------------------------------------------------------------------*/
+ /// returns true if the open capacity (approximately) covers the demand
+ /** Returns true if the capacity of the facilities, each weighted by the
+  * current value of its y, covers the total demand up to eps, relative to
+  * the total demand if rel_viol is true and absolute otherwise. Every
+  * facility can serve every customer and the demand is splittable in the
+  * "Benders friendly" formulation, hence this is when some X satisfies
+  * both the customer satisfaction and the capacity constraints. */
+
+ bool open_capacity_feasible( double eps , bool rel_viol );
+
  /// (re)build the internal BendersBFunction f_BF for the BenForm
  /** Creates and fully initializes the hidden BendersBFunction f_BF used by
   * the "Benders friendly" formulation: builds the inner MCFBlock (with
@@ -2586,20 +2473,54 @@ class CapacitatedFacilityLocationBlockMod : public Modification
   eChgSplt          ///< change problem type to splittable
   };
 
+ /// what a Modification of the given type changes
+ /** What a Modification of the given type changes of the model [see
+  * Modification::ModConcern], which is what changes() says and what the
+  * methods that issue it ask before issuing it [see
+  * Observer::issue_pmod()]: the costs are the Objective, closing a facility
+  * or fixing it open makes the feasible region shrink and re-opening it
+  * makes it grow, the splittability is the integrality of the Variable, and
+  * the capacities, the demands and the maximum number of facilities are
+  * said to change the Constraint. */
+
+ static ModConcern changes_of( int type ) {
+  switch( type ) {
+   case( eChgFCost ):
+   case( eChgTCost ):
+    return( ePhysObj );
+   case( eChgCap ):
+   case( eChgDem ):
+   case( eChgMxF ):
+    return( ePhysCns );
+   case( eCloseF ):
+   case( eBuyF ):
+    return( eModPhys | eModVarData | eRegnShrink );
+   case( eOpenF ):
+    return( eModPhys | eModVarData | eRegnGrow );
+   case( eChgUnSplt ):
+    return( eModPhys | eModVarType | eRegnShrink );
+   case( eChgSplt ):
+    return( eModPhys | eModVarType | eRegnGrow );
+   default:
+    return( eModPhys | eEffAny );
+   }
+  }
+
 /*---------------------- CONSTRUCTOR & DESTRUCTOR --------------------------*/
 
  /// constructor: takes the CapacitatedFacilityLocationBlock and the type
 
  CapacitatedFacilityLocationBlockMod(
 		       CapacitatedFacilityLocationBlock * fblock , int type )
-  : f_Block( fblock ) , f_type( type ) {}
+  : Modification( changes_of( type ) ) ,
+    f_Block( fblock ) , f_type( type ) {}
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  virtual ~CapacitatedFacilityLocationBlockMod() = default;
  ///< destructor, does nothing
 
-/*-------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
+/*-------------------- PUBLIC METHODS OF THE CLASS -------------------------*/
 
  /** returns the [CapacitatedFacilityLocationBlock]Block to which the
   * CapacitatedFacilityLocationBlockMod refers */
@@ -2673,7 +2594,7 @@ class CapacitatedFacilityLocationBlockRngdMod
  virtual ~CapacitatedFacilityLocationBlockRngdMod() = default;
  ///< destructor, does nothing
 
-/*-------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
+/*-------------------- PUBLIC METHODS OF THE CLASS -------------------------*/
 
  /// accessor to the range
 
@@ -2738,7 +2659,7 @@ class CapacitatedFacilityLocationBlockSbstMod
  virtual ~CapacitatedFacilityLocationBlockSbstMod() = default;
  ///< destructor, does nothing
 
-/*-------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
+/*-------------------- PUBLIC METHODS OF THE CLASS -------------------------*/
 
  /// accessor to the subset
 
