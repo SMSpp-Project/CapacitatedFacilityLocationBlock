@@ -1115,7 +1115,7 @@ public:
   *   the graph are closed (or their capacity is reduced). If \p base is
   *   passed then it must be a MCFBlock (otherwise exception is thrown).
   *
-  *   In both cases, the graph has f_n_facilities + f_n_customers + 1 nodes,
+  *   In both cases, the graph has f_n_facilities + f_n_customers + 2 nodes,
   *   with the following arrangement:
   *
   *   = nodes 1 ... f_n_facilities: facilities, deficit == 0
@@ -1124,13 +1124,18 @@ public:
   *     customers, deficit == customer demand
   *
   *   = node f_n_facilities + f_n_customers + 1: super source,
-  *     deficit == - sum of all demands
+  *     deficit == - sum of all demands - f_n_facilities
   *
-  *   and *at least* f_n_facilities * ( f_n_customers + 1 ) with the
+  *   = node f_n_facilities + f_n_customers + 2: the "constant" node,
+  *     deficit == f_n_facilities
+  *
+  *   and *at least* f_n_facilities * ( f_n_customers + 2 ) arcs with the
   *   following arrangement:
   *
   *   = arcs 0 ...f_n_facilities - 1: from source to facilities, capacity ==
-  *     facility capacity, cost == fixed cost / facility capacity
+  *     facility capacity, cost == fixed cost / facility capacity, or 0 if
+  *     the fixed cost is paid whatever the flow, i.e., if the facility is
+  *     fixed-open or its fixed cost is negative
   *
   *   = arcs f_n_facilities ... f_n_facilities * ( f_n_customers + 1 ) - 1:
   *     from facilities to customers, arranged facility-wise (first all the
@@ -1148,6 +1153,14 @@ public:
   *       CHANGE
   *
   *   as it is assumed that they are "large enough for good".
+  *
+  *   The last f_n_facilities arcs go from the super source to the
+  *   constant node, one for each facility, with capacity 1, so that the
+  *   deficits make each carry one unit; the arc of a facility costs its
+  *   fixed cost if it is paid whatever the flow, and 0 otherwise: the cost
+  *   of the continuous relaxation is a linear function of the flows only if
+  *   no fixed cost is negative and no facility is fixed-open, and these
+  *   units carry the constant that those add to it.
   *
   * - any other value: not supported (exception is thrown) */
 
@@ -2287,6 +2300,40 @@ public:
 
  void guts_of_chg_dem_MCF( MCFBlock * mcfb , c_Subset & nms , bool ordered ,
 			   ModParam issueMod , ModParam issueAMod );
+
+ /// whether the fixed cost of facility i is paid whatever the flow
+ /** In the continuous relaxation the fixed cost of a fixed-open facility is
+  * paid whatever the flow, and so is a negative one of a free facility,
+  * since opening the facility fully only gains it; in the MCF
+  * representation such a cost is carried by the arc into the constant node
+  * [see guts_of_get_R3B_MCF()], and the arc of the facility costs 0. */
+
+ [[nodiscard]] bool MCF_paid( Index i ) const;
+
+ /// the cost of the arc from the super-source to facility i in the MCF
+ [[nodiscard]] MCFBlock::CNumber MCF_fcost( Index i ) const;
+
+ /// the cost of the arc of facility i into the constant node in the MCF:
+ /// its fixed cost if it is paid whatever the flow [see MCF_paid()], or 0
+ [[nodiscard]] MCFBlock::CNumber MCF_kcost( Index i ) const;
+
+ /// whether mcfb has the constant node [see guts_of_get_R3B_MCF()]
+ [[nodiscard]] bool MCF_has_K( const MCFBlock * mcfb ) const;
+
+ /// sets the costs of the arcs of the facilities in rng, from the
+ /// super-source and into the constant node, after their fixed costs or
+ /// their state changed
+ void guts_of_chg_fcost_MCF( MCFBlock * mcfb , Range rng , ModParam issueMod ,
+			     ModParam issueAMod );
+
+ /// as above, for the facilities in nms
+ void guts_of_chg_fcost_MCF( MCFBlock * mcfb , c_Subset & nms , bool ordered ,
+			     ModParam issueMod , ModParam issueAMod );
+
+ /// closes or opens the arcs of the facilities in nms after their state
+ /// (closed, free or fixed-open) changed, and sets their costs
+ void guts_of_chg_fstate_MCF( MCFBlock * mcfb , c_Subset & nms ,
+			      ModParam issueMod , ModParam issueAMod );
 
  void guts_of_add_ModificationSF( c_p_Mod mod , ChnlName chnl );
 

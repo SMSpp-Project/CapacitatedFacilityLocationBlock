@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- the MCFBlock R3Block is the continuous relaxation also when a fixed cost
+  is negative or a facility is fixed-open, whose fixed cost is paid
+  whatever the flow: it has one node more, of deficit the number of the
+  facilities, and one arc into it from the super-source for each facility,
+  of capacity 1, which costs that fixed cost when it is paid whatever the
+  flow and 0 otherwise, while the arc of such a facility from the
+  super-source costs 0; before, it cost the fixed cost over the capacity
+  as for the others, and the R3Block lost the gain of a negative fixed cost
+  and the cost of a fixed-open facility. The changes of the fixed costs,
+  of the capacities and of the state of the facilities keep these costs
+  up to date, and the fix_open Modification is now mapped, rather than
+  throwing; the solution maps back a facility whose fixed cost is paid
+  whatever the flow as open
+
+- `fix_open_facilities( range )` in the knapsack formulation left
+  `f_mod_skip` true, so that the Modification of the sub-Block that
+  followed were ignored
+
 ## [0.5.0] - 2026-11-03
 
 ### Added
