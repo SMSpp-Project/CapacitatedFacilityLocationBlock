@@ -3977,9 +3977,9 @@ void CapacitatedFacilityLocationBlock::guts_of_get_R3B_MCF( MCFBlock * mcfb ,
  //   customer nodes
  // - node f_n_facilities + f_n_customers + 1: super-source
  //
- // - arcs 0 ... f_n_facilities: from super-source to facility
+ // - arcs 0 ... f_n_facilities - 1: from super-source to facility
  // - arcs f_n_facilities ... f_n_facilities * ( f_n_customers + 1 ) - 1:
- //   from source to facility, arranged facility-wise (first f_n_customers
+ //   from facility to customer, arranged facility-wise (first f_n_customers
  //   arcs from 1st facility, then f_n_customers arcs from 2nd facility ...)
  //
  // optionally, arcs f_n_facilities * ( f_n_customers + 1 ) ...

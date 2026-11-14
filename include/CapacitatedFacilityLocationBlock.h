@@ -158,7 +158,7 @@ namespace SMSpp_di_unipi_it
  * The current implementation of the class is only an initial version, and
  * features are expected to be added along time.
  *
- * As such, the class currently1 only supports only a subset of the possible
+ * As such, the class currently supports only a subset of the possible
  * operations on the data of the problem. This starts with the fact that
  *
  *     THE SIZE OF THE PROBLEM IS STATIC AND CAN NEVER BE CHANGED
@@ -739,7 +739,15 @@ public:
   * are preferred. The second parameter (default 1e-4) is the minimal absolute
   * violation required to declare a constraint violated (since both variables
   * have no coefficients and are in [ 0 , 1 ] an absolute threshold, for once,
-  * makes sense). */
+  * makes sense).
+  *
+  * In the "Benders friendly" formulation, which has no X, the method rather
+  * separates (at most) one Benders cut at the current value of Y, if the
+  * formulation has them [see generate_abstract_variables()]: the cut is
+  * added if its violation exceeds second * max( |v^*| , 1 ), with v^* the
+  * current value of the Variable v [see get_v()], the second parameter of
+  * the pair being a relative tolerance here (default 1e-6), while the first
+  * one is ignored. */
 
  void generate_dynamic_constraints( Configuration * dycc = nullptr )
   override;
@@ -1101,8 +1109,12 @@ public:
 
  /// gets an R3 Block of CapacitatedFacilityLocationBlock 
  /** Gets an R3 Block of the CapacitatedFacilityLocationBlock. The specific
-  * type of R3 Block is encoded in r3bc, which (if not nullptr) must be a
-  * SimpleConfiguration< int >, whose f_value can be:
+  * type of R3 Block is encoded in r3bc, which (if not nullptr) must be
+  * either a SimpleConfiguration< int >, whose f_value is the type, or a
+  * SimpleConfiguration< std::pair< int , double > >, whose f_value.first is
+  * the type and whose f_value.second is slackBigMScale (default 100), the
+  * scale of the cost of the "artificial" arcs (see below). The type can
+  * be:
   *
   * - 0 (which is also assumed if r3bc == nullptr), indicating the standard
   *   copy (a CapacitatedFacilityLocationBlock identical to this); in this
@@ -1142,13 +1154,13 @@ public:
   *     from facilities to customers, arranged facility-wise (first all the
   *     arcs of the first facilities, then all the arcs of the second, ...),
   *     capacity == infinite (Inf< MCFBlock::FNumber >()), cost ==
-  *     unitary transportation cost between facility and customer
+  *     C[ i , j ] / D[ j ], the transportation cost per unit of demand
   *
   *   When the value is 2, f_n_customers "artificial" arcs are also added
   *   from the super source to each customer, with capacity == infinite
-  *   (Inf< (MCFBlock::FNumber >()) and a very large cost (something like
-  *   100 * ( max facility cost + max transportation cost from any
-  *   facility to the customer). Note that
+  *   (Inf< MCFBlock::FNumber >()) and a very large cost, slackBigMScale *
+  *   ( 1 + max_i ( cost of the arc to facility i + C[ i , j ] / D[ j ] ) )
+  *   for customer j. Note that
   *
   *       THE COST OF THESE ARCS ARE NOT UPDATED WHEN THE ORIGINAL COSTS
   *       CHANGE
