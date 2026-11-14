@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `map_forward_solution()` to the "flow relaxation" R3 Block took the first
+  arc to write as `f_n_facilities` when the facilities were asked for and as
+  0 otherwise, the reverse of `map_back_solution()`: with both y and x it
+  wrote past the end of the vector of the flows, with y alone in an empty
+  one, and with x alone it put the transportation flows on the arcs of the
+  facilities
+
 - the knapsack sub-Block constructed while a Solver was registered to the
   Block (by generating the knapsack formulation, or by loading an instance
   in it) did not know that someone listens, and their Modification were

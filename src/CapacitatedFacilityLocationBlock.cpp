@@ -1594,7 +1594,7 @@ void CapacitatedFacilityLocationBlock::map_forward_solution( Block * R3B ,
                             ( wR3B == 2 ? f_n_customers : 0 ) ) )
   throw( std::invalid_argument( _prfx + "incompatible sizes in R3B" ) );
 
- Index l = ws & 1 ? f_n_facilities : 0;
+ Index l = ws & 1 ? 0 : f_n_facilities;
  Index u = ws & 2 ? f_n_facilities * ( f_n_customers + 1 ) : f_n_facilities;
  
  MCFBlock::Vec_FNumber x( u - l );
