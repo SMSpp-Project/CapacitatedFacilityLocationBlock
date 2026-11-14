@@ -255,9 +255,11 @@ void CapacitatedFacilityLocationBlock::load( Index m , Index n ,
 			   "transportation cost matrix has wrong shape"	) );
 
  if ( k == 0 )
-  throw( std::invalid_argument( _prfx + "number of maximum facilities too small" ) );
+  throw( std::invalid_argument( _prfx +
+				"number of maximum facilities too small" ) );
  if (k != iInf && k > m) {
-  throw(std::invalid_argument(_prfx + "number of maximum facilities too large"));
+  throw(std::invalid_argument(_prfx +
+			      "number of maximum facilities too large"));
 }
 
 
@@ -576,9 +578,11 @@ void CapacitatedFacilityLocationBlock::deserialize(
  if( ! max_fac.isNull() )
   f_max_facilities = max_fac.getSize();
  if( f_max_facilities == 0)
-  throw( std::invalid_argument( _prfx + "number of maximum facilities too small" ) );
+  throw( std::invalid_argument( _prfx +
+				"number of maximum facilities too small" ) );
  if ( f_max_facilities != iInf && f_max_facilities > f_n_facilities )
-  throw( std::invalid_argument( _prfx + "number of maximum facilities too high" ) ); 
+  throw( std::invalid_argument( _prfx +
+				"number of maximum facilities too high" ) ); 
 
  if( knap )  // the knapsack structure, for the new instance
   guts_of_set_structure( true );
@@ -725,9 +729,11 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
          "CapacitatedFacilityLocationBlock::generate_abstract_constraints: ";
 
  if( ! ( AR & HasVar ) )
-  throw( std::logic_error( _prfx + "generate_abstract_variables not called" ) );
+  throw( std::logic_error( _prfx +
+			   "generate_abstract_variables not called" ) );
 
- Index wc = 7;  // Generate all constraints by default (satisfaction + capacity + max facilities)
+ Index wc = 7;  // Generate all constraints by default (satisfaction + capacity
+		// + max facilities)
  if( ( ! stcc ) && f_BlockConfig )
   stcc = f_BlockConfig->f_static_constraints_Configuration;
  if( auto sci = dynamic_cast< SimpleConfiguration< int > * >( stcc ) )
@@ -965,8 +971,8 @@ void CapacitatedFacilityLocationBlock::generate_dynamic_constraints(
  int max = -1;
  if( ( ! dycc ) && f_BlockConfig )
   dycc = f_BlockConfig->f_dynamic_constraints_Configuration;
- if( auto sc =
-  dynamic_cast< SimpleConfiguration< std::pair< int , double > > * >( dycc ) ) {
+ if( auto sc = dynamic_cast<
+	       SimpleConfiguration< std::pair< int , double > > * >( dycc ) ) {
   max = sc->f_value.first;
   if( max == 0 )  // weird
    return;        // what else?
@@ -1067,7 +1073,8 @@ void CapacitatedFacilityLocationBlock::generate_objective(
   return;           // cowardly (and silently) return
 
  if( ! ( AR & HasVar ) )
-  throw( std::logic_error( _prfx + "generate_abstract_variables not called" ) );
+  throw( std::logic_error( _prfx +
+			   "generate_abstract_variables not called" ) );
  
  AR |= HasObj;      // Objective will be constructed now once and for all
 
@@ -2164,7 +2171,8 @@ void CapacitatedFacilityLocationBlock::chg_facility_costs(
 
   if( ( AR & FormMsk ) != KskForm )
    // since modify_coefficients owns both vectors, two copies are made
-   get_lfo()->modify_coefficients( CVector( NCost_it , NCost_it + nms.size() ) ,
+   get_lfo()->modify_coefficients( CVector( NCost_it ,
+					    NCost_it + nms.size() ) ,
 				   Subset( nms ) , ordered ,
 				   un_ModBlock( issueAMod ) );
   else {
@@ -2252,9 +2260,10 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
   return;                       // cowardly (and silently) return
 
  if( NCost.size() < rng.second - rng.first )
-  throw( std::invalid_argument( "CapacitatedFacilityLocationBlock::"
-				"chg_transportation_costs: the span is shorter "
-				"than the Range" ) );
+  throw( std::invalid_argument(
+    "CapacitatedFacilityLocationBlock::"
+    "chg_transportation_costs: the span is shorter "
+    "than the Range" ) );
 
  auto NCost_it = NCost.begin();
 
@@ -2366,9 +2375,10 @@ void CapacitatedFacilityLocationBlock::chg_transportation_costs(
 			       ModParam issueMod , ModParam issueAMod )
 {
  if( NCost.size() < nms.size() )
-  throw( std::invalid_argument( "CapacitatedFacilityLocationBlock::"
-				"chg_transportation_costs: the span is shorter "
-				"than the Subset" ) );
+  throw( std::invalid_argument(
+    "CapacitatedFacilityLocationBlock::"
+    "chg_transportation_costs: the span is shorter "
+    "than the Subset" ) );
 
  auto NCost_it = NCost.begin();
 
@@ -2875,7 +2885,8 @@ void CapacitatedFacilityLocationBlock::chg_customer_demands( MF_dbl_sp NDem ,
    case( StdForm ):    // - - - - - - - - - - - - - - - - - - - - - - - - - - -
     for( auto & capi : v_cap )
      LF( capi.get_function()
-	 )->modify_coefficients( DVector( NDem_it , NDem_it + num ) , rng , iAM );
+	 )->modify_coefficients( DVector( NDem_it , NDem_it + num ) , rng ,
+				 iAM );
     break;
 
    case( KskForm ):    // - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -3717,7 +3728,7 @@ void CapacitatedFacilityLocationBlock::chg_UnSplittable( bool unsplt ,
 	   "unsplittable problem not supported with the Flow Formulation" ) );
    case( BenForm ):  // - - - - - - - - - - - - - - - - - - - - - - - - - - -
     throw( std::invalid_argument(
-	   "unsplittable problem not supported with the Benders Formulation" ) );
+      "unsplittable problem not supported with the Benders Formulation" ) );
    }
   }
  else
@@ -5211,7 +5222,8 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationFFP(
 /*--------------------------------------------------------------------------*/
 
 void CapacitatedFacilityLocationBlock::guts_of_add_ModificationBFA(
-							c_p_Mod mod , ChnlName chnl )
+							c_p_Mod mod ,
+							ChnlName chnl )
 {
  // process abstract Modification for the "Benders friendly" Formulation - - -
  /* BenForm is a "leaf" Block (no sub-Block: the hidden BendersBFunction
@@ -5238,7 +5250,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationBFA(
   // the LinearFunction of f_obj is [ y_0 , ... , y_{m-1} , v_epi ]
   if( s > f_n_facilities )
    throw( std::invalid_argument(
-	     "the v_epi coefficient must remain 1 in the BenForm Objective" ) );
+     "the v_epi coefficient must remain 1 in the BenForm Objective" ) );
 
   c_Index sz = s - f;
   if( sz == 1 )
@@ -5267,7 +5279,7 @@ void CapacitatedFacilityLocationBlock::guts_of_add_ModificationBFA(
 
   if( ( ! nms.empty() ) && ( nms.back() >= f_n_facilities ) )
    throw( std::invalid_argument(
-	     "the v_epi coefficient must remain 1 in the BenForm Objective" ) );
+     "the v_epi coefficient must remain 1 in the BenForm Objective" ) );
 
   if( nms.size() == 1 )
    chg_facility_cost( (lfo->get_v_var())[ nms.front() ].second , nms.front() ,
@@ -6144,7 +6156,8 @@ void CapacitatedFacilityLocationBlock::get_y(
 {
  #ifndef NDEBUG
   if( ! ( AR & HasVar ) )
-   throw( std::logic_error( "get_facility_solution: variables not generated" ) );
+   throw( std::logic_error(
+     "get_facility_solution: variables not generated" ) );
  #endif
 
  if( rng.second > f_n_facilities )

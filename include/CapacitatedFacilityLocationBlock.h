@@ -337,7 +337,8 @@ public:
   * the vectors/matrices are copied rather than moved.  */
 
  void load( Index m , Index n , c_DVector & Q , c_CVector & F ,
-	    c_DVector & D , c_CMatrix & C , bool unsplt = false , Index k = iInf) {
+	    c_DVector & D , c_CMatrix & C , bool unsplt = false ,
+	    Index k = iInf) {
   load( m , n , DVector( Q ) , CVector( F ) , DVector( D ) , CMatrix( C ),
 	unsplt , k );
   }
@@ -643,8 +644,8 @@ public:
   * The BinaryKnapsackBlock constructed here are loaded again when
   * generate_abstract_variables() is called if a change of the data made in
   * between has left them behind, which is then seen by them; and they are
-  * constructed anew by load(), which keeps the structure. Changing the structure after the
-  * abstract representation has been generated throws. */
+  * constructed anew by load(), which keeps the structure. Changing the
+  * structure after the abstract representation has been generated throws. */
 
  void set_structure( Configuration * strc = nullptr ) override;
 
@@ -2593,7 +2594,8 @@ class CapacitatedFacilityLocationBlockMod : public Modification
    case( eChgTCost ): output << "change the transportation costs "; break;
    case( eChgCap ):   output << "change the facility capacities "; break;
    case( eChgDem ):   output << "change the customers demands "; break;
-   case( eChgMxF ):   output << "change the maximum number of facilities "; break;
+   case( eChgMxF ):
+    output << "change the maximum number of facilities "; break;
    case( eCloseF ):   output << "close facilities "; break;
    case( eOpenF ):    output << "re-open facilities "; break;
    default:           output << "fix open facilities ";
