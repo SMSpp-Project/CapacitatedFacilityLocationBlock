@@ -732,8 +732,8 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
   throw( std::logic_error( _prfx +
 			   "generate_abstract_variables not called" ) );
 
- Index wc = 7;  // Generate all constraints by default (satisfaction + capacity
-		// + max facilities)
+ Index wc = 15;  // all the constraints by default: satisfaction, capacity,
+		 // strong linking and maximum number of facilities
  if( ( ! stcc ) && f_BlockConfig )
   stcc = f_BlockConfig->f_static_constraints_Configuration;
  if( auto sci = dynamic_cast< SimpleConfiguration< int > * >( stcc ) )
@@ -778,7 +778,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
    AR |= HasCapCns;
    }
 
-  if( ( wc & 4 ) && ( ! ( AR & HasMaxCns ) ) ) {
+  if( ( wc & 8 ) && ( ! ( AR & HasMaxCns ) ) ) {
     v_coeff_pair coeffs( f_n_facilities );
 
     for( Index i = 0 ; i < f_n_facilities ; ++i )
@@ -865,7 +865,7 @@ void CapacitatedFacilityLocationBlock::generate_abstract_constraints(
      v_y[ i ].set_value( 0 );
    }
 
-  if( ( wc & 4 ) && ( ! ( AR & HasMaxCns ) ) ) {
+  if( ( wc & 8 ) && ( ! ( AR & HasMaxCns ) ) ) {
    v_coeff_pair coeffs( f_n_facilities );
    for( Index i = 0 ; i < f_n_facilities ; ++i )
     coeffs[ i ] = std::make_pair( & v_y[ i ] , double( 1 ) );

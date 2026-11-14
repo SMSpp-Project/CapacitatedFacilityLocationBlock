@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the third bit of the static constraints Configuration (`wc & 4`) asked
+  both for the group of the strong linking constraints and for the row of
+  the maximum number of facilities ("maxF"), so that either could not be had
+  without the other, which is wrong for an instance with a maximum number of
+  facilities: the row is now asked for by the fourth bit (8), in the natural
+  and in the "Benders friendly" formulation, the strong group keeping the
+  third, as the configuration files read it, and the default is 15,
+  everything, as before; the comment of `generate_abstract_constraints()`
+  gives the default 15, rather than 3, and the size of the "sat" group of
+  the knapsack formulation as `f_n_customers`
+
 - the MCFBlock R3Block is the continuous relaxation also when a fixed cost
   is negative or a facility is fixed-open, whose fixed cost is paid
   whatever the flow: it has one node more, of deficit the number of the

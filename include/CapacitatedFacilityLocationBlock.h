@@ -664,14 +664,15 @@ public:
   *   and it is a SimpleConfiguration< int >, then wc is the f_value of the
   *   SimpleConfiguration< int >
   *
-  * - otherwise, wc is 3
+  * - otherwise, wc is 15
   *
-  * The meaning of wc is bit-wise: the first bit being 1 means that the
-  * customers satisfaction constraints are constructed, while the second bit
-  * being 1 means that the capacity constraints are constructed. The third
-  * bit being 1 means that the constraint on the number of facilities has
-  * been constructed. That last one is currently only supported by the 
-  * "natural formulation".
+  * The meaning of wc is bit-wise: the first bit (1) being 1 means that the
+  * customers satisfaction constraints are constructed, the second bit (2)
+  * being 1 that the capacity constraints are, the third bit (4) being 1
+  * that the group of the "strong linking" constraints is (see below), and
+  * the fourth bit (8) being 1 that the constraint on the maximum number of
+  * facilities is. That last one is only supported by the "natural
+  * formulation" and the "Benders friendly" one.
   * Note that "constraints X constructed" has different meanings according
   * to which formulation is used, as decided by generate_abstract_variables():
   *
@@ -691,12 +692,12 @@ public:
   *     that can be opened.
   *
   *   and no dynamic constraints. "sat" is constructed unless ( wc & 1 ) ==
-  *   false, "cap" is constructed unless ( wc & 2 ) == false and "max" 
-  *   is *not* constructed (default) unless ( wc & 4 ) == true.
+  *   false, "cap" is constructed unless ( wc & 2 ) == false and "maxF"
+  *   is constructed unless ( wc & 8 ) == false.
   *
   * - If the "knapsack formulation" (KF) is used, then there is only one
   *   explicit groups of "linear constraints", the "sat" one with a
-  *   std::vector< FRowConstraint > of size f_n_facilities imposing the
+  *   std::vector< FRowConstraint > of size f_n_customers imposing the
   *   satisfaction of customers' demands (1), which is constructed unless
   *   ( wc & 1 ) == false; the capacity constraints are inside the
   *   BinaryKnapsackBlock sub-Block, and the corresponding constraints are
@@ -712,13 +713,14 @@ public:
   *   demands, although they also are a part of the capacity ones) are
   *   constructed unless ( wc & 1 ) == false.
   *
-  * Finally, if the third bit of ws is 1, then an appropriately arranged
+  * Finally, if the third bit of wc is 1, then an appropriately arranged
   * group of dynamic Constraint is added that support the separation of
   * the "strong linking" constraints \f$ x_{ij} \leq y_i \f$. If this is done,
   * then generate_dynamic_constraints() implements this separation. Note
   * that, whatever the formulation, the corresponding "strong" group of
   * dynamic Constraint is always added to the "root"
-  * CapacitatedFacilityLocationBlock */
+  * CapacitatedFacilityLocationBlock, save in the "Benders friendly"
+  * formulation, which has no X and hence no such group. */
  
  void generate_abstract_constraints( Configuration * stcc = nullptr )
   override;

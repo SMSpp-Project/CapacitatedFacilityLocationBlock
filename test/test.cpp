@@ -15,9 +15,10 @@
  * "Benders friendly" formulation, which has no X, the open capacity is
  * checked against the demand, and the Solution holds y alone. The rows are
  * relaxed with eNoMod, the Block not handling the Modification of that.
- * Each physical Modification is finally checked for what it says it
- * changes [see Modification::changes()], against what the change does to
- * the model, written down in the tester.
+ * Each physical Modification is checked for what it says it changes [see
+ * Modification::changes()], against what the change does to the model,
+ * written down in the tester. Finally, the strong linking group and the
+ * maximum facilities row are asked for separately.
  *
  * The checks hold under NDEBUG as well, not being assert(). The exit code
  * is the number of failed checks.
@@ -230,7 +231,7 @@ static void test_max_facilities( void )
  // the row is built
  b = make_instance( 1 );
  b->generate_abstract_variables();
- SimpleConfiguration< int > wc( 7 );
+ SimpleConfiguration< int > wc( 11 );
  b->generate_abstract_constraints( & wc );
 
  set_point( b , { 1 , 1 } , { 1 , 0 , 0 , 1 } );
@@ -265,7 +266,7 @@ static void test_benders( void )
  auto b = make_instance( 1 );
  SimpleConfiguration< int > ben( 2 );
  b->generate_abstract_variables( & ben );
- SimpleConfiguration< int > wc( 4 );  // the maximum facilities row only
+ SimpleConfiguration< int > wc( 8 );  // the maximum facilities row only
  b->generate_abstract_constraints( & wc );
 
  check( b->get_x( 0 , 0 ) == nullptr , "benders: an X is there" );
@@ -387,6 +388,36 @@ static void test_changes( void )
  }
 
 /*--------------------------------------------------------------------------*/
+/// the strong linking group and the maximum facilities row are asked for
+/// by two different bits of the static constraints Configuration [see
+/// generate_abstract_constraints()]
+
+static void test_strong_and_maxF( void )
+{
+ auto b = make_instance( 1 );
+ b->generate_abstract_variables();
+ SimpleConfiguration< int > strong( 7 );
+ b->generate_abstract_constraints( & strong );
+ check( b->get_static_constraint< FRowConstraint >( "maxF" ) == nullptr ,
+	"strong and maxF: the strong group builds the maximum facilities "
+	"row" );
+ check( b->get_dynamic_constraint_v< FRowConstraint >( "strong" ) != nullptr ,
+	"strong and maxF: no strong group" );
+ delete b;
+
+ b = make_instance( 1 );
+ b->generate_abstract_variables();
+ SimpleConfiguration< int > maxF( 11 );
+ b->generate_abstract_constraints( & maxF );
+ check( b->get_static_constraint< FRowConstraint >( "maxF" ) != nullptr ,
+	"strong and maxF: no maximum facilities row" );
+ check( b->get_dynamic_constraint_v< FRowConstraint >( "strong" ) == nullptr ,
+	"strong and maxF: the maximum facilities row builds the strong "
+	"group" );
+ delete b;
+ }
+
+/*--------------------------------------------------------------------------*/
 
 int main( void )
 {
@@ -395,7 +426,8 @@ int main( void )
   { "knapsack" , test_knapsack } ,
   { "max_facilities" , test_max_facilities } ,
   { "benders" , test_benders } ,
-  { "changes" , test_changes } };
+  { "changes" , test_changes } ,
+  { "strong_and_maxF" , test_strong_and_maxF } };
 
  for( auto & [ name , test ] : tests )
   try {
