@@ -18,7 +18,9 @@
  * Each physical Modification is checked for what it says it changes [see
  * Modification::changes()], against what the change does to the model,
  * written down in the tester. Finally, the strong linking group and the
- * maximum facilities row are asked for separately.
+ * maximum facilities row are asked for separately, and the knapsack
+ * sub-Block know that a Solver listens to the Block whether they are
+ * constructed after it is registered or while it is.
  *
  * The checks hold under NDEBUG as well, not being assert(). The exit code
  * is the number of failed checks.
@@ -418,6 +420,69 @@ static void test_strong_and_maxF( void )
  }
 
 /*--------------------------------------------------------------------------*/
+/// a FakeSolver that generates the knapsack formulation of its Block when
+/// it is given it, as a Solver that reads the abstract representation does
+
+class KnapsackSolver : public FakeSolver {
+ public:
+
+ void set_Block( Block * block ) override {
+  if( block ) {
+   SimpleConfiguration< int > ksk( 1 );
+   block->generate_abstract_variables( & ksk );
+   }
+  FakeSolver::set_Block( block );
+  }
+ };
+
+/*--------------------------------------------------------------------------*/
+/// the knapsack sub-Block know that a Solver of the Block listens, whether
+/// they are constructed after it is registered or while it is, and the
+/// Modification of the sub-Block reach it
+
+static void test_listening_sub_Block( void )
+{
+ for( bool during : { false , true } ) {
+  const std::string what = during ? "while registering" : "after registering";
+  auto b = make_instance();
+  FakeSolver * fs = during ? new KnapsackSolver() : new FakeSolver();
+  b->register_Solver( fs );
+  if( ! during ) {
+   SimpleConfiguration< int > ksk( 1 );
+   b->generate_abstract_variables( & ksk );
+   }
+  b->generate_objective();  // the costs are in the sub-Block only then
+
+  check( b->get_number_nested_Blocks() == 2 , "listening, " + what +
+	 ": no knapsack sub-Block" );
+  bool all = b->get_number_nested_Blocks() == 2;
+  for( Index i = 0 ; i < b->get_number_nested_Blocks() ; ++i )
+   all = all && b->get_nested_Block( i )->anyone_there();
+  check( all , "listening, " + what + ": a knapsack sub-Block does not "
+	 "know that the Solver listens" );
+
+  // a change of a fixed cost is a change of a profit of a sub-Block
+  fs->lock_Modification_list();
+  fs->get_Modification_list().clear();
+  fs->unlock_Modification_list();
+  b->chg_facility_cost( 5 , 0 );
+  bool from_sub = false;
+  fs->lock_Modification_list();
+  for( auto & mod : fs->get_Modification_list() )
+   if( mod->get_Block() == b->get_nested_Block( 0 ) )
+    from_sub = true;
+  fs->get_Modification_list().clear();
+  fs->unlock_Modification_list();
+  check( from_sub , "listening, " + what + ": the Modification of the "
+	 "knapsack sub-Block do not reach the Solver" );
+
+  b->unregister_Solver( fs );
+  delete fs;
+  delete b;
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
 
 int main( void )
 {
@@ -427,7 +492,8 @@ int main( void )
   { "max_facilities" , test_max_facilities } ,
   { "benders" , test_benders } ,
   { "changes" , test_changes } ,
-  { "strong_and_maxF" , test_strong_and_maxF } };
+  { "strong_and_maxF" , test_strong_and_maxF } ,
+  { "listening_sub_Block" , test_listening_sub_Block } };
 
  for( auto & [ name , test ] : tests )
   try {

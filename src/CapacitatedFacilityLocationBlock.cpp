@@ -3823,10 +3823,13 @@ void CapacitatedFacilityLocationBlock::guts_of_set_structure( bool knap )
 
  // one knapsack problem for each facility: first construct the vector and
  // sort it, so that the pointers are increasing with the facility index i,
- // which speeds up some operations
+ // which speeds up some operations; a new sub-Block is told if someone is
+ // listening to this, or its Modification would be lost
  v_Block.resize( f_n_facilities );
  for( auto & bi : v_Block ) {
   bi = new BinaryKnapsackBlock( this );
+  if( anyone_there() )
+   bi->anyone_there( true );
   if( ro )
    bi->read_lock();
   else

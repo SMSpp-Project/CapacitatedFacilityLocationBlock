@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the knapsack sub-Block constructed while a Solver was registered to the
+  Block (by generating the knapsack formulation, or by loading an instance
+  in it) did not know that someone listens, and their Modification were
+  lost: they are told when constructed
+
 - the third bit of the static constraints Configuration (`wc & 4`) asked
   both for the group of the strong linking constraints and for the row of
   the maximum number of facilities ("maxF"), so that either could not be had
