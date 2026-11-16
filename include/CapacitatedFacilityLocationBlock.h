@@ -158,7 +158,7 @@ namespace SMSpp_di_unipi_it
  * The current implementation of the class is only an initial version, and
  * features are expected to be added along time.
  *
- * As such, the class currently1 only supports only a subset of the possible
+ * As such, the class currently supports only a subset of the possible
  * operations on the data of the problem. This starts with the fact that
  *
  *     THE SIZE OF THE PROBLEM IS STATIC AND CAN NEVER BE CHANGED
@@ -337,7 +337,8 @@ public:
   * the vectors/matrices are copied rather than moved.  */
 
  void load( Index m , Index n , c_DVector & Q , c_CVector & F ,
-	    c_DVector & D , c_CMatrix & C , bool unsplt = false , Index k = iInf) {
+	    c_DVector & D , c_CMatrix & C , bool unsplt = false ,
+	    Index k = iInf) {
   load( m , n , DVector( Q ) , CVector( F ) , DVector( D ) , CMatrix( C ),
 	unsplt , k );
   }
@@ -643,8 +644,8 @@ public:
   * The BinaryKnapsackBlock constructed here are loaded again when
   * generate_abstract_variables() is called if a change of the data made in
   * between has left them behind, which is then seen by them; and they are
-  * constructed anew by load(), which keeps the structure. Changing the structure after the
-  * abstract representation has been generated throws. */
+  * constructed anew by load(), which keeps the structure. Changing the
+  * structure after the abstract representation has been generated throws. */
 
  void set_structure( Configuration * strc = nullptr ) override;
 
@@ -663,14 +664,15 @@ public:
   *   and it is a SimpleConfiguration< int >, then wc is the f_value of the
   *   SimpleConfiguration< int >
   *
-  * - otherwise, wc is 3
+  * - otherwise, wc is 15
   *
-  * The meaning of wc is bit-wise: the first bit being 1 means that the
-  * customers satisfaction constraints are constructed, while the second bit
-  * being 1 means that the capacity constraints are constructed. The third
-  * bit being 1 means that the constraint on the number of facilities has
-  * been constructed. That last one is currently only supported by the 
-  * "natural formulation".
+  * The meaning of wc is bit-wise: the first bit (1) being 1 means that the
+  * customers satisfaction constraints are constructed, the second bit (2)
+  * being 1 that the capacity constraints are, the third bit (4) being 1
+  * that the group of the "strong linking" constraints is (see below), and
+  * the fourth bit (8) being 1 that the constraint on the maximum number of
+  * facilities is. That last one is only supported by the "natural
+  * formulation" and the "Benders friendly" one.
   * Note that "constraints X constructed" has different meanings according
   * to which formulation is used, as decided by generate_abstract_variables():
   *
@@ -690,12 +692,12 @@ public:
   *     that can be opened.
   *
   *   and no dynamic constraints. "sat" is constructed unless ( wc & 1 ) ==
-  *   false, "cap" is constructed unless ( wc & 2 ) == false and "max" 
-  *   is *not* constructed (default) unless ( wc & 4 ) == true.
+  *   false, "cap" is constructed unless ( wc & 2 ) == false and "maxF"
+  *   is constructed unless ( wc & 8 ) == false.
   *
   * - If the "knapsack formulation" (KF) is used, then there is only one
   *   explicit groups of "linear constraints", the "sat" one with a
-  *   std::vector< FRowConstraint > of size f_n_facilities imposing the
+  *   std::vector< FRowConstraint > of size f_n_customers imposing the
   *   satisfaction of customers' demands (1), which is constructed unless
   *   ( wc & 1 ) == false; the capacity constraints are inside the
   *   BinaryKnapsackBlock sub-Block, and the corresponding constraints are
@@ -711,13 +713,14 @@ public:
   *   demands, although they also are a part of the capacity ones) are
   *   constructed unless ( wc & 1 ) == false.
   *
-  * Finally, if the third bit of ws is 1, then an appropriately arranged
+  * Finally, if the third bit of wc is 1, then an appropriately arranged
   * group of dynamic Constraint is added that support the separation of
   * the "strong linking" constraints \f$ x_{ij} \leq y_i \f$. If this is done,
   * then generate_dynamic_constraints() implements this separation. Note
   * that, whatever the formulation, the corresponding "strong" group of
   * dynamic Constraint is always added to the "root"
-  * CapacitatedFacilityLocationBlock */
+  * CapacitatedFacilityLocationBlock, save in the "Benders friendly"
+  * formulation, which has no X and hence no such group. */
  
  void generate_abstract_constraints( Configuration * stcc = nullptr )
   override;
@@ -738,7 +741,15 @@ public:
   * are preferred. The second parameter (default 1e-4) is the minimal absolute
   * violation required to declare a constraint violated (since both variables
   * have no coefficients and are in [ 0 , 1 ] an absolute threshold, for once,
-  * makes sense). */
+  * makes sense).
+  *
+  * In the "Benders friendly" formulation, which has no X, the method rather
+  * separates (at most) one Benders cut at the current value of Y, if the
+  * formulation has them [see generate_abstract_variables()]: the cut is
+  * added if its violation exceeds second * max( |v^*| , 1 ), with v^* the
+  * current value of the Variable v [see get_v()], the second parameter of
+  * the pair being a relative tolerance here (default 1e-6), while the first
+  * one is ignored. */
 
  void generate_dynamic_constraints( Configuration * dycc = nullptr )
   override;
@@ -1100,8 +1111,12 @@ public:
 
  /// gets an R3 Block of CapacitatedFacilityLocationBlock 
  /** Gets an R3 Block of the CapacitatedFacilityLocationBlock. The specific
-  * type of R3 Block is encoded in r3bc, which (if not nullptr) must be a
-  * SimpleConfiguration< int >, whose f_value can be:
+  * type of R3 Block is encoded in r3bc, which (if not nullptr) must be
+  * either a SimpleConfiguration< int >, whose f_value is the type, or a
+  * SimpleConfiguration< std::pair< int , double > >, whose f_value.first is
+  * the type and whose f_value.second is slackBigMScale (default 100), the
+  * scale of the cost of the "artificial" arcs (see below). The type can
+  * be:
   *
   * - 0 (which is also assumed if r3bc == nullptr), indicating the standard
   *   copy (a CapacitatedFacilityLocationBlock identical to this); in this
@@ -1115,7 +1130,7 @@ public:
   *   the graph are closed (or their capacity is reduced). If \p base is
   *   passed then it must be a MCFBlock (otherwise exception is thrown).
   *
-  *   In both cases, the graph has f_n_facilities + f_n_customers + 1 nodes,
+  *   In both cases, the graph has f_n_facilities + f_n_customers + 2 nodes,
   *   with the following arrangement:
   *
   *   = nodes 1 ... f_n_facilities: facilities, deficit == 0
@@ -1124,30 +1139,43 @@ public:
   *     customers, deficit == customer demand
   *
   *   = node f_n_facilities + f_n_customers + 1: super source,
-  *     deficit == - sum of all demands
+  *     deficit == - sum of all demands - f_n_facilities
   *
-  *   and *at least* f_n_facilities * ( f_n_customers + 1 ) with the
+  *   = node f_n_facilities + f_n_customers + 2: the "constant" node,
+  *     deficit == f_n_facilities
+  *
+  *   and *at least* f_n_facilities * ( f_n_customers + 2 ) arcs with the
   *   following arrangement:
   *
   *   = arcs 0 ...f_n_facilities - 1: from source to facilities, capacity ==
-  *     facility capacity, cost == fixed cost / facility capacity
+  *     facility capacity, cost == fixed cost / facility capacity, or 0 if
+  *     the fixed cost is paid whatever the flow, i.e., if the facility is
+  *     fixed-open or its fixed cost is negative
   *
   *   = arcs f_n_facilities ... f_n_facilities * ( f_n_customers + 1 ) - 1:
   *     from facilities to customers, arranged facility-wise (first all the
   *     arcs of the first facilities, then all the arcs of the second, ...),
   *     capacity == infinite (Inf< MCFBlock::FNumber >()), cost ==
-  *     unitary transportation cost between facility and customer
+  *     C[ i , j ] / D[ j ], the transportation cost per unit of demand
   *
   *   When the value is 2, f_n_customers "artificial" arcs are also added
   *   from the super source to each customer, with capacity == infinite
-  *   (Inf< (MCFBlock::FNumber >()) and a very large cost (something like
-  *   100 * ( max facility cost + max transportation cost from any
-  *   facility to the customer). Note that
+  *   (Inf< MCFBlock::FNumber >()) and a very large cost, slackBigMScale *
+  *   ( 1 + max_i ( cost of the arc to facility i + C[ i , j ] / D[ j ] ) )
+  *   for customer j. Note that
   *
   *       THE COST OF THESE ARCS ARE NOT UPDATED WHEN THE ORIGINAL COSTS
   *       CHANGE
   *
   *   as it is assumed that they are "large enough for good".
+  *
+  *   The last f_n_facilities arcs go from the super source to the
+  *   constant node, one for each facility, with capacity 1, so that the
+  *   deficits make each carry one unit; the arc of a facility costs its
+  *   fixed cost if it is paid whatever the flow, and 0 otherwise: the cost
+  *   of the continuous relaxation is a linear function of the flows only if
+  *   no fixed cost is negative and no facility is fixed-open, and these
+  *   units carry the constant that those add to it.
   *
   * - any other value: not supported (exception is thrown) */
 
@@ -2288,6 +2316,40 @@ public:
  void guts_of_chg_dem_MCF( MCFBlock * mcfb , c_Subset & nms , bool ordered ,
 			   ModParam issueMod , ModParam issueAMod );
 
+ /// whether the fixed cost of facility i is paid whatever the flow
+ /** In the continuous relaxation the fixed cost of a fixed-open facility is
+  * paid whatever the flow, and so is a negative one of a free facility,
+  * since opening the facility fully only gains it; in the MCF
+  * representation such a cost is carried by the arc into the constant node
+  * [see guts_of_get_R3B_MCF()], and the arc of the facility costs 0. */
+
+ [[nodiscard]] bool MCF_paid( Index i ) const;
+
+ /// the cost of the arc from the super-source to facility i in the MCF
+ [[nodiscard]] MCFBlock::CNumber MCF_fcost( Index i ) const;
+
+ /// the cost of the arc of facility i into the constant node in the MCF:
+ /// its fixed cost if it is paid whatever the flow [see MCF_paid()], or 0
+ [[nodiscard]] MCFBlock::CNumber MCF_kcost( Index i ) const;
+
+ /// whether mcfb has the constant node [see guts_of_get_R3B_MCF()]
+ [[nodiscard]] bool MCF_has_K( const MCFBlock * mcfb ) const;
+
+ /// sets the costs of the arcs of the facilities in rng, from the
+ /// super-source and into the constant node, after their fixed costs or
+ /// their state changed
+ void guts_of_chg_fcost_MCF( MCFBlock * mcfb , Range rng , ModParam issueMod ,
+			     ModParam issueAMod );
+
+ /// as above, for the facilities in nms
+ void guts_of_chg_fcost_MCF( MCFBlock * mcfb , c_Subset & nms , bool ordered ,
+			     ModParam issueMod , ModParam issueAMod );
+
+ /// closes or opens the arcs of the facilities in nms after their state
+ /// (closed, free or fixed-open) changed, and sets their costs
+ void guts_of_chg_fstate_MCF( MCFBlock * mcfb , c_Subset & nms ,
+			      ModParam issueMod , ModParam issueAMod );
+
  void guts_of_add_ModificationSF( c_p_Mod mod , ChnlName chnl );
 
  void guts_of_add_ModificationKFG( const GroupModification * mod ,
@@ -2546,7 +2608,8 @@ class CapacitatedFacilityLocationBlockMod : public Modification
    case( eChgTCost ): output << "change the transportation costs "; break;
    case( eChgCap ):   output << "change the facility capacities "; break;
    case( eChgDem ):   output << "change the customers demands "; break;
-   case( eChgMxF ):   output << "change the maximum number of facilities "; break;
+   case( eChgMxF ):
+    output << "change the maximum number of facilities "; break;
    case( eCloseF ):   output << "close facilities "; break;
    case( eOpenF ):    output << "re-open facilities "; break;
    default:           output << "fix open facilities ";

@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-16
+
+### Changed
+
+- the row of the maximum number of facilities ("maxF") is asked for by the
+  fourth bit (8) of the static constraints Configuration, in the natural and
+  in the "Benders friendly" formulation, rather than by the third (4), which
+  also asks for the group of the strong linking constraints, so that either
+  could not be had without the other, which is wrong for an instance with a
+  maximum number of facilities; the strong group keeps the third bit, as the
+  configuration files read it, and the default is 15, everything, as
+  before. The comment of `generate_abstract_constraints()` gives the default
+  15, rather than 3, and the size of the "sat" group of the knapsack
+  formulation as `f_n_customers`
+
+### Fixed
+
+- `cfl2nc4` uses `smspp_terminate()` of the core, with which it aborts with a
+  message when `std::terminate()` is called with no exception, e.g., by the
+  destructor of a `std::thread` that can still be joined, where rethrowing
+  the null exception crashed
+
+- the installed module `smspp.capacitatedfacilitylocationblock` could not be
+  imported, since its package gave the interface of the module the target of
+  the library by its name in the build tree, which an installed package does
+  not have
+
+- `map_forward_solution()` to the "flow relaxation" R3 Block took the first
+  arc to write as `f_n_facilities` when the facilities were asked for and as
+  0 otherwise, the reverse of `map_back_solution()`: with both y and x it
+  wrote past the end of the vector of the flows, with y alone in an empty
+  one, and with x alone it put the transportation flows on the arcs of the
+  facilities
+
+- the knapsack sub-Block constructed while a Solver was registered to the
+  Block (by generating the knapsack formulation, or by loading an instance
+  in it) did not know that someone listens, and their Modification were
+  lost: they are told when constructed
+
+- the MCFBlock R3Block is the continuous relaxation also when a fixed cost
+  is negative or a facility is fixed-open, whose fixed cost is paid
+  whatever the flow: it has one node more, of deficit the number of the
+  facilities, and one arc into it from the super-source for each facility,
+  of capacity 1, which costs that fixed cost when it is paid whatever the
+  flow and 0 otherwise, while the arc of such a facility from the
+  super-source costs 0; before, it cost the fixed cost over the capacity
+  as for the others, and the R3Block lost the gain of a negative fixed cost
+  and the cost of a fixed-open facility. The changes of the fixed costs,
+  of the capacities and of the state of the facilities keep these costs
+  up to date, and the fix_open Modification is now mapped, rather than
+  throwing; the solution maps back a facility whose fixed cost is paid
+  whatever the flow as open
+
+- `fix_open_facilities( range )` in the knapsack formulation left
+  `f_mod_skip` true, so that the Modification of the sub-Block that
+  followed were ignored
+
 ## [0.5.0] - 2026-11-03
 
 ### Added
@@ -269,7 +326,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - First test release.
 
-[Unreleased]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.5.0...develop
+[Unreleased]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.6.0...develop
+[0.6.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.5.0...0.6.0
 [0.5.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.4.0...0.5.0
 [0.4.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.3.0...0.4.0
 [0.3.0]: https://gitlab.com/smspp/capacitatedfacilitylocationblock/-/compare/0.2.0...0.3.0

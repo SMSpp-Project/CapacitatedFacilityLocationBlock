@@ -15,9 +15,13 @@
  * "Benders friendly" formulation, which has no X, the open capacity is
  * checked against the demand, and the Solution holds y alone. The rows are
  * relaxed with eNoMod, the Block not handling the Modification of that.
- * Each physical Modification is finally checked for what it says it
- * changes [see Modification::changes()], against what the change does to
- * the model, written down in the tester.
+ * Each physical Modification is checked for what it says it changes [see
+ * Modification::changes()], against what the change does to the model,
+ * written down in the tester. Finally, the strong linking group and the
+ * maximum facilities row are asked for separately, the knapsack sub-Block
+ * know that a Solver listens to the Block whether they are constructed
+ * after it is registered or while it is, and a solution mapped forward to
+ * the "flow relaxation" lands on the arcs it belongs to.
  *
  * The checks hold under NDEBUG as well, not being assert(). The exit code
  * is the number of failed checks.
@@ -230,7 +234,7 @@ static void test_max_facilities( void )
  // the row is built
  b = make_instance( 1 );
  b->generate_abstract_variables();
- SimpleConfiguration< int > wc( 7 );
+ SimpleConfiguration< int > wc( 11 );
  b->generate_abstract_constraints( & wc );
 
  set_point( b , { 1 , 1 } , { 1 , 0 , 0 , 1 } );
@@ -265,7 +269,7 @@ static void test_benders( void )
  auto b = make_instance( 1 );
  SimpleConfiguration< int > ben( 2 );
  b->generate_abstract_variables( & ben );
- SimpleConfiguration< int > wc( 4 );  // the maximum facilities row only
+ SimpleConfiguration< int > wc( 8 );  // the maximum facilities row only
  b->generate_abstract_constraints( & wc );
 
  check( b->get_x( 0 , 0 ) == nullptr , "benders: an X is there" );
@@ -387,6 +391,146 @@ static void test_changes( void )
  }
 
 /*--------------------------------------------------------------------------*/
+/// the strong linking group and the maximum facilities row are asked for
+/// by two different bits of the static constraints Configuration [see
+/// generate_abstract_constraints()]
+
+static void test_strong_and_maxF( void )
+{
+ auto b = make_instance( 1 );
+ b->generate_abstract_variables();
+ SimpleConfiguration< int > strong( 7 );
+ b->generate_abstract_constraints( & strong );
+ check( b->get_static_constraint< FRowConstraint >( "maxF" ) == nullptr ,
+	"strong and maxF: the strong group builds the maximum facilities "
+	"row" );
+ check( b->get_dynamic_constraint_v< FRowConstraint >( "strong" ) != nullptr ,
+	"strong and maxF: no strong group" );
+ delete b;
+
+ b = make_instance( 1 );
+ b->generate_abstract_variables();
+ SimpleConfiguration< int > maxF( 11 );
+ b->generate_abstract_constraints( & maxF );
+ check( b->get_static_constraint< FRowConstraint >( "maxF" ) != nullptr ,
+	"strong and maxF: no maximum facilities row" );
+ check( b->get_dynamic_constraint_v< FRowConstraint >( "strong" ) == nullptr ,
+	"strong and maxF: the maximum facilities row builds the strong "
+	"group" );
+ delete b;
+ }
+
+/*--------------------------------------------------------------------------*/
+/// a FakeSolver that generates the knapsack formulation of its Block when
+/// it is given it, as a Solver that reads the abstract representation does
+
+class KnapsackSolver : public FakeSolver {
+ public:
+
+ void set_Block( Block * block ) override {
+  if( block ) {
+   SimpleConfiguration< int > ksk( 1 );
+   block->generate_abstract_variables( & ksk );
+   }
+  FakeSolver::set_Block( block );
+  }
+ };
+
+/*--------------------------------------------------------------------------*/
+/// the knapsack sub-Block know that a Solver of the Block listens, whether
+/// they are constructed after it is registered or while it is, and the
+/// Modification of the sub-Block reach it
+
+static void test_listening_sub_Block( void )
+{
+ for( bool during : { false , true } ) {
+  const std::string what = during ? "while registering" : "after registering";
+  auto b = make_instance();
+  FakeSolver * fs = during ? new KnapsackSolver() : new FakeSolver();
+  b->register_Solver( fs );
+  if( ! during ) {
+   SimpleConfiguration< int > ksk( 1 );
+   b->generate_abstract_variables( & ksk );
+   }
+  b->generate_objective();  // the costs are in the sub-Block only then
+
+  check( b->get_number_nested_Blocks() == 2 , "listening, " + what +
+	 ": no knapsack sub-Block" );
+  bool all = b->get_number_nested_Blocks() == 2;
+  for( Index i = 0 ; i < b->get_number_nested_Blocks() ; ++i )
+   all = all && b->get_nested_Block( i )->anyone_there();
+  check( all , "listening, " + what + ": a knapsack sub-Block does not "
+	 "know that the Solver listens" );
+
+  // a change of a fixed cost is a change of a profit of a sub-Block
+  fs->lock_Modification_list();
+  fs->get_Modification_list().clear();
+  fs->unlock_Modification_list();
+  b->chg_facility_cost( 5 , 0 );
+  bool from_sub = false;
+  fs->lock_Modification_list();
+  for( auto & mod : fs->get_Modification_list() )
+   if( mod->get_Block() == b->get_nested_Block( 0 ) )
+    from_sub = true;
+  fs->get_Modification_list().clear();
+  fs->unlock_Modification_list();
+  check( from_sub , "listening, " + what + ": the Modification of the "
+	 "knapsack sub-Block do not reach the Solver" );
+
+  b->unregister_Solver( fs );
+  delete fs;
+  delete b;
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
+/// a solution mapped forward to the "flow relaxation" R3 Block is written
+/// in the arcs it belongs to: y_i times the capacity in the arc to facility
+/// i, x_ij times the demand in the arc from facility i to customer j
+/// [see get_R3_Block()]
+
+static void test_map_forward_solution( void )
+{
+ auto b = make_instance();
+ b->generate_abstract_variables();
+ SimpleConfiguration< int > r3c( 1 );
+ auto r3b = dynamic_cast< MCFBlock * >( b->get_R3_Block( & r3c ) );
+ check( r3b , "map forward: the R3 Block is not a MCFBlock" );
+ if( ! r3b ) {
+  delete b;
+  return;
+  }
+ r3b->generate_abstract_variables();  // the flows are in the Variable
+
+ // y = ( 1 , 0.5 ), x = ( 1 , 0 ; 0.25 , 1 )
+ const std::vector< double > y = { 1 , 0.5 };
+ const std::vector< double > x = { 1 , 0 , 0.25 , 1 };
+ const std::vector< double > fac = { 6 , 5 };       // y_i * capacity
+ const std::vector< double > trn = { 4 , 0 , 1 , 4 };  // x_ij * demand
+
+ for( int ws : { 3 , 2 , 1 } ) {
+  MCFBlock::Vec_FNumber zero( r3b->get_NArcs() , 0 );
+  r3b->set_x( zero.begin() );
+  set_point( b , y , x );
+  SimpleConfiguration< int > wsc( ws );
+  b->map_forward_solution( r3b , & r3c , & wsc );
+
+  MCFBlock::Vec_FNumber got( r3b->get_NArcs() );
+  r3b->get_x( got.begin() );
+  bool ok = true;
+  for( Index i = 0 ; i < 2 ; ++i )
+   ok = ok && ( got[ i ] == ( ( ws & 1 ) ? fac[ i ] : 0 ) );
+  for( Index k = 0 ; k < 4 ; ++k )
+   ok = ok && ( got[ 2 + k ] == ( ( ws & 2 ) ? trn[ k ] : 0 ) );
+  check( ok , "map forward, ws = " + std::to_string( ws ) +
+	 ": the flows are not where they belong" );
+  }
+
+ delete r3b;
+ delete b;
+ }
+
+/*--------------------------------------------------------------------------*/
 
 int main( void )
 {
@@ -395,7 +539,10 @@ int main( void )
   { "knapsack" , test_knapsack } ,
   { "max_facilities" , test_max_facilities } ,
   { "benders" , test_benders } ,
-  { "changes" , test_changes } };
+  { "changes" , test_changes } ,
+  { "strong_and_maxF" , test_strong_and_maxF } ,
+  { "listening_sub_Block" , test_listening_sub_Block } ,
+  { "map_forward_solution" , test_map_forward_solution } };
 
  for( auto & [ name , test ] : tests )
   try {
