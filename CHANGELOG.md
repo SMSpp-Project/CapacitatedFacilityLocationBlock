@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the installed module `smspp.capacitatedfacilitylocationblock` could not be
+  imported, since its package gave the interface of the module the target of
+  the library by its name in the build tree, which an installed package does
+  not have
+
 - `map_forward_solution()` to the "flow relaxation" R3 Block took the first
   arc to write as `f_n_facilities` when the facilities were asked for and as
   0 otherwise, the reverse of `map_back_solution()`: with both y and x it
