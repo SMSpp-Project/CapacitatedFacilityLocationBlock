@@ -61,4 +61,8 @@ CFLBkINC := $(CFLBkINC) $(MCFBkINC) $(BKBkINC) $(SMS++INC)
 # external libraries for CapacitatedFacilityLocationBlock
 CFLBkLIB = $(MCFBkLIB) $(BKBkLIB) $(SMS++LIB)
 
+# the objects as the shared libraries of the module and of those whose
+# objects it takes [see SMS++/lib/makefile-shared]
+$(eval $(call SMSppSOlib,CFLBk))
+
 ############################ End of makefile #################################
