@@ -213,7 +213,7 @@ add_subdirectory(tools)
 # tree holding the data of an older version (a cache of the CI, or a clone
 # that has been extracted before) downloads and extracts again instead of
 # taking them for the current ones.
-set(DATA_VERSION 2025-07-29)
+set(DATA_VERSION 2026-11-23)
 set(DATA_PROJECT 24780184)
 set(DATA_PREFIX cfl)
 set(DATA_FORMATS txt)

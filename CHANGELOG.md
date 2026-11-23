@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- the 71 instances of Holmberg, Ronnqvist and Yuan in `data/txt/Holmberg`,
+  in the facility-oriented, demands-last format of the Yang ones, from the
+  site of the OR group of Brescia; the data go out as version 2026-11-23
+
 ### Changed
 
 - the makefiles give the shared library of the module by default, a DLL on
