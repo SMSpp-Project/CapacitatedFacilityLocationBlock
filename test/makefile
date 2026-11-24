@@ -4,7 +4,7 @@
 #                                                                            #
 #   makefile of test (for CapacitatedFacilityLocationBlock)                  #
 #                                                                            #
-#                                Donato Meoli                                #
+#                             Antonio Frangioni                              #
 #                         Dipartimento di Informatica                        #
 #                             Universita' di Pisa                            #
 #                                                                            #
